@@ -27,6 +27,17 @@ Media uploads:
 
 ## Run locally
 
+### Docker
+
+To run a local instance of the app, the following command can be used:
+```bash
+docker compose -f compose.yaml up --build --remove-orphans
+```
+
+Optionally the `-d` flag can be specified to let the app run as a background process.
+
+### Manual
+
 1. Install Node.js (recommended: Node 18+)
 2. From this folder:
    - Optional first-time wizard: `npm run init` (Windows PowerShell: `npm.cmd run init`)

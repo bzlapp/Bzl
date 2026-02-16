@@ -3224,7 +3224,15 @@ async function handlePluginInstall(req, res, url) {
     }
 
     // Move extracted plugin directory into place.
-    fs.renameSync(extractedRoot, destDir);
+    try {
+      fs.renameSync(extractedRoot, destDir);
+    } catch (renameErr) {
+      if (renameErr.code === "EXDEV") {
+        fs.cpSync(extractedRoot, destDir, { recursive: true });
+      } else {
+        throw renameErr;
+      }
+    }
 
     // Ensure state entry exists and defaults to disabled.
     if (!pluginsStateById.has(manifest.id)) pluginsStateById.set(manifest.id, { enabled: false });

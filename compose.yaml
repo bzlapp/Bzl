@@ -1,0 +1,14 @@
+services:
+  bzl:
+    build: .
+    image: bzl:latest
+    container_name: bzl
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - bzl_data:/app/data
+
+volumes:
+  bzl_data:
