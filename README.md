@@ -43,7 +43,7 @@ Optionally the `-d` flag can be specified to let the app run as a background pro
    - Optional first-time wizard: `npm run init` (Windows PowerShell: `npm.cmd run init`)
    - `npm install` (or `npm.cmd install` in Windows PowerShell if `npm` is blocked by execution policy)
    - `npm start` (or `npm.cmd start` in Windows PowerShell)
-   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1` (or `npm run launcher:ui`)
+   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1` (or `npm run launcher:ui`) — includes Cloudflare setup + core auto-update
    - Or a launcher (opens the URL when ready): `npm run launch`
    - Or launcher + Cloudflare quick tunnel: `npm run launch:tunnel`
 3. Open:

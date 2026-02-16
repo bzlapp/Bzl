@@ -32,7 +32,7 @@ Media uploads:
    - Optional first-time wizard: `npm run init` (Windows PowerShell: `npm.cmd run init`) (or run `INSTALL.cmd` / `INSTALL.ps1` / `INSTALL.sh`)
    - `npm install` (or `npm.cmd install` in Windows PowerShell if `npm` is blocked by execution policy)
    - `npm start` (or `npm.cmd start` in Windows PowerShell)
-   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1`
+   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1` — includes Cloudflare setup + core auto-update
      - Launcher UI URL: `http://127.0.0.1:8787` (it should auto-open; if not, paste this into your browser)
    - Or use the launcher: `LAUNCH.cmd` (Windows) / `LAUNCH.ps1` / `LAUNCH.sh`
    - Or launch with a quick Cloudflare tunnel: `LAUNCH_TUNNEL.cmd` / `LAUNCH_TUNNEL.ps1` / `LAUNCH_TUNNEL.sh`

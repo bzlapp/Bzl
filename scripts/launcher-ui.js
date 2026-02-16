@@ -2,8 +2,10 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const AdmZip = require("adm-zip");
 
 const ROOT = path.join(__dirname, "..");
 const ENV_PATH = path.join(ROOT, ".env");
@@ -86,6 +88,405 @@ function getConfiguredPort(env) {
 
 function getConfiguredHost(env) {
   return String(env?.HOST || "0.0.0.0").trim() || "0.0.0.0";
+}
+
+function readPackageVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    return String(pkg?.version || "").trim() || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+function compareVersions(a, b) {
+  const pa = String(a || "")
+    .trim()
+    .replace(/^v/i, "")
+    .split(".")
+    .map((n) => Number(n || 0));
+  const pb = String(b || "")
+    .trim()
+    .replace(/^v/i, "")
+    .split(".")
+    .map((n) => Number(n || 0));
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const y = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+function fetchJson(url, { headers = {}, timeoutMs = 15_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === "http:" ? http : https;
+    const req = lib.request(
+      {
+        method: "GET",
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "http:" ? 80 : 443),
+        path: u.pathname + u.search,
+        headers: {
+          "User-Agent": "Bzl-Launcher-UI",
+          Accept: "application/vnd.github+json",
+          ...headers
+        }
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (d) => (body += String(d || "")));
+        res.on("end", () => {
+          const code = Number(res.statusCode || 0);
+          if (code < 200 || code >= 300) {
+            return reject(new Error(`HTTP_${code}`));
+          }
+          try {
+            resolve(JSON.parse(body || "{}"));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      try {
+        req.destroy(new Error("TIMEOUT"));
+      } catch {
+        // ignore
+      }
+    });
+    req.end();
+  });
+}
+
+function downloadToFile(url, filePath, { timeoutMs = 60_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const out = fs.createWriteStream(filePath);
+    const u = new URL(url);
+    const lib = u.protocol === "http:" ? http : https;
+
+    const req = lib.request(
+      {
+        method: "GET",
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "http:" ? 80 : 443),
+        path: u.pathname + u.search,
+        headers: {
+          "User-Agent": "Bzl-Launcher-UI",
+          Accept: "application/octet-stream"
+        }
+      },
+      (res) => {
+        const code = Number(res.statusCode || 0);
+        const loc = String(res.headers.location || "");
+        if ([301, 302, 303, 307, 308].includes(code) && loc) {
+          out.close(() => {
+            try {
+              fs.unlinkSync(filePath);
+            } catch {
+              // ignore
+            }
+            downloadToFile(loc, filePath, { timeoutMs }).then(resolve, reject);
+          });
+          return;
+        }
+        if (code < 200 || code >= 300) {
+          out.close(() => reject(new Error(`HTTP_${code}`)));
+          return;
+        }
+        res.pipe(out);
+        out.on("finish", () => out.close(() => resolve(true)));
+      }
+    );
+
+    req.on("error", (e) => {
+      try {
+        out.close(() => reject(e));
+      } catch {
+        reject(e);
+      }
+    });
+    req.setTimeout(timeoutMs, () => {
+      try {
+        req.destroy(new Error("TIMEOUT"));
+      } catch {
+        // ignore
+      }
+    });
+    req.end();
+  });
+}
+
+function copyRecursive(src, dst, { skipNames = new Set() } = {}) {
+  if (!fs.existsSync(src)) return;
+  const st = fs.statSync(src);
+  if (st.isDirectory()) {
+    const base = path.basename(src);
+    if (skipNames.has(base)) return;
+    fs.mkdirSync(dst, { recursive: true });
+    for (const name of fs.readdirSync(src)) {
+      copyRecursive(path.join(src, name), path.join(dst, name), { skipNames });
+    }
+    return;
+  }
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.copyFileSync(src, dst);
+}
+
+function findExtractedRoot(dir) {
+  const mustHave = ["package.json", "server.js"];
+  const has = (p) => mustHave.every((f) => fs.existsSync(path.join(p, f)));
+  if (has(dir)) return dir;
+  let items = [];
+  try {
+    items = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    items = [];
+  }
+  if (items.length === 1) {
+    const only = path.join(dir, items[0]);
+    if (has(only)) return only;
+  }
+  for (const name of items) {
+    const p = path.join(dir, name);
+    if (has(p)) return p;
+  }
+  return "";
+}
+
+async function getLatestReleaseInfo() {
+  const repo = String(process.env.BZL_UPDATE_REPO || "bzlapp/Bzl").trim();
+  const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+  const rel = await fetchJson(apiUrl);
+  const tag = String(rel?.tag_name || "").trim();
+  const latestVersion = tag.replace(/^v/i, "");
+  const assets = Array.isArray(rel?.assets) ? rel.assets : [];
+  const asset =
+    assets.find((a) => /^Bzl-CLEAN_INSTALL-v.+\.zip$/i.test(String(a?.name || ""))) ||
+    assets.find((a) => /\.zip$/i.test(String(a?.name || ""))) ||
+    null;
+  return {
+    repo,
+    latestVersion,
+    tag,
+    htmlUrl: String(rel?.html_url || ""),
+    publishedAt: String(rel?.published_at || ""),
+    asset: asset
+      ? {
+          name: String(asset.name || ""),
+          url: String(asset.browser_download_url || ""),
+          size: Number(asset.size || 0)
+        }
+      : null
+  };
+}
+
+function pickCleanInstallAsset(assets) {
+  const list = Array.isArray(assets) ? assets : [];
+  const best =
+    list.find((a) => /^Bzl-CLEAN_INSTALL-v.+\.zip$/i.test(String(a?.name || ""))) ||
+    list.find((a) => /\.zip$/i.test(String(a?.name || ""))) ||
+    null;
+  if (!best) return null;
+  return {
+    name: String(best.name || ""),
+    url: String(best.browser_download_url || ""),
+    size: Number(best.size || 0)
+  };
+}
+
+async function getReleasesList({ perPage = 20 } = {}) {
+  const repo = String(process.env.BZL_UPDATE_REPO || "bzlapp/Bzl").trim();
+  const apiUrl = `https://api.github.com/repos/${repo}/releases?per_page=${Math.max(1, Math.min(50, Number(perPage) || 20))}`;
+  const releases = await fetchJson(apiUrl);
+  const list = Array.isArray(releases) ? releases : [];
+  return {
+    repo,
+    releases: list.map((r) => {
+      const tag = String(r?.tag_name || "").trim();
+      const version = tag.replace(/^v/i, "");
+      return {
+        tag,
+        version,
+        name: String(r?.name || "") || tag,
+        htmlUrl: String(r?.html_url || ""),
+        publishedAt: String(r?.published_at || ""),
+        prerelease: Boolean(r?.prerelease),
+        draft: Boolean(r?.draft),
+        asset: pickCleanInstallAsset(r?.assets)
+      };
+    })
+  };
+}
+
+async function getReleaseByTag(tag) {
+  const repo = String(process.env.BZL_UPDATE_REPO || "bzlapp/Bzl").trim();
+  const t = String(tag || "").trim();
+  if (!t) throw new Error("Missing tag.");
+  const apiUrl = `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(t)}`;
+  const rel = await fetchJson(apiUrl);
+  const relTag = String(rel?.tag_name || "").trim();
+  const version = relTag.replace(/^v/i, "");
+  return {
+    repo,
+    tag: relTag,
+    version,
+    name: String(rel?.name || "") || relTag,
+    htmlUrl: String(rel?.html_url || ""),
+    publishedAt: String(rel?.published_at || ""),
+    asset: pickCleanInstallAsset(rel?.assets)
+  };
+}
+
+function writeHelperScript({ helperPath, installDir, stageRootDir }) {
+  const js = `
+const fs = require("fs");
+const path = require("path");
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function exists(p){ try { return fs.existsSync(p); } catch { return false; } }
+
+function copyRecursive(src, dst) {
+  const st = fs.statSync(src);
+  if (st.isDirectory()) {
+    fs.mkdirSync(dst, { recursive: true });
+    for (const name of fs.readdirSync(src)) copyRecursive(path.join(src, name), path.join(dst, name));
+    return;
+  }
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.copyFileSync(src, dst);
+}
+
+function removeRecursive(p) {
+  try { fs.rmSync(p, { recursive: true, force: true }); } catch {}
+}
+
+async function main() {
+  const installDir = ${JSON.stringify(installDir)};
+  const stageRootDir = ${JSON.stringify(stageRootDir)};
+  const extracted = path.join(stageRootDir, "extracted-root");
+  if (!exists(extracted)) {
+    console.error("[bzl-update] Missing extracted root:", extracted);
+    process.exit(2);
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupDir = installDir + "_backup_" + ts;
+
+  // Give the launcher a chance to exit and release handles, then retry rename.
+  let renamed = false;
+  for (let i=0;i<80;i++){
+    try {
+      if (!exists(installDir)) break;
+      fs.renameSync(installDir, backupDir);
+      renamed = true;
+      break;
+    } catch (e) {
+      await sleep(250);
+    }
+  }
+  if (!renamed && exists(installDir)) {
+    console.error("[bzl-update] Failed to rename install dir after retries.");
+    process.exit(3);
+  }
+
+  try {
+    fs.renameSync(extracted, installDir);
+  } catch (e) {
+    console.error("[bzl-update] Rename into place failed, falling back to copy:", e && e.message ? e.message : String(e));
+    try {
+      fs.mkdirSync(installDir, { recursive: true });
+      copyRecursive(extracted, installDir);
+    } catch (e2) {
+      console.error("[bzl-update] Copy fallback failed:", e2 && e2.message ? e2.message : String(e2));
+      process.exit(4);
+    }
+  }
+
+  // Cleanup staging (best-effort).
+  removeRecursive(stageRootDir);
+  console.log("[bzl-update] Updated successfully. Backup at:", backupDir);
+}
+
+main().catch((e)=>{ console.error("[bzl-update] Fatal:", e && e.stack ? e.stack : String(e)); process.exit(1); });
+`;
+  fs.writeFileSync(helperPath, js.trimStart(), "utf8");
+}
+
+async function stageAndApplyUpdate({ tag } = {}) {
+  const currentVersion = readPackageVersion();
+  const info = tag ? await getReleaseByTag(tag) : await getLatestReleaseInfo();
+  if (!info.asset?.url) return { ok: false, error: "No update asset (.zip) found on the latest GitHub release." };
+
+  const parent = path.dirname(ROOT);
+  const stageRootDir = path.join(parent, `.bzl_update_stage_${Date.now()}`);
+  const zipPath = path.join(stageRootDir, "update.zip");
+  const extractDir = path.join(stageRootDir, "extract");
+  const extractedRootFinal = path.join(stageRootDir, "extracted-root");
+  fs.mkdirSync(stageRootDir, { recursive: true });
+
+  pushLog("ui", `update: downloading ${info.asset.name} (${info.asset.size || 0} bytes)`);
+  await downloadToFile(info.asset.url, zipPath);
+  pushLog("ui", `update: downloaded to ${zipPath}`);
+
+  pushLog("ui", "update: extracting...");
+  fs.mkdirSync(extractDir, { recursive: true });
+  const zip = new AdmZip(zipPath);
+  zip.extractAllTo(extractDir, true);
+  const extractedRoot = findExtractedRoot(extractDir);
+  if (!extractedRoot) return { ok: false, error: "Extracted zip did not look like a Bzl clean-install folder." };
+
+  // Move extracted to a stable dir within the staging root so the helper has a predictable path.
+  try {
+    if (path.resolve(extractedRoot) !== path.resolve(extractedRootFinal)) {
+      fs.renameSync(extractedRoot, extractedRootFinal);
+    }
+  } catch {
+    copyRecursive(extractedRoot, extractedRootFinal, { skipNames: new Set() });
+  }
+
+  // Preserve local state into the staged build.
+  try {
+    if (fs.existsSync(ENV_PATH)) fs.copyFileSync(ENV_PATH, path.join(extractedRootFinal, ".env"));
+  } catch {
+    // ignore
+  }
+  try {
+    const srcData = path.join(ROOT, "data");
+    const dstData = path.join(extractedRootFinal, "data");
+    copyRecursive(srcData, dstData, { skipNames: new Set() });
+  } catch {
+    // ignore
+  }
+
+  // Write and spawn a helper that swaps the folder after we exit.
+  const helperPath = path.join(stageRootDir, "apply-update.js");
+  writeHelperScript({ helperPath, installDir: ROOT, stageRootDir });
+
+  pushLog("ui", "update: stopping services...");
+  try {
+    stopTunnel();
+  } catch {}
+  try {
+    stopBzl();
+  } catch {}
+
+  pushLog("ui", "update: applying (launcher will exit)...");
+  const child = spawn(process.execPath, [helperPath], { detached: true, stdio: "ignore" });
+  child.unref();
+
+  return {
+    ok: true,
+    currentVersion,
+    latestVersion: info.version || info.latestVersion,
+    tag: info.tag || "",
+    applying: true
+  };
 }
 
 function escapeHtml(s) {
@@ -739,8 +1140,48 @@ const srv = http.createServer(async (req, res) => {
       tunnelRunning: isRunning(tunnelChild),
       localUrl,
       healthy,
-      namedPublicUrl: namedHostname ? `https://${namedHostname}` : ""
+      namedPublicUrl: namedHostname ? `https://${namedHostname}` : "",
+      version: readPackageVersion()
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/update/status") {
+    try {
+      const currentVersion = readPackageVersion();
+      const latest = await getLatestReleaseInfo();
+      const available = latest.latestVersion && compareVersions(latest.latestVersion, currentVersion) > 0;
+      json(res, 200, { ok: true, currentVersion, available, ...latest });
+    } catch (e) {
+      json(res, 200, { ok: false, error: e?.message || String(e) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/update/releases") {
+    try {
+      const currentVersion = readPackageVersion();
+      const list = await getReleasesList({ perPage: 20 });
+      json(res, 200, { ok: true, currentVersion, ...list });
+    } catch (e) {
+      json(res, 200, { ok: false, error: e?.message || String(e) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/update/apply") {
+    withTokenHeaders(res);
+    try {
+      const body = await readJsonBody(req);
+      const tag = String(body?.tag || "").trim();
+      const r = await stageAndApplyUpdate({ tag: tag || "" });
+      json(res, 200, r);
+      if (r.ok && r.applying) {
+        setTimeout(() => process.exit(0), 750);
+      }
+    } catch (e) {
+      json(res, 500, { ok: false, error: e?.message || String(e) });
+    }
     return;
   }
 

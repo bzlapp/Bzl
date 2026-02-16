@@ -144,6 +144,27 @@
       <div class="card">
         <div class="row" style="justify-content: space-between">
           <div>
+            <div><b>Updates</b> <span id="updPill" class="pill">Checking...</span></div>
+            <div class="hint" id="updText">Checks GitHub releases for updates and preserves your <span class="mono">data/</span> and <span class="mono">.env</span>.</div>
+            <div class="row" style="margin-top: 10px">
+              <label style="display: flex; gap: 8px; align-items: center">
+                <input id="chkUpdEnable" type="checkbox" />
+                Enable updates (opt-in)
+              </label>
+              <select id="updSelect" style="flex: 1; min-width: 240px"></select>
+              <button class="btn" id="btnUpdNotes">Release notes</button>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="btnUpdCheck">Check</button>
+            <button class="btn primary" id="btnUpdApply">Apply update</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div>
             <div><b>Cloudflare tunnel (optional)</b></div>
             <div class="hint">Quick tunnel prints a public URL in the log. Named tunnel requires <span class="mono">CLOUDFLARED_TUNNEL</span>.</div>
           </div>
@@ -234,9 +255,17 @@
       const inpCfCfg = document.getElementById("inpCfCfg");
       const cfCredsHint = document.getElementById("cfCredsHint");
       const publicUrlEl = document.getElementById("publicUrl");
+      const updPill = document.getElementById("updPill");
+      const updText = document.getElementById("updText");
       const cfLoginUrlEl = document.getElementById("cfLoginUrl");
       let cfTunnels = [];
       let cfCredsById = new Map();
+      const updEnabledKey = "bzlLauncherUpdatesEnabled";
+      const updSelect = document.getElementById("updSelect");
+      const updNotes = document.getElementById("btnUpdNotes");
+      const updEnable = document.getElementById("chkUpdEnable");
+      let updReleases = [];
+      let updSelected = null;
 
       function append(line) {
         logEl.textContent += line + "\n";
@@ -291,8 +320,55 @@
       async function refresh() {
         const st = await api("/api/status");
         statusPill.textContent = st.healthy ? "Running" : st.serverRunning ? "Starting..." : "Stopped";
-        statusText.textContent = st.localUrl + (st.healthy ? " (healthy)" : "");
+        const v = st.version ? ` v${st.version}` : "";
+        statusText.textContent = st.localUrl + v + (st.healthy ? " (healthy)" : "");
         if (st.namedPublicUrl) setPublicUrl(st.namedPublicUrl);
+      }
+
+      async function refreshUpdate() {
+        if (!updPill || !updText) return;
+        const enabled = !!(updEnable && updEnable.checked);
+        if (!enabled) {
+          updPill.textContent = "Updates disabled";
+          updText.textContent = "Enable updates to check GitHub releases and choose a version.";
+          if (updSelect) updSelect.innerHTML = "";
+          updSelected = null;
+          if (updNotes) updNotes.disabled = true;
+          return;
+        }
+        try {
+          const st = await api("/api/update/releases");
+          if (!st.ok) {
+            updPill.textContent = "Update check failed";
+            updText.textContent = st.error || "Failed to check updates.";
+            return;
+          }
+          updReleases = Array.isArray(st.releases) ? st.releases : [];
+          const current = st.currentVersion ? `v${st.currentVersion}` : "(unknown)";
+          const latest = updReleases[0]?.version ? `v${updReleases[0].version}` : "(unknown)";
+
+          updPill.textContent = "Ready";
+          updText.textContent = `Current ${current}. Select a version to view notes or apply. Latest: ${latest}.`;
+
+          if (updSelect) {
+            const opts = updReleases
+              .filter((r) => r && r.tag && r.asset && r.asset.url)
+              .map((r) => ({
+                tag: r.tag,
+                label: `${r.version ? "v" + r.version : r.tag}${r.publishedAt ? " · " + r.publishedAt.slice(0, 10) : ""}${
+                  r.prerelease ? " · prerelease" : ""
+                }`
+              }));
+            updSelect.innerHTML = opts.map((o) => `<option value="${o.tag}">${o.label}</option>`).join("");
+            const want = updSelected?.tag || opts[0]?.tag || "";
+            if (want) updSelect.value = want;
+            updSelected = updReleases.find((r) => r.tag === updSelect.value) || null;
+          }
+          if (updNotes) updNotes.disabled = !(updSelected && updSelected.htmlUrl);
+        } catch (e) {
+          updPill.textContent = "Update check failed";
+          updText.textContent = e?.message || String(e);
+        }
       }
 
       async function refreshCloudflared() {
@@ -372,6 +448,40 @@
       document.getElementById("btnTunnelQuick").onclick = async () => api("/api/tunnel/start", { mode: "quick" });
       document.getElementById("btnTunnelNamed").onclick = async () => api("/api/tunnel/start", { mode: "named" });
       document.getElementById("btnTunnelStop").onclick = async () => api("/api/tunnel/stop", {});
+      if (updEnable) {
+        updEnable.checked = localStorage.getItem(updEnabledKey) === "1";
+        updEnable.onchange = () => {
+          localStorage.setItem(updEnabledKey, updEnable.checked ? "1" : "0");
+          refreshUpdate();
+        };
+      }
+      document.getElementById("btnUpdCheck").onclick = async () => refreshUpdate();
+      if (updSelect) {
+        updSelect.onchange = () => {
+          updSelected = updReleases.find((r) => r.tag === updSelect.value) || null;
+          if (updNotes) updNotes.disabled = !(updSelected && updSelected.htmlUrl);
+        };
+      }
+      if (updNotes) {
+        updNotes.onclick = () => {
+          const url = updSelected?.htmlUrl || "";
+          if (url) window.open(url, "_blank", "noopener,noreferrer");
+        };
+      }
+      document.getElementById("btnUpdApply").onclick = async () => {
+        if (!updEnable || !updEnable.checked) {
+          append("update: enable updates first");
+          return;
+        }
+        const tag = updSelected?.tag || (updSelect ? updSelect.value : "");
+        if (!tag) {
+          append("update: pick a version first");
+          return;
+        }
+        append(`update: applying ${tag} (launcher will close)...`);
+        const r = await api("/api/update/apply", { tag });
+        append(r.ok ? "update: applying now (re-open launcher after it exits)" : `update: failed (${r.error || "?"})`);
+      };
       document.getElementById("btnCopyPublic").onclick = async () => {
         const u = publicUrlEl?.dataset?.url || "";
         const ok = await copyText(u);
@@ -480,10 +590,12 @@
         const snap = await api("/api/log");
         logEl.textContent = (snap.lines || []).join("\n") + "\n";
         refresh();
+        refreshUpdate();
         refreshCloudflared();
         refreshCloudflaredFiles();
         refreshCloudflaredTunnels();
         setInterval(refresh, 1000);
+        setInterval(refreshUpdate, 60000);
         setInterval(refreshCloudflared, 3000);
         setInterval(refreshCloudflaredFiles, 5000);
         setInterval(refreshCloudflaredTunnels, 30000);
