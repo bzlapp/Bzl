@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+data/users.json
+data/posts.json
+data/collections.json
+data/roles.json
+data/mod-log.json
+data/reports.json
+data/sessions.json
+data/uploads/
+.env

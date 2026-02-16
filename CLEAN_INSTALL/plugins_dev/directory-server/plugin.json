@@ -1,0 +1,10 @@
+{
+  "id": "directory-server",
+  "name": "Directory Server",
+  "version": "0.1.0",
+  "description": "Receives announcements and serves an instance directory feed (install on the directory instance only).",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["http", "ws", "disk"]
+}
+

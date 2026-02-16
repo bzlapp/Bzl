@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bzl - Hives</title>
+    <link rel="stylesheet" href="/styles.css?v=83" />
+  </head>
+  <body>
+    <div class="app">
+      <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
+      <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
+      <aside class="sidebar">
+        <div class="sidebarScroll">
+          <div class="brand">
+            <div id="instanceTitle" class="logo">Bzl</div>
+            <div id="instanceSubtitle" class="subtitle">Ephemeral hives + chat</div>
+          </div>
+
+        <div class="statusBlock">
+          <div id="connBadge" class="badge badge-warn">Connecting...</div>
+          <div class="row">
+            <button id="enableNotifs" class="ghost smallBtn grow" type="button">Enable notifications</button>
+          </div>
+          <div id="notifStatus" class="small muted"></div>
+        </div>
+
+        <section class="panel">
+          <div class="panelTitle">Account</div>
+          <div class="small muted" id="authHint">Sign in to post, chat, and boost.</div>
+
+          <div class="small muted">Signed in as</div>
+          <div id="userLabel" class="userLine">Signed out</div>
+
+          <form id="authForm" class="form">
+            <label>
+              <span>Username</span>
+              <input id="authUser" autocomplete="username" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="authPass" type="password" autocomplete="current-password" />
+            </label>
+            <label id="codeRow" class="hidden">
+              <span>Registration code</span>
+              <input id="authCode" autocomplete="one-time-code" />
+            </label>
+            <div class="row">
+              <button class="primary grow" type="submit">Sign in</button>
+              <button id="registerBtn" class="ghost" type="button">Create account</button>
+            </div>
+            <button id="logoutBtn" class="ghost hidden" type="button">Sign out</button>
+            <div class="small muted">
+              Note: this is a prototype; don't reuse important passwords.
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panelTitle">Profile</div>
+          <div class="small muted">Set how your name appears.</div>
+          <label>
+            <span>Profile picture</span>
+            <input id="profileImage" type="file" accept="image/*" />
+          </label>
+          <div class="row">
+            <div class="pfpBox">
+              <img id="profilePreview" alt="Profile preview" />
+            </div>
+            <div class="grow">
+              <label>
+                <span>Color</span>
+                <input id="nameColor" type="color" value="#ff3ea5" />
+              </label>
+              <button id="removeProfileImage" class="ghost" type="button">Remove picture</button>
+            </div>
+          </div>
+          <button id="saveProfile" class="primary" type="button">Save profile</button>
+          <div id="profileStatus" class="small muted"></div>
+        </section>
+
+        <section id="instancePanel" class="panel hidden" aria-label="Instance settings">
+          <div class="panelTitle">Instance</div>
+          <div class="small muted">Owner-only. Rename the title/subtitle (Powered by Bzl stays).</div>
+          <label>
+            <span>Title</span>
+            <input id="instanceTitleInput" maxlength="32" placeholder="Your instance name" />
+          </label>
+          <label>
+            <span>Subtitle</span>
+            <input id="instanceSubtitleInput" maxlength="80" placeholder="A short tagline" />
+          </label>
+          <label class="checkRow">
+            <span>Allow members to make permanent hives</span>
+            <input id="instanceAllowPermanentPosts" type="checkbox" />
+          </label>
+          <button id="saveInstanceBranding" class="primary" type="button">Save instance</button>
+          <div id="instanceStatus" class="small muted"></div>
+
+          <div class="panelDivider"></div>
+          <div class="panelTitleSub">Plugins</div>
+          <div class="small muted">Owner-only. Install optional plugins to extend your instance.</div>
+          <div class="pluginInstallRow">
+            <input id="pluginZipInput" type="file" accept=".zip,application/zip" />
+            <button id="pluginInstallBtn" class="ghost" type="button">Install</button>
+          </div>
+          <div id="pluginsList" class="pluginsList"></div>
+          <div id="pluginStatus" class="small muted"></div>
+        </section>
+
+        </div>
+
+        <div class="sidebarFooter">
+          <div class="poweredByTile" aria-label="Powered by Bzl">
+            <img class="poweredByLogo" src="/assets/logobzl.png" alt="Bzl logo" />
+            <div class="poweredByText">
+              <div class="poweredByTitle">Powered by Bzl</div>
+              <div class="poweredByByline">by Azakaela Erin Redfire</div>
+            </div>
+          </div>
+          <button id="toggleSidebar" class="ghost smallBtn" type="button" title="Hide sidebar">Hide</button>
+        </div>
+      </aside>
+
+      <div id="sidebarResizeHandle" class="panelResizeHandle sidebarResizeHandle" title="Drag to resize sidebar" aria-hidden="true"></div>
+
+      <main class="main">
+        <section class="panel panelFill">
+          <div class="panelHeader">
+            <div class="panelTitle">Hives</div>
+            <div class="filters">
+              <input id="filterAuthor" placeholder="Filter by author (@name)" />
+              <input id="filterKeywords" placeholder="Filter by keywords (comma separated)" />
+              <select id="sortBy">
+                <option value="activity">Most recent activity</option>
+                <option value="popular">Most popular</option>
+                <option value="expiring">About to expire</option>
+              </select>
+              <button id="clearFilter" type="button">Clear</button>
+              <button id="toggleComposer" class="mobileComposerToggle" type="button">New Hive</button>
+            </div>
+          </div>
+          <div class="hiveTabs" id="hiveTabs">
+            <button type="button" data-hiveview="all" class="primary">All</button>
+            <button type="button" data-hiveview="starred" class="ghost">Starred</button>
+            <button type="button" data-hiveview="hidden" class="ghost">Hidden</button>
+          </div>
+          <div id="feed" class="feed"></div>
+        </section>
+
+        <section id="profileViewPanel" class="panel panelFill hidden">
+          <div class="panelHeader">
+            <div>
+              <div class="panelTitle" id="profileViewTitle">Profile</div>
+              <div id="profileViewMeta" class="small muted"></div>
+            </div>
+            <div class="row">
+              <button id="profileBackBtn" class="ghost smallBtn" type="button">Back to hives</button>
+              <button id="profileEditToggleBtn" class="ghost smallBtn hidden" type="button">Edit profile</button>
+            </div>
+          </div>
+          <div id="profileViewBody" class="profileViewBody">
+            <div id="profileCard" class="profileCard"></div>
+          </div>
+          <div id="profileEditPanel" class="profileEditPanel hidden">
+            <label>
+              <span>Pronouns</span>
+              <input id="profilePronouns" maxlength="40" placeholder="she/her, they/them, etc" />
+            </label>
+            <label>
+              <span>Theme song</span>
+              <div class="row">
+                <input id="profileThemeSongUrl" placeholder="Upload audio for your theme song" readonly />
+                <button id="profileThemeSongUploadBtn" class="ghost" type="button">Upload audio</button>
+                <button id="profileThemeSongClearBtn" class="ghost" type="button">Remove</button>
+              </div>
+              <audio id="profileThemeSongPreview" controls preload="none" class="hidden"></audio>
+              <input id="profileThemeSongFile" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
+            </label>
+            <div class="editorShell">
+              <div class="toolbar" id="profileBioToolbar" role="toolbar" aria-label="Profile bio formatting">
+                <button type="button" data-profilecmd="bold"><b>B</b></button>
+                <button type="button" data-profilecmd="italic"><i>I</i></button>
+                <button type="button" data-profilecmd="underline"><u>U</u></button>
+                <button type="button" data-profilecmd="strikeThrough"><s>S</s></button>
+                <span class="sep"></span>
+                <button type="button" data-profilecmd="insertUnorderedList">List</button>
+                <button type="button" data-profilecmd="insertOrderedList">1. List</button>
+                <button type="button" data-profilelink="1">Link</button>
+                <button type="button" data-profileimg="1">GIF/Image</button>
+                <button type="button" data-profileaudio="1">Audio</button>
+                <button type="button" data-profileemoji="1">Emoji</button>
+                <button type="button" data-profilecmd="removeFormat">Clear</button>
+              </div>
+              <div id="profileBioEditor" class="editor profileBioEditor" contenteditable="true" aria-label="Profile bio editor"></div>
+              <input id="profileBioImageFile" class="hidden" type="file" accept="image/*,.gif" />
+              <input id="profileBioAudioFile" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
+            </div>
+            <div class="profileLinksHead">
+              <span>Social links</span>
+              <button id="profileAddLinkBtn" class="ghost smallBtn" type="button">Add link</button>
+            </div>
+            <div id="profileLinksEditor" class="profileLinksEditor"></div>
+            <div class="row">
+              <button id="profileSaveBtn" class="primary" type="button">Save profile</button>
+              <button id="profileCancelBtn" class="ghost" type="button">Cancel</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="pollinatePanel" class="panel composerCollapsed">
+          <div class="panelHeader">
+            <div class="panelTitle">Create Hive</div>
+            <button id="toggleComposerInline" class="ghost smallBtn" type="button">Hide</button>
+          </div>
+          <form id="newPostForm" class="form">
+            <label>
+              <span>Title (max 96 chars)</span>
+              <input id="postTitle" maxlength="96" placeholder="Short title for this hive" />
+            </label>
+            <div class="editorShell">
+              <div class="toolbar" role="toolbar" aria-label="Formatting">
+                <button type="button" data-cmd="bold"><b>B</b></button>
+                <button type="button" data-cmd="italic"><i>I</i></button>
+                <button type="button" data-cmd="underline"><u>U</u></button>
+                <button type="button" data-cmd="strikeThrough"><s>S</s></button>
+                <span class="sep"></span>
+                <button type="button" data-cmd="insertUnorderedList">List</button>
+                <button type="button" data-cmd="insertOrderedList">1. List</button>
+                <button type="button" data-link="1">Link</button>
+                <button type="button" data-postimg="1">GIF/Image</button>
+                <button type="button" data-postaudio="1">Audio</button>
+                <button type="button" data-postemoji="1">Emoji</button>
+                <button type="button" data-cmd="removeFormat">Clear</button>
+              </div>
+              <div id="editor" class="editor" contenteditable="true" aria-label="Post editor"></div>
+              <input id="postImage" class="hidden" type="file" accept="image/*,.gif" />
+              <input id="postAudio" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
+            </div>
+
+            <div class="row">
+              <label class="grow">
+                <span>Collection</span>
+                <select id="postCollection"></select>
+              </label>
+              <label class="grow">
+                <span>Keywords (comma separated, up to 6)</span>
+                <input id="keywords" placeholder="hive, code, idea" />
+              </label>
+              <label>
+                <span>TTL (minutes)</span>
+                <input id="ttlMinutes" type="number" min="1" max="2880" value="60" />
+              </label>
+            </div>
+
+            <button class="primary" type="submit">Send</button>
+            <div class="row">
+              <label class="grow">
+                <span>Protected</span>
+                <input id="isProtected" type="checkbox" />
+              </label>
+              <label class="grow">
+                <span>Walkie Talkie</span>
+                <input id="isWalkie" type="checkbox" />
+              </label>
+              <label class="grow">
+                <span>Post password</span>
+                <input id="postPassword" type="password" autocomplete="new-password" placeholder="Required if protected" disabled />
+              </label>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <div id="chatResizeHandle" class="panelResizeHandle chatResizeHandle" title="Drag to resize chat" aria-hidden="true"></div>
+
+      <aside class="chat">
+        <div class="panelHeader">
+          <div>
+            <div class="panelTitle" id="chatTitle">Chat</div>
+            <div id="chatMeta" class="small muted">Select a post to chat.</div>
+          </div>
+        </div>
+        <div id="chatMessages" class="chatMessages"></div>
+        <div id="typingIndicator" class="typingIndicator small muted"></div>
+        <div id="walkieBar" class="walkieBar hidden" aria-label="Walkie talkie controls">
+          <button id="walkieRecordBtn" class="primary" type="button">Hold to talk</button>
+          <div class="walkieHint small muted">
+            Hold <span class="tag">~</span> or press-and-hold this button to record. Release to send.
+          </div>
+          <div id="walkieStatus" class="small muted"></div>
+        </div>
+        <form id="chatForm" class="chatForm">
+          <div id="chatReplyBanner" class="chatReplyBanner hidden">
+            <div class="small">
+              Replying to <span id="chatReplyWho"></span>
+              <span id="chatReplyText" class="muted"></span>
+            </div>
+            <button id="chatReplyCancel" class="ghost smallBtn" type="button">Cancel</button>
+          </div>
+          <div class="chatComposer">
+            <div class="toolbar" role="toolbar" aria-label="Chat formatting">
+              <button type="button" data-chatcmd="bold"><b>B</b></button>
+              <button type="button" data-chatcmd="italic"><i>I</i></button>
+              <button type="button" data-chatcmd="underline"><u>U</u></button>
+              <button type="button" data-chatcmd="strikeThrough"><s>S</s></button>
+              <span class="sep"></span>
+              <button type="button" data-chatcmd="insertUnorderedList">List</button>
+              <button type="button" data-chatcmd="insertOrderedList">1. List</button>
+              <button type="button" data-chatlink="1">Link</button>
+              <button type="button" data-chatimg="1">GIF/Image</button>
+              <button type="button" data-chataudio="1">Audio</button>
+              <button type="button" data-chatemoji="1">Emoji</button>
+              <button type="button" data-chatcmd="removeFormat">Clear</button>
+            </div>
+            <div id="chatEditor" class="editor chatEditor" contenteditable="true" aria-label="Chat editor"></div>
+            <div id="mentionMenu" class="mentionMenu hidden" role="listbox" aria-label="Mention suggestions"></div>
+            <input id="chatImage" class="hidden" type="file" accept="image/*" />
+            <input id="chatAudio" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
+          </div>
+          <button class="primary" type="submit">Send</button>
+        </form>
+      </aside>
+
+      <div id="mainResizeHandle" class="panelResizeHandle mainResizeHandle" title="Drag to resize moderation panel" aria-hidden="true"></div>
+
+      <aside id="modPanel" class="moderation hidden">
+        <div class="panelHeader">
+          <div class="panelTitle">Moderation</div>
+        </div>
+        <div class="modTabs">
+          <button type="button" class="ghost" data-modtab="reports">Reports</button>
+          <button type="button" class="ghost" data-modtab="users">Users</button>
+          <button type="button" class="ghost" data-modtab="hives">Hives</button>
+          <button type="button" class="ghost" data-modtab="log">Log</button>
+        </div>
+        <div class="modFilters">
+          <select id="modReportStatus">
+            <option value="open">Open reports</option>
+            <option value="resolved">Resolved reports</option>
+            <option value="dismissed">Dismissed reports</option>
+            <option value="">All reports</option>
+          </select>
+          <button id="modRefresh" class="ghost" type="button">Refresh</button>
+        </div>
+        <div id="modBody" class="modBody small"></div>
+      </aside>
+    </div>
+    <aside id="peopleDrawer" class="peopleDrawer hidden">
+      <div id="peopleResizeHandle" class="peopleResizeHandle" title="Drag to resize people panel" aria-hidden="true"></div>
+      <div class="panelHeader">
+        <div class="panelTitle">People</div>
+        <button id="closePeople" class="ghost smallBtn" type="button">Close</button>
+      </div>
+      <div class="peopleTabs">
+        <button id="peopleMembersTab" class="primary" type="button">Members</button>
+        <button id="peopleDmsTab" class="ghost" type="button">DMs</button>
+      </div>
+      <div id="peopleMembersView">
+        <div class="peopleFilters">
+          <input id="peopleSearch" placeholder="Search members" />
+        </div>
+        <div id="peopleList" class="peopleList small"></div>
+      </div>
+      <div id="peopleDmsView" class="peopleDms small hidden">
+        DMs coming soon.
+      </div>
+    </aside>
+    <div id="mobilePager" class="mobilePager hidden" aria-label="Mobile panels">
+      <button type="button" data-mobilepanel="sidebar">Account</button>
+      <button type="button" data-mobilepanel="main">Hives</button>
+      <button type="button" data-mobilepanel="chat">Chat</button>
+      <button type="button" data-mobilepanel="people">People</button>
+      <button id="mobileModBtn" class="hidden" type="button" data-mobilepanel="moderation">Mod</button>
+    </div>
+
+    <div id="editModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Edit content">
+      <div class="modalBackdrop" data-modalclose="1"></div>
+      <div class="modalCard panel">
+        <div class="panelHeader">
+          <div class="panelTitle" id="editModalTitle">Edit</div>
+          <div class="row">
+            <button id="editModalClose" class="ghost smallBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div class="modalBody">
+          <label id="editModalPostTitleRow" class="hidden">
+            <span>Title</span>
+            <input id="editModalPostTitle" maxlength="96" />
+          </label>
+
+          <div id="editModalPostMeta" class="hidden editMetaGrid" aria-label="Post settings">
+            <label>
+              <span>Keywords</span>
+              <input id="editModalKeywords" maxlength="120" placeholder="comma separated (max 6)" />
+            </label>
+            <label>
+              <span>Collection</span>
+              <select id="editModalCollection"></select>
+            </label>
+            <label class="checkRow">
+              <span>Password protected</span>
+              <input id="editModalProtected" type="checkbox" />
+            </label>
+            <label id="editModalPasswordRow" class="hidden">
+              <span>Password</span>
+              <input
+                id="editModalPassword"
+                type="password"
+                minlength="4"
+                maxlength="80"
+                placeholder="Leave blank to keep current"
+                autocomplete="new-password"
+              />
+            </label>
+          </div>
+
+          <div class="editorShell">
+            <div class="toolbar" id="editModalToolbar" role="toolbar" aria-label="Edit formatting">
+              <button type="button" data-editcmd="bold"><b>B</b></button>
+              <button type="button" data-editcmd="italic"><i>I</i></button>
+              <button type="button" data-editcmd="underline"><u>U</u></button>
+              <button type="button" data-editcmd="strikeThrough"><s>S</s></button>
+              <span class="sep"></span>
+              <button type="button" data-editcmd="insertUnorderedList">List</button>
+              <button type="button" data-editcmd="insertOrderedList">1. List</button>
+              <button type="button" data-editlink="1">Link</button>
+              <button type="button" data-editimg="1">GIF/Image</button>
+              <button type="button" data-editaudio="1">Audio</button>
+              <button type="button" data-editemoji="1">Emoji</button>
+              <button type="button" data-editcmd="removeFormat">Clear</button>
+            </div>
+            <div id="editModalEditor" class="editor editModalEditor" contenteditable="true" aria-label="Edit content"></div>
+            <input id="editModalImage" class="hidden" type="file" accept="image/*,.gif" />
+            <input id="editModalAudio" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
+          </div>
+
+          <div class="row modalActions">
+            <button id="editModalSave" class="primary" type="button">Save</button>
+            <button id="editModalCancel" class="ghost" type="button">Cancel</button>
+          </div>
+          <div id="editModalStatus" class="small muted"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Moderation">
+      <div class="modalBackdrop" data-modmodalclose="1"></div>
+      <div class="modalCard panel">
+        <div class="panelHeader">
+          <div class="panelTitle" id="modModalTitle">Moderation</div>
+          <div class="row">
+            <button id="modModalClose" class="ghost smallBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div class="modalBody" id="modModalBody"></div>
+        <div class="row modalActions">
+          <button id="modModalPrimary" class="primary" type="button">Save</button>
+          <button id="modModalCancel" class="ghost" type="button">Cancel</button>
+        </div>
+        <div id="modModalStatus" class="small muted" style="padding:0 12px 12px"></div>
+      </div>
+    </div>
+
+    <script src="/app.js?v=83"></script>
+  </body>
+</html>

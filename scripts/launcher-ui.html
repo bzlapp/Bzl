@@ -1,0 +1,505 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bzl Launcher</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        margin: 0;
+        background: #0b0b10;
+        color: #eee;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+      .card {
+        background: #141420;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 14px;
+        margin: 12px 0;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .btn {
+        border-radius: 999px;
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.06);
+        color: #eee;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .btn.primary {
+        background: linear-gradient(180deg, rgba(255, 140, 0, 0.95), rgba(255, 80, 160, 0.95));
+        color: #140812;
+        border: 0;
+      }
+      .btn.danger {
+        background: rgba(255, 80, 120, 0.18);
+        border-color: rgba(255, 80, 120, 0.35);
+      }
+      label {
+        font-size: 12px;
+        opacity: 0.85;
+      }
+      input {
+        background: rgba(255, 255, 255, 0.08);
+        color: #eee;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 10px 12px;
+        min-width: 160px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+      pre {
+        background: #0f0f18;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 12px;
+        max-height: 340px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        font-size: 12px;
+      }
+      .hint {
+        opacity: 0.75;
+        font-size: 12px;
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h2 style="margin: 6px 0 0 0">Bzl Launcher</h2>
+      <div style="opacity: 0.8; margin-top: 6px">Local control panel for starting/stopping Bzl and an optional Cloudflare tunnel.</div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <div><b>Status</b> <span id="statusPill" class="pill">Checking…</span></div>
+            <div class="mono" style="opacity: 0.85; margin-top: 6px" id="statusText"></div>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="btnStart">Start Bzl</button>
+            <button class="btn danger" id="btnStop">Stop Bzl</button>
+            <button class="btn" id="btnOpen">Open site</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <div><b>Settings</b></div>
+            <div class="hint">Writes to <span class="mono">.env</span>. Bzl will read it on startup.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="btnSave">Save</button>
+            <button class="btn" id="btnReload">Reload</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 12px">
+          <div>
+            <label>PORT</label><br />
+            <input id="inpPort" value="__PORT__" />
+          </div>
+          <div>
+            <label>HOST</label><br />
+            <input id="inpHost" value="__HOST__" />
+          </div>
+          <div>
+            <label>REGISTRATION_CODE</label><br />
+            <input id="inpReg" value="__REGISTRATION_CODE__" placeholder="(optional)" />
+          </div>
+          <div>
+            <label>CLOUDFLARED_TUNNEL (named)</label><br />
+            <input id="inpTunnel" value="__CLOUDFLARED_TUNNEL__" placeholder="(optional)" />
+          </div>
+          <div>
+            <label>CLOUDFLARED_CONFIG (optional)</label><br />
+            <input id="inpCfg" value="__CLOUDFLARED_CONFIG__" placeholder="%USERPROFILE%\\.cloudflared\\config.yml" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <div><b>Cloudflare tunnel (optional)</b></div>
+            <div class="hint">Quick tunnel prints a public URL in the log. Named tunnel requires <span class="mono">CLOUDFLARED_TUNNEL</span>.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="btnTunnelQuick">Start quick tunnel</button>
+            <button class="btn" id="btnTunnelNamed">Start named tunnel</button>
+            <button class="btn danger" id="btnTunnelStop">Stop tunnel</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top: 8px">
+          Share link: <span class="mono" id="publicUrl">(waiting for tunnel...)</span>
+          <button class="btn" id="btnCopyPublic" style="padding: 6px 10px; margin-left: 8px">Copy</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div>
+            <div><b>Named tunnel setup (choose your own domain)</b> <span id="cfPill" class="pill">Checking...</span></div>
+            <div class="hint">Runs <span class="mono">cloudflared</span> setup steps for you. You still need a domain on Cloudflare.</div>
+            <div class="hint" style="margin-top: 8px">
+              Login link: <span class="mono" id="cfLoginUrl">(click Login)</span>
+              <button class="btn" id="btnCopyLogin" style="padding: 6px 10px; margin-left: 8px">Copy</button>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="btnCfRefresh">Refresh</button>
+            <button class="btn danger" id="btnCfCancel">Cancel</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 12px">
+          <div>
+            <label>Tunnel name</label><br />
+            <input id="inpCfName" list="cfTunnelNames" placeholder="bzl" />
+            <datalist id="cfTunnelNames"></datalist>
+          </div>
+          <div style="flex: 1; min-width: 260px">
+            <label>Hostname</label><br />
+            <input id="inpCfHost" placeholder="bzl.example.com" style="width: 100%" />
+          </div>
+          <div style="flex: 1; min-width: 260px">
+            <label>Credentials file</label><br />
+            <input id="inpCfCreds" list="cfCredsList" placeholder="Pick from list..." style="width: 100%" />
+            <datalist id="cfCredsList"></datalist>
+            <div class="hint" id="cfCredsHint"></div>
+          </div>
+          <div style="flex: 1; min-width: 260px">
+            <label>Config path</label><br />
+            <input id="inpCfCfg" list="cfCfgList" placeholder="Pick from list..." style="width: 100%" />
+            <datalist id="cfCfgList"></datalist>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 12px">
+          <button class="btn primary" id="btnCfLogin">1) Login</button>
+          <button class="btn" id="btnCfCreate">2) Create tunnel</button>
+          <button class="btn" id="btnCfRoute">3) Route DNS</button>
+          <button class="btn" id="btnCfWriteCfg">4) Write config.yml</button>
+          <div class="hint" id="cfStatusText" style="margin-left: 6px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between">
+          <div><b>Logs</b> <span class="pill mono">live</span></div>
+          <button class="btn" id="btnClear">Clear</button>
+        </div>
+        <pre id="log" class="mono"></pre>
+      </div>
+    </div>
+
+    <script>
+      const API_TOKEN = "__API_TOKEN__";
+      const logEl = document.getElementById("log");
+      const statusPill = document.getElementById("statusPill");
+      const statusText = document.getElementById("statusText");
+      const cfPill = document.getElementById("cfPill");
+      const cfStatusText = document.getElementById("cfStatusText");
+      const inpPort = document.getElementById("inpPort");
+      const inpHost = document.getElementById("inpHost");
+      const inpReg = document.getElementById("inpReg");
+      const inpTunnel = document.getElementById("inpTunnel");
+      const inpCfg = document.getElementById("inpCfg");
+      const inpCfName = document.getElementById("inpCfName");
+      const inpCfHost = document.getElementById("inpCfHost");
+      const inpCfCreds = document.getElementById("inpCfCreds");
+      const inpCfCfg = document.getElementById("inpCfCfg");
+      const cfCredsHint = document.getElementById("cfCredsHint");
+      const publicUrlEl = document.getElementById("publicUrl");
+      const cfLoginUrlEl = document.getElementById("cfLoginUrl");
+      let cfTunnels = [];
+      let cfCredsById = new Map();
+
+      function append(line) {
+        logEl.textContent += line + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function setPublicUrl(url) {
+        if (!publicUrlEl) return;
+        const u = String(url || "").trim();
+        publicUrlEl.textContent = u || "(not available yet)";
+        publicUrlEl.dataset.url = u;
+      }
+
+      async function copyText(text) {
+        const t = String(text || "");
+        if (!t) return false;
+        try {
+          await navigator.clipboard.writeText(t);
+          return true;
+        } catch {
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = t;
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+            return ok;
+          } catch {
+            return false;
+          }
+        }
+      }
+
+      async function api(path, body) {
+        const res = await fetch(
+          path,
+          body
+            ? {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Bzl-Launcher": API_TOKEN },
+                body: JSON.stringify(body)
+              }
+            : {}
+        );
+        return await res.json();
+      }
+
+      async function refresh() {
+        const st = await api("/api/status");
+        statusPill.textContent = st.healthy ? "Running" : st.serverRunning ? "Starting..." : "Stopped";
+        statusText.textContent = st.localUrl + (st.healthy ? " (healthy)" : "");
+        if (st.namedPublicUrl) setPublicUrl(st.namedPublicUrl);
+      }
+
+      async function refreshCloudflared() {
+        const st = await api("/api/cloudflared/status");
+        if (!st.exists) {
+          cfPill.textContent = "Missing cloudflared";
+          cfStatusText.textContent = "Install cloudflared (Windows: winget install Cloudflare.cloudflared).";
+          return;
+        }
+        cfPill.textContent = st.certExists ? "Logged in" : "Not logged in";
+        const bits = [];
+        if (st.version) bits.push(st.version);
+        bits.push(st.certExists ? "cert ok" : "run Login");
+        if (!st.configExists) {
+          bits.push("no config.yml");
+        } else if (st.configTunnel && st.envTunnel && st.configTunnel !== st.envTunnel) {
+          bits.push("config tunnel mismatch");
+        } else if (st.expectedCredentialsFile && st.configCredentialsFile && st.expectedCredentialsFile !== st.configCredentialsFile) {
+          bits.push("creds mismatch");
+        } else {
+          bits.push("config ok");
+        }
+        if (st.setupRunning) bits.push("running...");
+        cfStatusText.textContent = bits.join(" \u00b7 ");
+
+        if (cfLoginUrlEl) {
+          const u = String(st.lastLoginUrl || "").trim();
+          cfLoginUrlEl.textContent = u || "(click Login)";
+          cfLoginUrlEl.dataset.url = u;
+        }
+
+        if (!inpCfCfg.value) inpCfCfg.value = st.configPath || st.defaultConfigPath || "";
+        if (!inpCfName.value) inpCfName.value = "bzl";
+        if (st.lastCreate) {
+          if (st.lastCreate.credentialsFile && !inpCfCreds.value) inpCfCreds.value = st.lastCreate.credentialsFile;
+          if (st.lastCreate.tunnelId && !inpTunnel.value) inpTunnel.value = st.lastCreate.tunnelId;
+        }
+        if (st.expectedCredentialsFile && !inpCfCreds.value) inpCfCreds.value = st.expectedCredentialsFile;
+      }
+
+      function setDatalistOptions(id, values) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const uniq = Array.from(new Set((values || []).filter(Boolean)));
+        el.innerHTML = uniq.map((v) => `<option value="${String(v).replaceAll('"', "&quot;")}"></option>`).join("");
+      }
+
+      async function refreshCloudflaredFiles() {
+        try {
+          const f = await api("/api/cloudflared/files");
+          if (!f.ok) return;
+          setDatalistOptions("cfCfgList", [f.dir ? f.dir + "\\\\config.yml" : "", ...(f.configCandidates || [])].filter(Boolean));
+          setDatalistOptions(
+            "cfCredsList",
+            (f.credentials || []).map((c) => c.path)
+          );
+          cfCredsById = new Map((f.credentials || []).filter((c) => c.tunnelId).map((c) => [c.tunnelId, c.path]));
+          if (!inpCfCfg.value && f.configCandidates && f.configCandidates[0]) inpCfCfg.value = f.configCandidates[0];
+        } catch {}
+      }
+
+      async function refreshCloudflaredTunnels() {
+        try {
+          const r = await api("/api/cloudflared/tunnels");
+          if (!r.ok) return;
+          cfTunnels = r.tunnels || [];
+          setDatalistOptions(
+            "cfTunnelNames",
+            cfTunnels.map((t) => t.name)
+          );
+        } catch {}
+      }
+
+      document.getElementById("btnStart").onclick = async () => api("/api/start", { supervised: true });
+      document.getElementById("btnStop").onclick = async () => api("/api/stop", {});
+      document.getElementById("btnOpen").onclick = async () => api("/api/open", {});
+      document.getElementById("btnTunnelQuick").onclick = async () => api("/api/tunnel/start", { mode: "quick" });
+      document.getElementById("btnTunnelNamed").onclick = async () => api("/api/tunnel/start", { mode: "named" });
+      document.getElementById("btnTunnelStop").onclick = async () => api("/api/tunnel/stop", {});
+      document.getElementById("btnCopyPublic").onclick = async () => {
+        const u = publicUrlEl?.dataset?.url || "";
+        const ok = await copyText(u);
+        append(ok ? `copied: ${u}` : "copy failed");
+      };
+      {
+        const btn = document.getElementById("btnCopyLogin");
+        if (btn) {
+          btn.onclick = async () => {
+            const u = cfLoginUrlEl?.dataset?.url || "";
+            const ok = await copyText(u);
+            append(ok ? `copied: ${u}` : "copy failed");
+          };
+        }
+      }
+      document.getElementById("btnCfRefresh").onclick = async () => {
+        await refreshCloudflared();
+        await refreshCloudflaredFiles();
+        await refreshCloudflaredTunnels();
+      };
+      document.getElementById("btnCfCancel").onclick = async () => api("/api/cloudflared/cancel", {});
+      document.getElementById("btnCfLogin").onclick = async () => {
+        append("cloudflared: login starting (browser will open)");
+        await api("/api/cloudflared/login", {});
+        refreshCloudflared();
+      };
+      document.getElementById("btnCfCreate").onclick = async () => {
+        const name = inpCfName.value || "bzl";
+        const r = await api("/api/cloudflared/create", { name });
+        if (r.tunnelId) inpTunnel.value = r.tunnelId;
+        if (r.credentialsFile) inpCfCreds.value = r.credentialsFile;
+        if (inpCfCfg.value) inpCfg.value = inpCfCfg.value;
+        append(
+          r.ok
+            ? `${r.reused ? "cloudflared: using existing tunnel" : "cloudflared: created tunnel"} (${r.tunnelId || name})`
+            : `cloudflared: create failed (${r.error || r.code || "?"})`
+        );
+        refreshCloudflared();
+      };
+      document.getElementById("btnCfRoute").onclick = async () => {
+        const tunnel = inpTunnel.value || inpCfName.value;
+        const hostname = inpCfHost.value;
+        const r = await api("/api/cloudflared/route-dns", { tunnel, hostname, force: true });
+        append(r.ok ? `cloudflared: routed ${hostname}` : `cloudflared: route failed (${r.error || r.code || "?"})`);
+      };
+      document.getElementById("btnCfWriteCfg").onclick = async () => {
+        const tunnelId = inpTunnel.value;
+        const hostname = inpCfHost.value;
+        const configPath = inpCfCfg.value;
+        const credentialsFile = inpCfCreds.value;
+        const port = inpPort.value;
+        const r = await api("/api/cloudflared/write-config", { tunnelId, hostname, configPath, credentialsFile, port });
+        append(r.ok ? `cloudflared: wrote config (${r.configPath})` : `cloudflared: write config failed (${r.error || "?"})`);
+        if (r.ok) inpCfg.value = r.configPath;
+        refreshCloudflared();
+      };
+
+      function uuidFromText(s) {
+        const m = String(s || "").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        return m ? m[0] : "";
+      }
+
+      inpCfCreds.onchange = () => {
+        const id = uuidFromText(inpCfCreds.value);
+        if (id) {
+          inpTunnel.value = id;
+          append(`cloudflared: selected creds -> tunnel ${id}`);
+        }
+        if (cfCredsHint) {
+          const t = (cfTunnels || []).find((x) => x.id === id);
+          cfCredsHint.textContent = id ? `Detected: ${t?.name ? t.name + " " : ""}(${id})` : "";
+        }
+        refreshCloudflared();
+      };
+      inpCfName.onchange = () => {
+        const name = String(inpCfName.value || "").trim();
+        const t = (cfTunnels || []).find((x) => x.name === name);
+        if (t?.id) {
+          inpTunnel.value = t.id;
+          if (!inpCfCreds.value) {
+            const p = cfCredsById.get(t.id);
+            if (p) inpCfCreds.value = p;
+          }
+          append(`cloudflared: selected tunnel ${name} -> ${t.id}`);
+        }
+        if (cfCredsHint) {
+          cfCredsHint.textContent = t?.id ? `Selected tunnel: ${name} (${t.id})` : "";
+        }
+      };
+      document.getElementById("btnSave").onclick = async () => {
+        await api("/api/config", {
+          PORT: inpPort.value,
+          HOST: inpHost.value,
+          REGISTRATION_CODE: inpReg.value,
+          CLOUDFLARED_TUNNEL: inpTunnel.value,
+          CLOUDFLARED_CONFIG: inpCfg.value
+        });
+        append("settings saved");
+      };
+      document.getElementById("btnReload").onclick = () => location.reload();
+      document.getElementById("btnClear").onclick = () => {
+        logEl.textContent = "";
+      };
+
+      (async () => {
+        const snap = await api("/api/log");
+        logEl.textContent = (snap.lines || []).join("\n") + "\n";
+        refresh();
+        refreshCloudflared();
+        refreshCloudflaredFiles();
+        refreshCloudflaredTunnels();
+        setInterval(refresh, 1000);
+        setInterval(refreshCloudflared, 3000);
+        setInterval(refreshCloudflaredFiles, 5000);
+        setInterval(refreshCloudflaredTunnels, 30000);
+      })();
+
+      const es = new EventSource("/api/log/stream");
+      es.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data || "{}");
+          if (msg.line) {
+            append(msg.line);
+            const m = String(msg.line).match(/https?:\/\/[^\s]+/i);
+            if (m && /trycloudflare\.com/i.test(m[0])) setPublicUrl(m[0]);
+          }
+        } catch {}
+      };
+    </script>
+  </body>
+</html>

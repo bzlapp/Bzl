@@ -1,0 +1,28 @@
+{
+  "name": "bzl",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bzl - keyword-driven ephemeral posts + per-post chat (local network MVP).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "start:supervised": "node scripts/service-runner.js",
+    "launch": "node scripts/bzl-launch.js",
+    "launch:tunnel": "node scripts/bzl-launch.js --cloudflared=quick",
+    "launch:named-tunnel": "node scripts/bzl-launch.js --cloudflared=named",
+    "launcher:ui": "node scripts/launcher-ui.js",
+    "init": "node scripts/bzl-init.js",
+    "create-user": "node scripts/create-user.js",
+    "backup-data": "node scripts/backup-data.js",
+    "restore-data": "node scripts/restore-data.js",
+    "build:clean-install-zip": "node scripts/build-clean-install-zip.js",
+    "build:plugin:directory-server": "node scripts/build-directory-server-plugin.js",
+    "build:plugin:directory-publisher": "node scripts/build-directory-publisher-plugin.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "sanitize-html": "^2.15.0",
+    "ws": "^8.18.3"
+  }
+}

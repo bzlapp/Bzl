@@ -1,0 +1,42 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+*.rar
+data/users.json
+data/posts.json
+data/collections.json
+data/roles.json
+data/mod-log.json
+data/reports.json
+data/sessions.json
+data/dms.json
+data/dm-key.txt
+data/uploads/
+data/plugins.json
+data/plugins/
+data/plugin-data/
+data/instance.json
+data/.plugins.json.tmp_*
+dist/
+.env
+tmp_server_out.log
+tmp_server_err.log
+tmp_server_*.log
+launcher-ui.crash.log
+Hives
+
+# Keep the data folder in git, but never commit runtime contents
+data/*
+!data/.gitkeep
+
+# Clean install runtime artifacts (when running from CLEAN_INSTALL/ directly)
+CLEAN_INSTALL/.env
+CLEAN_INSTALL/data/
+CLEAN_INSTALL/tmp_server_out.log
+CLEAN_INSTALL/tmp_server_err.log
+CLEAN_INSTALL/tmp_server_*.log
+CLEAN_INSTALL/launcher-ui.crash.log
+
+# Cloudflare tunnel local creds (should never live in-repo)
+.cloudflared/
+*.pem

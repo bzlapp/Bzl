@@ -1,0 +1,10 @@
+{
+  "id": "directory-publisher",
+  "name": "Directory Publisher",
+  "version": "0.1.0",
+  "description": "Announces this instance to a directory instance (install on instances that want to be listed).",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["net", "ws", "disk"]
+}
+
