@@ -132,6 +132,16 @@ body {
   grid-template-areas: "sidebar sidebarResize chat chatResize main mainResize moderation";
 }
 
+.app.chatRight {
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(380px, var(--chat-width));
+  grid-template-areas: "sidebar sidebarResize main chatResize chat";
+}
+
+.app.hasMod.chatRight {
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(380px, var(--chat-width)) 10px minmax(280px, var(--mod-width));
+  grid-template-areas: "sidebar sidebarResize main chatResize chat mainResize moderation";
+}
+
 @media (max-width: 760px) {
   .app {
     grid-template-columns: 300px 1fr;
@@ -332,6 +342,18 @@ body {
 .app.isResizing {
   user-select: none;
   cursor: col-resize;
+}
+
+.app.isDocking {
+  user-select: none;
+}
+
+.chat .panelHeader {
+  cursor: grab;
+}
+
+.app.isDocking .chat .panelHeader {
+  cursor: grabbing;
 }
 
 .moderation .panelHeader,

@@ -122,6 +122,7 @@ const sidebarResizeHandle = document.getElementById("sidebarResizeHandle");
 const mainResizeHandle = document.getElementById("mainResizeHandle");
 const chatPanelEl = document.querySelector(".chat");
 const peopleResizeHandle = document.getElementById("peopleResizeHandle");
+const chatHeaderEl = chatPanelEl ? chatPanelEl.querySelector(".panelHeader") : null;
 const editModal = document.getElementById("editModal");
 const editModalTitle = document.getElementById("editModalTitle");
 const editModalCloseBtn = document.getElementById("editModalClose");
@@ -210,6 +211,7 @@ let allowedPostReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂", "�
 let allowedChatReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂"];
 let userPrefs = { starredPostIds: [], hiddenPostIds: [], ignoredUsers: [], blockedUsers: [] };
 let showReactions = localStorage.getItem("bzl_showReactions") !== "0";
+let chatDock = localStorage.getItem("bzl_chatDock") === "right" ? "right" : "left";
 let activeHiveView = "all";
 let collections = [];
 let customRoles = [];
@@ -555,6 +557,11 @@ function setDmThreads(list) {
   }
   renderPeoplePanel();
   renderChatPanel();
+}
+
+function applyChatDock() {
+  if (!appRoot) return;
+  appRoot.classList.toggle("chatRight", chatDock === "right");
 }
 
 function upsertDmThread(rawThread) {
@@ -6138,6 +6145,7 @@ applySidebarWidth(readStoredSidebarWidth(), false);
 applyChatWidth(readStoredChatWidth(), false);
 applyModWidth(readStoredModWidth(), false);
 applyPeopleWidth(readStoredPeopleWidth(), false);
+applyChatDock();
 
 if (toggleReactionsEl) {
   toggleReactionsEl.checked = showReactions;
@@ -6146,6 +6154,42 @@ if (toggleReactionsEl) {
     localStorage.setItem("bzl_showReactions", showReactions ? "1" : "0");
     renderFeed();
     renderChatPanel();
+  });
+}
+
+if (chatHeaderEl && appRoot) {
+  chatHeaderEl.setAttribute("draggable", "true");
+  chatHeaderEl.title = "Drag left/right to dock chat";
+  chatHeaderEl.addEventListener("dragstart", (e) => {
+    try {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "bzl:dock:chat");
+    } catch {
+      // ignore
+    }
+    appRoot.classList.add("isDocking");
+  });
+  chatHeaderEl.addEventListener("dragend", () => {
+    appRoot.classList.remove("isDocking");
+  });
+  appRoot.addEventListener("dragover", (e) => {
+    if (!appRoot.classList.contains("isDocking")) return;
+    e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = "move";
+    } catch {
+      // ignore
+    }
+  });
+  appRoot.addEventListener("drop", (e) => {
+    if (!appRoot.classList.contains("isDocking")) return;
+    e.preventDefault();
+    appRoot.classList.remove("isDocking");
+    const next = e.clientX > window.innerWidth * 0.58 ? "right" : "left";
+    if (next === chatDock) return;
+    chatDock = next;
+    localStorage.setItem("bzl_chatDock", chatDock);
+    applyChatDock();
   });
 }
 
