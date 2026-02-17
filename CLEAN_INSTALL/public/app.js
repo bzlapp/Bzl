@@ -19,6 +19,7 @@ const mobilePagerEl = document.getElementById("mobilePager");
 const mobileModBtn = document.getElementById("mobileModBtn");
 const enableNotifsBtn = document.getElementById("enableNotifs");
 const notifStatus = document.getElementById("notifStatus");
+const toggleReactionsEl = document.getElementById("toggleReactions");
 
 const authHint = document.getElementById("authHint");
 const userLabel = document.getElementById("userLabel");
@@ -57,6 +58,13 @@ const modModalPrimary = document.getElementById("modModalPrimary");
 const modModalCancel = document.getElementById("modModalCancel");
 const modModalClose = document.getElementById("modModalClose");
 const modModalStatus = document.getElementById("modModalStatus");
+const mediaModal = document.getElementById("mediaModal");
+const mediaModalTitle = document.getElementById("mediaModalTitle");
+const mediaModalImg = document.getElementById("mediaModalImg");
+const mediaModalOpenLink = document.getElementById("mediaModalOpenLink");
+const mediaModalCopyLink = document.getElementById("mediaModalCopyLink");
+const mediaModalClose = document.getElementById("mediaModalClose");
+const mediaModalStatus = document.getElementById("mediaModalStatus");
 
 const newPostForm = document.getElementById("newPostForm");
 const pollinatePanel = document.getElementById("pollinatePanel");
@@ -206,6 +214,7 @@ const CLIENT_AUDIO_UPLOAD_MAX_BYTES = 150 * 1024 * 1024;
 let allowedPostReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂", "⭐"];
 let allowedChatReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂"];
 let userPrefs = { starredPostIds: [], hiddenPostIds: [], ignoredUsers: [], blockedUsers: [] };
+let showReactions = localStorage.getItem("bzl_showReactions") !== "0";
 let activeHiveView = "all";
 let collections = [];
 let customRoles = [];
@@ -363,6 +372,27 @@ function setModModalOpen(open) {
     if (modModalStatus) modModalStatus.textContent = "";
     if (modModalPrimary) modModalPrimary.classList.remove("hidden");
   }
+}
+
+function setMediaModalOpen(open) {
+  if (!mediaModal) return;
+  mediaModal.classList.toggle("hidden", !open);
+  if (!open) {
+    if (mediaModalImg) mediaModalImg.src = "";
+    if (mediaModalOpenLink) mediaModalOpenLink.href = "#";
+    if (mediaModalStatus) mediaModalStatus.textContent = "";
+    if (mediaModalTitle) mediaModalTitle.textContent = "Media";
+  }
+}
+
+function openMediaModal(url) {
+  const src = String(url || "").trim();
+  if (!src) return;
+  if (!mediaModalImg) return;
+  mediaModalImg.src = src;
+  if (mediaModalOpenLink) mediaModalOpenLink.href = src;
+  if (mediaModalStatus) mediaModalStatus.textContent = "";
+  setMediaModalOpen(true);
 }
 
 function gateTokenLabel(token) {
@@ -1959,6 +1989,7 @@ function markReactPulse(kind, id, emoji) {
 }
 
 function renderReactionButtons({ kind, id, reactions, postId }) {
+  if (!showReactions) return "";
   const r = reactions && typeof reactions === "object" ? reactions : {};
   const emojis = kind === "post" ? allowedPostReactions : allowedChatReactions;
   return `<div class="reactionsRow">
@@ -2725,6 +2756,7 @@ function renderModPanel() {
 }
 
 function renderChatPanel(forceScroll = false) {
+  const mediaState = captureMediaState(chatMessagesEl);
   if (activeDmThreadId) {
     const thread = dmThreadsById.get(activeDmThreadId) || null;
     if (!thread) {
@@ -2756,6 +2788,7 @@ function renderChatPanel(forceScroll = false) {
               ? `<button type="button" class="ghost smallBtn" data-dmrequest="${escapeHtml(thread.other)}">Request again</button>`
               : `<div class="muted">Waiting for @${escapeHtml(thread.other)}…</div>`;
         chatMessagesEl.innerHTML = `<div class="small muted">${promptHtml}</div>`;
+        restoreMediaState(chatMessagesEl, mediaState);
         setReplyToMessage(null);
         return;
       }
@@ -2781,6 +2814,7 @@ function renderChatPanel(forceScroll = false) {
         decorateMentionNodesInElement(contentEl);
         decorateYouTubeEmbedsInElement(contentEl);
       }
+      restoreMediaState(chatMessagesEl, mediaState);
       if (forceScroll || atBottomBefore) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
       return;
     }
@@ -2794,6 +2828,7 @@ function renderChatPanel(forceScroll = false) {
     if (walkieBarEl) walkieBarEl.classList.add("hidden");
     if (chatForm) chatForm.classList.remove("hidden");
     chatMessagesEl.innerHTML = `<div class="small muted">No chat selected.</div>`;
+    restoreMediaState(chatMessagesEl, mediaState);
     setReplyToMessage(null);
     return;
   }
@@ -2820,6 +2855,7 @@ function renderChatPanel(forceScroll = false) {
   if (chatSendBtn) chatSendBtn.disabled = !(loggedInUser && canChatWrite && !isWalkie);
   if (post.deleted) {
     chatMessagesEl.innerHTML = `<div class="small muted">Post was deleted.</div>`;
+    restoreMediaState(chatMessagesEl, mediaState);
     setReplyToMessage(null);
     return;
   }
@@ -2898,7 +2934,48 @@ function renderChatPanel(forceScroll = false) {
     decorateMentionNodesInElement(contentEl);
     decorateYouTubeEmbedsInElement(contentEl);
   }
+  restoreMediaState(chatMessagesEl, mediaState);
   if (forceScroll || atBottomBefore) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+
+function captureMediaState(containerEl) {
+  if (!containerEl) return [];
+  const list = [];
+  for (const el of containerEl.querySelectorAll("audio, video")) {
+    try {
+      const src = el.currentSrc || el.getAttribute("src") || "";
+      if (!src) continue;
+      list.push({
+        src,
+        currentTime: Number(el.currentTime || 0),
+        paused: Boolean(el.paused),
+        volume: Number.isFinite(el.volume) ? el.volume : 1,
+        playbackRate: Number.isFinite(el.playbackRate) ? el.playbackRate : 1
+      });
+    } catch {
+      // ignore
+    }
+  }
+  return list;
+}
+
+function restoreMediaState(containerEl, mediaState) {
+  if (!containerEl || !Array.isArray(mediaState) || mediaState.length === 0) return;
+  const els = Array.from(containerEl.querySelectorAll("audio, video"));
+  for (const s of mediaState) {
+    const src = String(s?.src || "");
+    if (!src) continue;
+    const el = els.find((x) => (x.currentSrc || x.getAttribute("src") || "") === src);
+    if (!el) continue;
+    try {
+      if (Number.isFinite(s.volume)) el.volume = s.volume;
+      if (Number.isFinite(s.playbackRate)) el.playbackRate = s.playbackRate;
+      if (Number.isFinite(s.currentTime)) el.currentTime = s.currentTime;
+      if (!s.paused) el.play().catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function appendChatHtmlAndDecorate(html, atBottomBefore) {
@@ -3533,6 +3610,48 @@ function insertAudioTag(target, srcUrl) {
   target.focus();
   const safe = escapeHtml(srcUrl);
   document.execCommand("insertHTML", false, `<audio controls preload="none" src="${safe}"></audio>`);
+}
+
+function installDropUpload(targetEl, { allowImages = true, allowAudio = true } = {}) {
+  if (!targetEl) return;
+  const setActive = (on) => {
+    try {
+      targetEl.classList.toggle("isDropActive", Boolean(on));
+    } catch {
+      // ignore
+    }
+  };
+  targetEl.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer) return;
+    if (!e.dataTransfer.types || !Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setActive(true);
+  });
+  targetEl.addEventListener("dragleave", () => setActive(false));
+  targetEl.addEventListener("drop", async (e) => {
+    setActive(false);
+    const files = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    for (const file of files.slice(0, 4)) {
+      const type = String(file.type || "").toLowerCase();
+      const name = String(file.name || "").toLowerCase();
+      const isImg = type.startsWith("image/") || /\.(gif|png|jpe?g|webp)$/.test(name);
+      const isAud = type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|webm)$/.test(name);
+      if (isImg && allowImages) {
+        const url = await uploadMediaFile(file, "image");
+        if (!url) continue;
+        targetEl.focus();
+        document.execCommand("insertImage", false, url);
+      } else if (isAud && allowAudio) {
+        const url = await uploadMediaFile(file, "audio");
+        if (!url) continue;
+        insertAudioTag(targetEl, url);
+      }
+    }
+  });
 }
 
 document.querySelector(".editorShell .toolbar")?.addEventListener("click", (e) => {
@@ -5304,6 +5423,55 @@ applySidebarWidth(readStoredSidebarWidth(), false);
 applyChatWidth(readStoredChatWidth(), false);
 applyModWidth(readStoredModWidth(), false);
 applyPeopleWidth(readStoredPeopleWidth(), false);
+
+if (toggleReactionsEl) {
+  toggleReactionsEl.checked = showReactions;
+  toggleReactionsEl.addEventListener("change", () => {
+    showReactions = Boolean(toggleReactionsEl.checked);
+    localStorage.setItem("bzl_showReactions", showReactions ? "1" : "0");
+    renderFeed();
+    renderChatPanel();
+  });
+}
+
+installDropUpload(editor, { allowImages: true, allowAudio: true });
+installDropUpload(chatEditor, { allowImages: true, allowAudio: true });
+installDropUpload(profileBioEditor, { allowImages: true, allowAudio: true });
+installDropUpload(editModalEditor, { allowImages: true, allowAudio: true });
+
+mediaModal?.addEventListener("click", (e) => {
+  if (e.target?.getAttribute?.("data-mediamodalclose")) setMediaModalOpen(false);
+});
+mediaModalClose?.addEventListener("click", () => setMediaModalOpen(false));
+mediaModalCopyLink?.addEventListener("click", async () => {
+  const url = String(mediaModalOpenLink?.href || "").trim();
+  if (!url || url === "#") return;
+  try {
+    await navigator.clipboard.writeText(url);
+    if (mediaModalStatus) mediaModalStatus.textContent = "Copied.";
+  } catch {
+    if (mediaModalStatus) mediaModalStatus.textContent = "Copy failed (clipboard blocked).";
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && mediaModal && !mediaModal.classList.contains("hidden")) setMediaModalOpen(false);
+});
+document.body.addEventListener("click", (e) => {
+  const img = e.target?.closest?.("img");
+  if (!img) return;
+  if (img.id === "profilePreview") return;
+  if (img.closest("#mediaModal")) return;
+  const inAllowed =
+    img.closest(".chatMsg .content") ||
+    img.closest(".profileBio") ||
+    img.closest(".profileCard") ||
+    img.closest(".editor") ||
+    img.closest("#editModalEditor");
+  if (!inAllowed) return;
+  const src = img.getAttribute("src") || "";
+  if (!src) return;
+  openMediaModal(src);
+});
 
 setSidebarHidden(getSidebarHidden());
 toggleSidebarBtn?.addEventListener("click", () => setSidebarHidden(true));

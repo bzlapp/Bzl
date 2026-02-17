@@ -26,6 +26,14 @@
         </div>
 
         <section class="panel">
+          <div class="panelTitle">View</div>
+          <label class="checkRow">
+            <span>Show reactions bar</span>
+            <input id="toggleReactions" type="checkbox" />
+          </label>
+        </section>
+
+        <section class="panel">
           <div class="panelTitle">Account</div>
           <div class="small muted" id="authHint">Sign in to post, chat, and boost.</div>
 
@@ -435,6 +443,26 @@
           <button id="modModalCancel" class="ghost" type="button">Cancel</button>
         </div>
         <div id="modModalStatus" class="small muted" style="padding:0 12px 12px"></div>
+      </div>
+    </div>
+
+    <div id="mediaModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Media preview">
+      <div class="modalBackdrop" data-mediamodalclose="1"></div>
+      <div class="modalCard panel">
+        <div class="panelHeader">
+          <div class="panelTitle" id="mediaModalTitle">Media</div>
+          <div class="row">
+            <button id="mediaModalClose" class="ghost smallBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div class="modalBody" id="mediaModalBody">
+          <img id="mediaModalImg" alt="Expanded media" />
+          <div class="row modalActions" style="justify-content:flex-start">
+            <a id="mediaModalOpenLink" class="ghost" href="#" target="_blank" rel="noreferrer">Open original</a>
+            <button id="mediaModalCopyLink" class="ghost" type="button">Copy link</button>
+          </div>
+          <div id="mediaModalStatus" class="small muted"></div>
+        </div>
       </div>
     </div>
 
