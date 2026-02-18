@@ -13,16 +13,50 @@
       }
     };
 
-    const mainPanel = document.querySelector(".main .panelFill");
+    const appRootRef = document.querySelector(".app");
+    const inRackMode = (() => {
+      try {
+        // Rack mode reloads the page; this flag is available before the DOM gets the .rackMode class.
+        if (localStorage.getItem("bzl_rackLayout_enabled") === "1") return true;
+      } catch {
+        // ignore
+      }
+      return Boolean(appRootRef?.classList.contains("rackMode"));
+    })();
+
+    // In rack mode, Maps should render into its own dockable panel (not inside the Hives panel).
+    if (inRackMode && ctx?.ui?.registerPanel) {
+      try {
+        ctx.ui.registerPanel({
+          id: "maps",
+          title: "Maps",
+          icon: "🗺️",
+          defaultRack: "main",
+          role: "primary",
+          render() {
+            // no-op: this plugin uses DOM mounting below, into the panel shell's mount node
+          },
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    let mainPanel = document.querySelector(".main .panelFill");
+    if (inRackMode) {
+      const shell = document.querySelector('.panel.pluginPanel[data-panel-id="maps"]');
+      if (shell instanceof HTMLElement) mainPanel = shell;
+    }
+
     const panelHeader = mainPanel ? mainPanel.querySelector(".panelHeader") : null;
     const panelTitle = panelHeader ? panelHeader.querySelector(".panelTitle") : null;
     const filters = panelHeader ? panelHeader.querySelector(".filters") : null;
-    const hiveTabs = document.getElementById("hiveTabs");
-    const feed = document.getElementById("feed");
-    const pollinatePanel = document.getElementById("pollinatePanel");
-    const chatPanel = document.querySelector(".chat");
-    const chatResizeHandle = document.getElementById("chatResizeHandle");
-    const appRoot = document.querySelector(".app");
+    const hiveTabs = inRackMode ? null : document.getElementById("hiveTabs");
+    const feed = inRackMode ? null : document.getElementById("feed");
+    const pollinatePanel = inRackMode ? null : document.getElementById("pollinatePanel");
+    const chatPanel = inRackMode ? null : document.querySelector(".chat");
+    const chatResizeHandle = inRackMode ? null : document.getElementById("chatResizeHandle");
+    const appRoot = inRackMode ? null : appRootRef;
 
     if (!mainPanel || !panelHeader || !panelTitle) return;
 
@@ -117,17 +151,23 @@
     `;
     document.head.appendChild(style);
 
-    const mapsBtn = document.createElement("button");
-    mapsBtn.type = "button";
-    mapsBtn.className = "ghost smallBtn mapsTabBtn";
-    mapsBtn.textContent = "Maps";
-    panelTitle.insertAdjacentElement("afterend", mapsBtn);
+    const mapsBtn = inRackMode
+      ? null
+      : (() => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ghost smallBtn mapsTabBtn";
+          btn.textContent = "Maps";
+          panelTitle.insertAdjacentElement("afterend", btn);
+          return btn;
+        })();
 
     const mapsPanel = document.createElement("div");
-    mapsPanel.className = "mapsPanel hidden";
-    mainPanel.appendChild(mapsPanel);
+    mapsPanel.className = inRackMode ? "mapsPanel" : "mapsPanel hidden";
+    const mount = inRackMode ? mainPanel.querySelector("[data-pluginmount]") : null;
+    (mount || mainPanel).appendChild(mapsPanel);
 
-    let mode = "hives"; // "hives" | "maps" | "map"
+    let mode = inRackMode ? "maps" : "hives"; // "hives" | "maps" | "map"
     let maps = [];
     let activeMap = null;
     let users = new Map(); // username -> {x,y,color,image}
@@ -148,7 +188,7 @@
     let lastEditModeLogged = false;
     let lastPolyUiLogAt = 0;
     let editMode = false;
-    let editKind = "collision"; // "collision" | "mask" | "exit" | "hidden" | "occluder"
+    let editKind = "collision"; // "collision" | "mask" | "exit" | "hidden" | "fall" | "occluder"
     let editTool = "draw"; // "draw" | "select" | "move" | "vertex"
     let selectedPolyKind = "";
     let selectedPolyIndex = -1;
@@ -162,6 +202,15 @@
     let exitTargetMapId = "";
     let exitTargetExitName = "";
     let exitDraftName = "";
+    // Fog metadata ("hiddenMasks")
+    let fogDraftMode = "auto"; // "auto" | "manual"
+    let fogDraftName = "";
+    // Fall-through metadata
+    let fallDraftDirection = "down"; // "down" | "up" | "left" | "right"
+    let fallDraftOffset = 0.02; // normalized units (0..1)
+    let fallDraftName = "";
+    // Fog reveal toggle (per-map, local-only)
+    let revealFog = false;
     let draftPoly = []; // points [{x,y}] in normalized
     let lastTransform = null; // {srcX,srcY,zoom,worldW,worldH,viewW,viewH}
     let selfInvisible = false;
@@ -213,6 +262,31 @@
         .toLowerCase();
       const safe = id && /^[a-z0-9][a-z0-9_-]{0,40}$/.test(id) ? id : "default";
       return `bzl_maps_dockCollapsed_${safe}`;
+    }
+
+    function fogRevealKey(mapId) {
+      const id = String(mapId || "")
+        .trim()
+        .toLowerCase();
+      const safe = id && /^[a-z0-9][a-z0-9_-]{0,40}$/.test(id) ? id : "default";
+      return `bzl_maps_revealFog_${safe}`;
+    }
+
+    function getFogReveal(mapId) {
+      try {
+        return localStorage.getItem(fogRevealKey(mapId)) === "1";
+      } catch {
+        return false;
+      }
+    }
+
+    function setFogReveal(mapId, on) {
+      revealFog = Boolean(on);
+      try {
+        localStorage.setItem(fogRevealKey(mapId), revealFog ? "1" : "0");
+      } catch {
+        // ignore
+      }
     }
 
     function readDockCollapsed(mapId) {
@@ -569,8 +643,10 @@
 
     function enterMaps() {
       mode = "maps";
-      mapsBtn.classList.add("primary");
-      mapsBtn.classList.remove("ghost");
+      if (mapsBtn) {
+        mapsBtn.classList.add("primary");
+        mapsBtn.classList.remove("ghost");
+      }
       setHidden(filters, true);
       setHidden(hiveTabs, true);
       setHidden(feed, true);
@@ -585,8 +661,10 @@
 
     function exitMapsToHives() {
       mode = "hives";
-      mapsBtn.classList.add("ghost");
-      mapsBtn.classList.remove("primary");
+      if (mapsBtn) {
+        mapsBtn.classList.add("ghost");
+        mapsBtn.classList.remove("primary");
+      }
       setHidden(filters, false);
       setHidden(hiveTabs, false);
       setHidden(feed, false);
@@ -751,9 +829,12 @@
       const polysCount =
         (Array.isArray(activeMap.collisions) ? activeMap.collisions.length : 0) +
         (Array.isArray(activeMap.masks) ? activeMap.masks.length : 0) +
-        (Array.isArray(activeMap.exits) ? activeMap.exits.length : 0);
+        (Array.isArray(activeMap.exits) ? activeMap.exits.length : 0) +
+        (Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks.length : 0) +
+        (Array.isArray(activeMap.fallThroughs) ? activeMap.fallThroughs.length : 0);
       const walkiesEnabled = Boolean(activeMap.walkiesEnabled);
       const ttrpgEnabled = Boolean(activeMap.ttrpgEnabled);
+      const fogCount = Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks.length : 0;
       const shortcutHintHtml = `
         <div class="mapHint">
           Shortcuts:<br/>
@@ -863,6 +944,20 @@
             <div class="mapHint">
               Exits: <b>${escapeHtml(Array.isArray(activeMap.exits) ? activeMap.exits.length : 0)}</b>
             </div>
+            ${
+              fogCount
+                ? `
+            <label class="checkRow" style="margin-top:10px;">
+              <span>Reveal fog</span>
+              <input id="mapsFogRevealToggle" type="checkbox" ${revealFog ? "checked" : ""} />
+            </label>
+            <div class="small muted" style="margin-top:6px; line-height:1.15rem;">
+              Fog zones: <b>${escapeHtml(String(fogCount))}</b><br/>
+              Auto fog reveals when you stand inside it.
+            </div>
+            `
+                : ""
+            }
             ${shortcutHintHtml}
             ${settingsHtml}
           </div>
@@ -887,6 +982,13 @@
       }
       loadBackground(activeMap.backgroundUrl || "");
       startLoop();
+
+      const fogRevealToggle = document.getElementById("mapsFogRevealToggle");
+      if (fogRevealToggle && fogCount) {
+        fogRevealToggle.onchange = () => {
+          setFogReveal(activeMap.id, Boolean(fogRevealToggle.checked));
+        };
+      }
 
       const invToggle = document.getElementById("mapsInvisibleToggle");
       if (invToggle && showSettings) {
@@ -1725,6 +1827,16 @@
         if (action === "toMap" && !toMapId) return false;
         const targetExit = action === "toMap" ? String(exitTargetExitName || "").trim().slice(0, 40) : "";
         list.push({ ...poly, name, action, toMapId, targetExit });
+      } else if (editKind === "hidden") {
+        const mode = fogDraftMode === "manual" ? "manual" : "auto";
+        const name = String(fogDraftName || "").trim().slice(0, 40);
+        list.push({ ...poly, mode, name });
+      } else if (editKind === "fall") {
+        const dir = String(fallDraftDirection || "").trim().toLowerCase();
+        const direction = dir === "up" || dir === "left" || dir === "right" ? dir : "down";
+        const offset = Math.max(0.002, Math.min(0.08, Number(fallDraftOffset || 0.02) || 0.02));
+        const name = String(fallDraftName || "").trim().slice(0, 40);
+        list.push({ ...poly, direction, offset, name });
       } else {
         list.push(poly);
       }
@@ -1765,6 +1877,10 @@
         if (ensure && !Array.isArray(map.hiddenMasks)) map.hiddenMasks = [];
         return Array.isArray(map.hiddenMasks) ? map.hiddenMasks : [];
       }
+      if (k === "fall") {
+        if (ensure && !Array.isArray(map.fallThroughs)) map.fallThroughs = [];
+        return Array.isArray(map.fallThroughs) ? map.fallThroughs : [];
+      }
       if (k === "occluder") {
         if (ensure && !Array.isArray(map.occluders)) map.occluders = [];
         return Array.isArray(map.occluders) ? map.occluders : [];
@@ -1776,7 +1892,8 @@
       if (kind === "collision") return "Collisions";
       if (kind === "mask") return "Y-sort masks";
       if (kind === "exit") return "Exits";
-      if (kind === "hidden") return "Hidden masks";
+      if (kind === "hidden") return "Fog zones";
+      if (kind === "fall") return "Fall-through zones";
       if (kind === "occluder") return "Occluders";
       return String(kind || "");
     }
@@ -1886,13 +2003,67 @@
       const inspectorBody = (() => {
         const pts = Array.isArray(selected?.points) ? selected.points.length : 0;
         if (editKind !== "exit") {
-          return selOk
-            ? `
-              <div class="small muted">Selected</div>
-              <div style="margin-top:6px;"><b>${escapeHtml(kindLabel(editKind))}</b></div>
-              <div class="small muted" style="margin-top:6px;">${pts} points</div>
-            `
-            : `<div class="small muted">Select a polygon to edit, or draw a new one.</div>`;
+          const header = selOk ? "Selected" : "New polygon defaults";
+          const fogModel =
+            editKind === "hidden" && selected
+              ? { mode: String(selected.mode || "auto") === "manual" ? "manual" : "auto", name: String(selected.name || "").trim().slice(0, 40) }
+              : { mode: fogDraftMode === "manual" ? "manual" : "auto", name: String(fogDraftName || "").trim().slice(0, 40) };
+          const fallModel =
+            editKind === "fall" && selected
+              ? {
+                  direction: ["up", "down", "left", "right"].includes(String(selected.direction || "")) ? String(selected.direction || "") : "down",
+                  offset: Math.max(0.002, Math.min(0.08, Number(selected.offset || 0.02) || 0.02)),
+                  name: String(selected.name || "").trim().slice(0, 40),
+                }
+              : {
+                  direction: ["up", "down", "left", "right"].includes(String(fallDraftDirection || "")) ? String(fallDraftDirection || "") : "down",
+                  offset: Math.max(0.002, Math.min(0.08, Number(fallDraftOffset || 0.02) || 0.02)),
+                  name: String(fallDraftName || "").trim().slice(0, 40),
+                };
+
+          const metaControls =
+            editKind === "hidden"
+              ? `
+                <label style="margin-top:10px;">
+                  <div class="small muted">Reveal mode</div>
+                  <select id="mapsFogMode">
+                    <option value="auto" ${fogModel.mode === "auto" ? "selected" : ""}>Auto (reveal when inside)</option>
+                    <option value="manual" ${fogModel.mode === "manual" ? "selected" : ""}>Manual (toggle “Reveal fog”)</option>
+                  </select>
+                </label>
+                <label style="margin-top:10px;">
+                  <div class="small muted">Label (optional)</div>
+                  <input id="mapsFogName" type="text" maxlength="40" placeholder="Example: Secret room" value="${escapeHtml(fogModel.name)}" />
+                </label>
+              `
+              : editKind === "fall"
+                ? `
+                <label style="margin-top:10px;">
+                  <div class="small muted">Direction</div>
+                  <select id="mapsFallDirection">
+                    <option value="down" ${fallModel.direction === "down" ? "selected" : ""}>Down</option>
+                    <option value="up" ${fallModel.direction === "up" ? "selected" : ""}>Up</option>
+                    <option value="left" ${fallModel.direction === "left" ? "selected" : ""}>Left</option>
+                    <option value="right" ${fallModel.direction === "right" ? "selected" : ""}>Right</option>
+                  </select>
+                </label>
+                <label style="margin-top:10px;">
+                  <div class="small muted">Nudge distance</div>
+                  <input id="mapsFallOffset" type="number" min="0.002" max="0.08" step="0.002" value="${escapeHtml(fallModel.offset.toFixed(3))}" />
+                </label>
+                <label style="margin-top:10px;">
+                  <div class="small muted">Label (optional)</div>
+                  <input id="mapsFallName" type="text" maxlength="40" placeholder="Example: Cliff edge" value="${escapeHtml(fallModel.name)}" />
+                </label>
+              `
+                : "";
+
+          return `
+            <div class="small muted">${header}</div>
+            <div style="margin-top:6px;"><b>${escapeHtml(kindLabel(editKind))}</b></div>
+            ${selOk ? `<div class="small muted" style="margin-top:6px;">${pts} points</div>` : `<div class="small muted" style="margin-top:6px;">Draw a polygon, then Close polygon.</div>`}
+            ${metaControls}
+          `;
         }
 
         const header = selOk ? "Selected exit" : "New exit defaults";
@@ -1937,7 +2108,8 @@
               ${kindBtn("collision", "Collisions")}
               ${kindBtn("mask", "Y-sort")}
               ${kindBtn("exit", "Exits")}
-              ${kindBtn("hidden", "Hidden (soon)", true)}
+              ${kindBtn("hidden", "Fog")}
+              ${kindBtn("fall", "Fall-through")}
               ${kindBtn("occluder", "Occluders (soon)", true)}
               <div class="small muted" style="margin-left:auto;">${escapeHtml(String(list.length))} in ${escapeHtml(kindLabel(editKind))}</div>
             </div>
@@ -2114,6 +2286,7 @@
           const masks = Array.isArray(activeMap.masks) ? activeMap.masks : [];
           const exits = Array.isArray(activeMap.exits) ? activeMap.exits : [];
           const hiddenMasks = Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks : [];
+          const fallThroughs = Array.isArray(activeMap.fallThroughs) ? activeMap.fallThroughs : [];
           const occluders = Array.isArray(activeMap.occluders) ? activeMap.occluders : [];
           devLog("info", "maps:saveAll", {
             mapId: activeMap.id,
@@ -2121,9 +2294,10 @@
             masks: masks.length,
             exits: exits.length,
             hiddenMasks: hiddenMasks.length,
+            fallThroughs: fallThroughs.length,
             occluders: occluders.length,
           });
-          ctx.send("updateMap", { id: activeMap.id, collisions, masks, exits, hiddenMasks, occluders });
+          ctx.send("updateMap", { id: activeMap.id, collisions, masks, exits, hiddenMasks, fallThroughs, occluders });
           setStatus("Saved.");
         };
       }
@@ -2217,6 +2391,13 @@
       const exitToMapWrap = document.getElementById("mapsExitToMapWrap");
       const exitToMapEl = document.getElementById("mapsExitToMap");
       const exitTargetExitEl = document.getElementById("mapsExitTargetExit");
+      // Fog meta fields (selected fog OR draft defaults)
+      const fogModeEl = document.getElementById("mapsFogMode");
+      const fogNameEl = document.getElementById("mapsFogName");
+      // Fall-through meta fields (selected fall OR draft defaults)
+      const fallDirEl = document.getElementById("mapsFallDirection");
+      const fallOffsetEl = document.getElementById("mapsFallOffset");
+      const fallNameEl = document.getElementById("mapsFallName");
 
       const applyExitModel = (patch) => {
         if (editKind !== "exit") return;
@@ -2229,6 +2410,43 @@
           if (Object.prototype.hasOwnProperty.call(patch, "action")) exitAction = patch.action === "toMap" ? "toMap" : "toMaps";
           if (Object.prototype.hasOwnProperty.call(patch, "toMapId")) exitTargetMapId = String(patch.toMapId || "");
           if (Object.prototype.hasOwnProperty.call(patch, "targetExit")) exitTargetExitName = String(patch.targetExit || "");
+        }
+      };
+
+      const applyFogModel = (patch) => {
+        if (editKind !== "hidden") return;
+        const list = polysForKind(activeMap, "hidden", true);
+        const isSel = selectedPolyKind === "hidden" && selectedPolyIndex >= 0 && selectedPolyIndex < list.length;
+        if (isSel) {
+          const next = { ...list[selectedPolyIndex], ...patch };
+          next.mode = String(next.mode || "auto") === "manual" ? "manual" : "auto";
+          next.name = typeof next.name === "string" ? next.name.trim().slice(0, 40) : "";
+          list[selectedPolyIndex] = next;
+        } else {
+          if (Object.prototype.hasOwnProperty.call(patch, "mode")) fogDraftMode = String(patch.mode || "") === "manual" ? "manual" : "auto";
+          if (Object.prototype.hasOwnProperty.call(patch, "name")) fogDraftName = typeof patch.name === "string" ? patch.name.trim().slice(0, 40) : "";
+        }
+      };
+
+      const applyFallModel = (patch) => {
+        if (editKind !== "fall") return;
+        const list = polysForKind(activeMap, "fall", true);
+        const isSel = selectedPolyKind === "fall" && selectedPolyIndex >= 0 && selectedPolyIndex < list.length;
+        const normalizeDir = (d) => {
+          const dir = String(d || "").trim().toLowerCase();
+          return dir === "up" || dir === "left" || dir === "right" ? dir : "down";
+        };
+        const normalizeOffset = (n) => Math.max(0.002, Math.min(0.08, Number(n || 0.02) || 0.02));
+        if (isSel) {
+          const next = { ...list[selectedPolyIndex], ...patch };
+          next.direction = normalizeDir(next.direction);
+          next.offset = normalizeOffset(next.offset);
+          next.name = typeof next.name === "string" ? next.name.trim().slice(0, 40) : "";
+          list[selectedPolyIndex] = next;
+        } else {
+          if (Object.prototype.hasOwnProperty.call(patch, "direction")) fallDraftDirection = normalizeDir(patch.direction);
+          if (Object.prototype.hasOwnProperty.call(patch, "offset")) fallDraftOffset = normalizeOffset(patch.offset);
+          if (Object.prototype.hasOwnProperty.call(patch, "name")) fallDraftName = typeof patch.name === "string" ? patch.name.trim().slice(0, 40) : "";
         }
       };
 
@@ -2273,6 +2491,33 @@
         };
       }
       syncExitVis();
+
+      if (fogModeEl) {
+        fogModeEl.onchange = () => {
+          applyFogModel({ mode: String(fogModeEl.value || "auto") === "manual" ? "manual" : "auto" });
+        };
+      }
+      if (fogNameEl) {
+        fogNameEl.oninput = () => {
+          applyFogModel({ name: String(fogNameEl.value || "").slice(0, 40) });
+        };
+      }
+
+      if (fallDirEl) {
+        fallDirEl.onchange = () => {
+          applyFallModel({ direction: String(fallDirEl.value || "down") });
+        };
+      }
+      if (fallOffsetEl) {
+        const onOffset = () => applyFallModel({ offset: Number(fallOffsetEl.value || 0.02) || 0.02 });
+        fallOffsetEl.oninput = onOffset;
+        fallOffsetEl.onchange = onOffset;
+      }
+      if (fallNameEl) {
+        fallNameEl.oninput = () => {
+          applyFallModel({ name: String(fallNameEl.value || "").slice(0, 40) });
+        };
+      }
     }
 
     function pointInPoly(pt, poly) {
@@ -2363,8 +2608,52 @@
       if (moved) {
         const speedNx = speedPxPerSec / Math.max(1, dims.w);
         const speedNy = speedPxPerSec / Math.max(1, dims.h);
-        const nextX = Math.max(0, Math.min(1, controlPos.x + dx * speedNx * dt));
-        const nextY = Math.max(0, Math.min(1, controlPos.y + dy * speedNy * dt));
+        let nextX = Math.max(0, Math.min(1, controlPos.x + dx * speedNx * dt));
+        let nextY = Math.max(0, Math.min(1, controlPos.y + dy * speedNy * dt));
+
+        // Fall-through zones: if you enter one, teleport to the far side based on direction.
+        const fallThroughs = Array.isArray(activeMap.fallThroughs) ? activeMap.fallThroughs : [];
+        if (fallThroughs.length) {
+          const prevPt = { x: controlPos.x, y: controlPos.y };
+          const entered = (poly) => !pointInPoly(prevPt, poly) && pointInPoly({ x: nextX, y: nextY }, poly);
+          for (const poly of fallThroughs) {
+            if (!poly || !Array.isArray(poly.points) || poly.points.length < 3) continue;
+            if (!entered(poly)) continue;
+            const pts = poly.points;
+            let minX = 1,
+              maxX = 0,
+              minY = 1,
+              maxY = 0;
+            for (const p of pts) {
+              const x = Number(p?.x);
+              const y = Number(p?.y);
+              if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+              minX = Math.min(minX, x);
+              maxX = Math.max(maxX, x);
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y);
+            }
+            const dirRaw = String(poly.direction || "").trim().toLowerCase();
+            const direction = dirRaw === "up" || dirRaw === "left" || dirRaw === "right" ? dirRaw : "down";
+            const off = Math.max(0.002, Math.min(0.08, Number(poly.offset || 0.02) || 0.02));
+            if (direction === "up" || direction === "down") {
+              const clampedX = Math.max(minX + 1e-4, Math.min(maxX - 1e-4, nextX));
+              nextX = Math.max(0, Math.min(1, clampedX));
+              nextY = direction === "down" ? Math.max(0, Math.min(1, maxY + off)) : Math.max(0, Math.min(1, minY - off));
+              for (let i = 0; i < 8 && pointInPoly({ x: nextX, y: nextY }, poly); i++) {
+                nextY = direction === "down" ? Math.max(0, Math.min(1, nextY + off)) : Math.max(0, Math.min(1, nextY - off));
+              }
+            } else {
+              const clampedY = Math.max(minY + 1e-4, Math.min(maxY - 1e-4, nextY));
+              nextY = Math.max(0, Math.min(1, clampedY));
+              nextX = direction === "right" ? Math.max(0, Math.min(1, maxX + off)) : Math.max(0, Math.min(1, minX - off));
+              for (let i = 0; i < 8 && pointInPoly({ x: nextX, y: nextY }, poly); i++) {
+                nextX = direction === "right" ? Math.max(0, Math.min(1, nextX + off)) : Math.max(0, Math.min(1, nextX - off));
+              }
+            }
+            break;
+          }
+        }
         const collisions = Array.isArray(activeMap.collisions) ? activeMap.collisions : [];
         const tryPtX = { x: nextX, y: controlPos.y };
         const tryPtY = { x: controlPos.x, y: nextY };
@@ -2843,6 +3132,39 @@
         }
       }
 
+      // Fog zones: draw dark overlays over polygons, unless revealed.
+      if (!editMode && !revealFog) {
+        const fogs = Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks : [];
+        if (fogs.length) {
+          const possessed = getPossessedTokenForMe();
+          const myPos = possessed
+            ? { x: Math.max(0, Math.min(1, Number(possessed.x || 0.5))), y: Math.max(0, Math.min(1, Number(possessed.y || 0.5))) }
+            : { x: localPos.x, y: localPos.y };
+          g.save();
+          g.globalAlpha = 1;
+          for (const poly of fogs) {
+            const pts = Array.isArray(poly?.points) ? poly.points : [];
+            if (pts.length < 3) continue;
+            const mode = String(poly?.mode || "auto") === "manual" ? "manual" : "auto";
+            if (mode === "auto" && pointInPoly(myPos, poly)) continue;
+            g.beginPath();
+            const first = pts[0];
+            g.moveTo((Number(first.x) * worldW - srcX) * zoom, (Number(first.y) * worldH - srcY) * zoom);
+            for (let i = 1; i < pts.length; i++) {
+              const p = pts[i];
+              g.lineTo((Number(p.x) * worldW - srcX) * zoom, (Number(p.y) * worldH - srcY) * zoom);
+            }
+            g.closePath();
+            g.fillStyle = "rgba(5,4,10,0.78)";
+            g.strokeStyle = "rgba(180,120,255,0.22)";
+            g.lineWidth = 1.2;
+            g.fill();
+            g.stroke();
+          }
+          g.restore();
+        }
+      }
+
       // Edit overlays
       if (editMode) {
         drawPolysOverlay(g, activeMap, worldW, worldH, srcX, srcY, zoom);
@@ -2905,7 +3227,9 @@
       for (const p of exits) drawPoly(p, "rgba(255,215,90,0.90)", "rgba(255,215,90,0.10)", false, selected === p);
       const hidden = Array.isArray(map.hiddenMasks) ? map.hiddenMasks : [];
       const occ = Array.isArray(map.occluders) ? map.occluders : [];
+      const fall = Array.isArray(map.fallThroughs) ? map.fallThroughs : [];
       for (const p of hidden) drawPoly(p, "rgba(180,120,255,0.80)", "rgba(180,120,255,0.08)", false, selected === p);
+      for (const p of fall) drawPoly(p, "rgba(255,140,80,0.80)", "rgba(255,140,80,0.08)", false, selected === p);
       for (const p of occ) drawPoly(p, "rgba(120,255,180,0.80)", "rgba(120,255,180,0.08)", false, selected === p);
 
       if (selected) {
@@ -2918,7 +3242,9 @@
                 ? "rgba(255,215,90,0.98)"
                 : editKind === "hidden"
                   ? "rgba(180,120,255,0.98)"
-                  : "rgba(120,255,180,0.98)";
+                  : editKind === "fall"
+                    ? "rgba(255,140,80,0.98)"
+                    : "rgba(120,255,180,0.98)";
         const fill =
           editKind === "collision"
             ? "rgba(255,70,70,0.16)"
@@ -2928,7 +3254,9 @@
                 ? "rgba(255,215,90,0.14)"
                 : editKind === "hidden"
                   ? "rgba(180,120,255,0.12)"
-                  : "rgba(120,255,180,0.12)";
+                  : editKind === "fall"
+                    ? "rgba(255,140,80,0.12)"
+                    : "rgba(120,255,180,0.12)";
         drawPoly(selected, stroke, fill, true, true);
       }
 
@@ -2943,7 +3271,9 @@
                 ? "rgba(255,215,90,0.98)"
                 : editKind === "hidden"
                   ? "rgba(180,120,255,0.98)"
-                  : "rgba(120,255,180,0.98)";
+                  : editKind === "fall"
+                    ? "rgba(255,140,80,0.98)"
+                    : "rgba(120,255,180,0.98)";
         const fill =
           editKind === "collision"
             ? "rgba(255,70,70,0.10)"
@@ -2953,7 +3283,9 @@
                 ? "rgba(255,215,90,0.10)"
                 : editKind === "hidden"
                   ? "rgba(180,120,255,0.10)"
-                  : "rgba(120,255,180,0.10)";
+                  : editKind === "fall"
+                    ? "rgba(255,140,80,0.10)"
+                    : "rgba(120,255,180,0.10)";
         drawPoly(poly, stroke, fill, true, false);
       }
     }
@@ -3054,6 +3386,7 @@
       ttrpgDockCollapsed = readDockCollapsed(mapId);
       ttrpgTool = "select";
       cameraPos = null;
+      revealFog = getFogReveal(mapId);
       // Seed a known-good local position (will be replaced once we get roomState).
       localPos = { x: 0.5, y: 0.5 };
       exitInside.clear();
@@ -3071,6 +3404,7 @@
           masks: [],
           exits: [],
           hiddenMasks: [],
+          fallThroughs: [],
           occluders: [],
           ttrpgEnabled: false,
           sprites: [],
@@ -3099,10 +3433,12 @@
       renderMapsList();
     }
 
-    mapsBtn.addEventListener("click", () => {
-      if (mode === "hives") enterMaps();
-      else exitMapsToHives();
-    });
+    if (mapsBtn) {
+      mapsBtn.addEventListener("click", () => {
+        if (mode === "hives") enterMaps();
+        else exitMapsToHives();
+      });
+    }
 
     mapsPanel.addEventListener("click", (e) => {
       const enter = e.target.closest("[data-mapenter]");
@@ -3203,8 +3539,9 @@
           const masks = Array.isArray(activeMap.masks) ? activeMap.masks : [];
           const exits = Array.isArray(activeMap.exits) ? activeMap.exits : [];
           const hiddenMasks = Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks : [];
+          const fallThroughs = Array.isArray(activeMap.fallThroughs) ? activeMap.fallThroughs : [];
           const occluders = Array.isArray(activeMap.occluders) ? activeMap.occluders : [];
-          ctx.send("updateMap", { id: activeMap.id, collisions, masks, exits, hiddenMasks, occluders });
+          ctx.send("updateMap", { id: activeMap.id, collisions, masks, exits, hiddenMasks, fallThroughs, occluders });
           const se = document.getElementById("mapsPolyStatus");
           if (se) se.textContent = "Saved.";
           return;
@@ -3383,12 +3720,14 @@
             exits: Array.isArray(msg.map.exits) ? msg.map.exits : [],
             hiddenMasks: Array.isArray(msg.map.hiddenMasks) ? msg.map.hiddenMasks : [],
             occluders: Array.isArray(msg.map.occluders) ? msg.map.occluders : [],
+            fallThroughs: Array.isArray(msg.map.fallThroughs) ? msg.map.fallThroughs : [],
             ttrpgEnabled: Boolean(msg.map.ttrpgEnabled),
             sprites: Array.isArray(msg.map.sprites) ? msg.map.sprites : [],
             props: Array.isArray(msg.map.props) ? msg.map.props : [],
             walkiesEnabled: Boolean(msg.map.walkiesEnabled)
           };
           ttrpgDockCollapsed = readDockCollapsed(activeMap.id);
+          revealFog = getFogReveal(activeMap.id);
           if (pendingSpawn && pendingSpawn.mapId === activeMap.id && pendingSpawn.exitName) {
             const exits = Array.isArray(activeMap.exits) ? activeMap.exits : [];
             const want = String(pendingSpawn.exitName || "").trim().toLowerCase();
@@ -3424,6 +3763,7 @@
         if (Object.prototype.hasOwnProperty.call(patch, "exits")) activeMap.exits = Array.isArray(patch.exits) ? patch.exits : [];
         if (Object.prototype.hasOwnProperty.call(patch, "hiddenMasks")) activeMap.hiddenMasks = Array.isArray(patch.hiddenMasks) ? patch.hiddenMasks : [];
         if (Object.prototype.hasOwnProperty.call(patch, "occluders")) activeMap.occluders = Array.isArray(patch.occluders) ? patch.occluders : [];
+        if (Object.prototype.hasOwnProperty.call(patch, "fallThroughs")) activeMap.fallThroughs = Array.isArray(patch.fallThroughs) ? patch.fallThroughs : [];
         renderMapView();
         return;
       }
@@ -3642,9 +3982,14 @@
       }
     });
 
-    // Initial list request (in case the Maps view is opened immediately).
-    // The Maps panel triggers another list() on open.
-    ctx.send("list", {});
+    if (inRackMode) {
+      // In rack mode, Maps is its own panel: start in the list view immediately.
+      enterMaps();
+    } else {
+      // Initial list request (in case the Maps view is opened immediately).
+      // The Maps panel triggers another list() on open.
+      ctx.send("list", {});
+    }
   });
 })();
 

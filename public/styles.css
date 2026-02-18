@@ -131,6 +131,83 @@ body {
   position: relative;
 }
 
+.app.rackMode {
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
+}
+
+.app.rackMode .peopleToggle {
+  display: none !important;
+}
+
+.app.rackMode.rightCollapsed,
+.app.rackMode.hasMod.rightCollapsed {
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr;
+  grid-template-areas: "sidebar sidebarResize main";
+}
+
+.app.rackMode.rightCollapsed #rightRack {
+  display: none !important;
+}
+
+.app.rackMode.rightCollapsed .mainResizeHandle {
+  display: none !important;
+}
+
+.app.sideCollapsed #mainSideRack {
+  display: none !important;
+}
+
+.app.sideRackEmpty #mainSideRack {
+  display: none !important;
+}
+
+.sideRackToggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+}
+
+.app.rackMode.rightCollapsed .sideRackToggle {
+  right: 64px;
+}
+
+.app.rackMode.sideCollapsed .sideRackToggle {
+  display: block !important;
+}
+
+.app.rackMode:not(.sideCollapsed) .sideRackToggle {
+  display: none !important;
+}
+
+.rightRackToggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 70;
+}
+
+.app.rackMode.rightCollapsed .rightRackToggle {
+  display: block !important;
+}
+
+.app.rackMode:not(.rightCollapsed) .rightRackToggle {
+  display: none !important;
+}
+
+.pluginPanel .panelBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app.rackMode.hasMod {
+  /* In rack mode, mod is just another panel inside the right rack. */
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
+}
+
 .app.hasMod {
   grid-template-columns: minmax(240px, var(--sidebar-width)) 10px minmax(380px, var(--chat-width)) 10px 1fr 10px minmax(280px, var(--mod-width));
   grid-template-areas: "sidebar sidebarResize chat chatResize main mainResize moderation";
@@ -144,6 +221,12 @@ body {
 .app.hasMod.chatRight {
   grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(380px, var(--chat-width)) 10px minmax(280px, var(--mod-width));
   grid-template-areas: "sidebar sidebarResize main chatResize chat mainResize moderation";
+}
+
+.app.rackMode.chatRight,
+.app.rackMode.hasMod.chatRight {
+  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
 }
 
 @media (max-width: 760px) {
@@ -170,6 +253,15 @@ body {
   .panelResizeHandle,
   .peopleResizeHandle {
     display: none;
+  }
+
+  .mainRack {
+    flex-direction: column;
+  }
+  .sideRack {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: none;
   }
 }
 
@@ -198,6 +290,141 @@ body {
   flex-direction: column;
   gap: 0;
   overflow: hidden;
+}
+
+.rightRack {
+  grid-area: rightRack;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.rightRack .rackPanel {
+  min-height: 0;
+}
+
+.panel.panelCollapsed {
+  overflow: hidden;
+}
+
+.panel.panelCollapsed > :not(.panelHeader) {
+  display: none !important;
+}
+
+.rackDragHandle {
+  cursor: grab;
+  user-select: none;
+}
+
+.rackDragHandle:active {
+  cursor: grabbing;
+}
+
+.rackDragging {
+  opacity: 0.86;
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.65);
+}
+
+.rackPlaceholder {
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.app.rackMode .panelHeader {
+  /* Slightly stronger header affordance in rack mode */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--text) 5%, transparent), transparent);
+}
+
+.app.rackMode .chat,
+.app.rackMode .moderation,
+.app.rackMode .peopleDrawer {
+  position: static;
+  grid-area: unset !important;
+  height: auto;
+  min-height: 0;
+}
+
+.app.rackMode .chatResizeHandle,
+.app.rackMode .peopleResizeHandle {
+  display: none !important;
+}
+
+.app.rackMode .peopleDrawer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--panel) 90%, transparent));
+  box-shadow: var(--shadow-panel);
+}
+
+.dockHotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%) translateY(28px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 60;
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  transition: transform var(--dur-med) var(--ease-out), opacity var(--dur-med) var(--ease-out);
+}
+
+.dockHotbar.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dockHotbar.dockTarget {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.6), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.dockOrb.dragging {
+  opacity: 0.6;
+}
+
+.dockOrb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dockOrb:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.dockOrb .dockOrbIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .sidebarScroll {
@@ -266,6 +493,103 @@ body {
 
 .main {
   grid-area: main;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.mainRack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.workspaceRack {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+/* Workspace 4x2 grid (rack mode) */
+.app.rackMode .workspaceRack {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workspaceSlot {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspaceSlot > .rackPanel {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspaceSlot > .rackPanel > .panelBody,
+.workspaceSlot > .rackPanel > .panelFill,
+.workspaceSlot > .rackPanel .panelBody {
+  min-height: 0;
+}
+
+.workspaceSlotLeft {
+  grid-column: 1 / span 2;
+  grid-row: 1 / span 2;
+}
+
+.workspaceSlotRight {
+  grid-column: 3 / span 2;
+  grid-row: 1 / span 2;
+}
+
+.app.rackMode.workspaceExpandedLeft #workspaceLeftSlot,
+.app.rackMode.workspaceExpandedRight #workspaceRightSlot {
+  grid-column: 1 / span 4;
+}
+
+.app.rackMode.workspaceExpandedLeft #workspaceRightSlot,
+.app.rackMode.workspaceExpandedRight #workspaceLeftSlot {
+  display: none;
+}
+
+.app.rackMode:not(.rackIsDragging).workspaceSingleLeft #workspaceLeftSlot {
+  grid-column: 1 / span 4;
+}
+
+.app.rackMode:not(.rackIsDragging).workspaceSingleLeft #workspaceRightSlot {
+  display: none;
+}
+
+.app.rackMode:not(.rackIsDragging).workspaceSingleRight #workspaceRightSlot {
+  grid-column: 1 / span 4;
+}
+
+.app.rackMode:not(.rackIsDragging).workspaceSingleRight #workspaceLeftSlot {
+  display: none;
+}
+
+.app:not(.rackMode) .workspaceSlot {
+  display: none;
+}
+
+.sideRack {
+  flex: 0 0 min(380px, 30vw);
+  min-width: 260px;
+  max-width: 420px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1362,6 +1686,48 @@ button:disabled {
   position: relative;
   transition: transform var(--dur-med) var(--ease-out), border-color var(--dur-med) var(--ease-out),
     background var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out);
+}
+
+.feed.hivesListView .post {
+  padding: 10px;
+  gap: 6px;
+}
+
+.feed.hivesListView .postTop {
+  align-items: center;
+}
+
+.feed.hivesListView .postTitleRow {
+  gap: 0;
+  min-width: 0;
+}
+
+.feed.hivesListView .postTitle {
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed.hivesListView .postMeta,
+.feed.hivesListView .reactionsRow,
+.feed.hivesListView .boostControls,
+.feed.hivesListView .countdown.boost {
+  display: none !important;
+}
+
+.feed.hivesListView .postMeta {
+  display: flex !important;
+  margin-top: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  gap: 6px;
+}
+
+.feed.hivesListView .rightCol {
+  gap: 6px;
 }
 
 .post:hover {

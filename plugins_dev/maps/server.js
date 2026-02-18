@@ -108,6 +108,60 @@ module.exports = function init(api) {
     return out;
   }
 
+  function normalizeFogList(list) {
+    const input = Array.isArray(list) ? list : [];
+    const out = [];
+    const maxPolys = 80;
+    const maxPoints = 60;
+    for (const raw of input.slice(0, maxPolys)) {
+      const points = Array.isArray(raw?.points) ? raw.points : [];
+      if (points.length < 3) continue;
+      const normPoints = [];
+      for (const p of points.slice(0, maxPoints)) {
+        const x = Number(p?.x);
+        const y = Number(p?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        normPoints.push({ x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) });
+      }
+      if (normPoints.length < 3) continue;
+      const modeRaw =
+        typeof raw?.mode === "string"
+          ? raw.mode.trim().toLowerCase()
+          : typeof raw?.reveal === "string"
+            ? raw.reveal.trim().toLowerCase()
+            : "";
+      const mode = modeRaw === "manual" ? "manual" : "auto";
+      const name = typeof raw?.name === "string" ? raw.name.trim().slice(0, 40) : "";
+      out.push({ points: normPoints, mode, name });
+    }
+    return out;
+  }
+
+  function normalizeFallList(list) {
+    const input = Array.isArray(list) ? list : [];
+    const out = [];
+    const maxPolys = 60;
+    const maxPoints = 60;
+    for (const raw of input.slice(0, maxPolys)) {
+      const points = Array.isArray(raw?.points) ? raw.points : [];
+      if (points.length < 3) continue;
+      const normPoints = [];
+      for (const p of points.slice(0, maxPoints)) {
+        const x = Number(p?.x);
+        const y = Number(p?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        normPoints.push({ x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) });
+      }
+      if (normPoints.length < 3) continue;
+      const dirRaw = typeof raw?.direction === "string" ? raw.direction.trim().toLowerCase() : "";
+      const direction = dirRaw === "up" || dirRaw === "left" || dirRaw === "right" ? dirRaw : "down";
+      const offset = clampFloat(raw?.offset, 0.002, 0.08, 0.02);
+      const name = typeof raw?.name === "string" ? raw.name.trim().slice(0, 40) : "";
+      out.push({ points: normPoints, direction, offset, name });
+    }
+    return out;
+  }
+
   function normalizeExitList(list) {
     const input = Array.isArray(list) ? list : [];
     const out = [];
@@ -382,8 +436,9 @@ module.exports = function init(api) {
         const collisions = normalizePolyList(m?.collisions);
         const masks = normalizePolyList(m?.masks);
         const exits = normalizeExitList(m?.exits);
-        const hiddenMasks = normalizePolyList(m?.hiddenMasks);
+        const hiddenMasks = normalizeFogList(m?.hiddenMasks);
         const occluders = normalizePolyList(m?.occluders);
+        const fallThroughs = normalizeFallList(m?.fallThroughs);
         const ttrpgEnabled = Boolean(m?.ttrpgEnabled);
         const sprites = normalizeSpriteList(m?.sprites);
         const spriteIds = new Set(sprites.map((s) => s.id));
@@ -402,6 +457,7 @@ module.exports = function init(api) {
           exits,
           hiddenMasks,
           occluders,
+          fallThroughs,
           ttrpgEnabled,
           sprites,
           props,
@@ -475,6 +531,7 @@ module.exports = function init(api) {
       exits: [],
       hiddenMasks: [],
       occluders: [],
+      fallThroughs: [],
       ttrpgEnabled: false,
       sprites: [],
       props: [],
@@ -528,12 +585,16 @@ module.exports = function init(api) {
       patch.exits = next.exits;
     }
     if (msg && Object.prototype.hasOwnProperty.call(msg, "hiddenMasks")) {
-      next.hiddenMasks = normalizePolyList(msg.hiddenMasks);
+      next.hiddenMasks = normalizeFogList(msg.hiddenMasks);
       patch.hiddenMasks = next.hiddenMasks;
     }
     if (msg && Object.prototype.hasOwnProperty.call(msg, "occluders")) {
       next.occluders = normalizePolyList(msg.occluders);
       patch.occluders = next.occluders;
+    }
+    if (msg && Object.prototype.hasOwnProperty.call(msg, "fallThroughs")) {
+      next.fallThroughs = normalizeFallList(msg.fallThroughs);
+      patch.fallThroughs = next.fallThroughs;
     }
     if (msg && Object.prototype.hasOwnProperty.call(msg, "ttrpgEnabled")) {
       next.ttrpgEnabled = Boolean(msg.ttrpgEnabled);
@@ -871,6 +932,7 @@ module.exports = function init(api) {
           exits: Array.isArray(map.exits) ? map.exits : [],
           hiddenMasks: Array.isArray(map.hiddenMasks) ? map.hiddenMasks : [],
           occluders: Array.isArray(map.occluders) ? map.occluders : [],
+          fallThroughs: Array.isArray(map.fallThroughs) ? map.fallThroughs : [],
           ttrpgEnabled: Boolean(map.ttrpgEnabled),
           sprites: Array.isArray(map.sprites) ? map.sprites : [],
           props: Array.isArray(map.props) ? map.props : [],

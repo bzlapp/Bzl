@@ -20,10 +20,12 @@ Media uploads:
 
 - Full feature rundown (video script aid): `docs/FUNCTIONALITY_REFERENCE.md`
 - Plugins (MVP): `docs/PLUGINS.md`
+- UI rack layout (draft): `docs/UI_RACK_LAYOUT.md`
 - Directory plugins (draft): `docs/DIRECTORY_SPEC.md`
 - Moderation spec: `docs/MODERATION_MVP_SPEC.md`
 - Self-hosted installer plan: `docs/SELF_HOSTED_INSTALLER_PLAN.md`
 - Issue tracker guide: `docs/ISSUE_TRACKER.md`
+- Updating a live server (git + docker): `docs/SERVER_UPDATE.md`
 
 ## Run locally
 

@@ -75,6 +75,12 @@ After extraction, the server installs it into `data/plugins/<id>/`.
 If your plugin has `entryClient`, it is loaded from:
 - `/plugins/<id>/<entryClient>`
 
+### UI panels (draft)
+
+Some plugins are primarily UI. We’re planning a UI “rack layout” where plugins (and core features) register **dockable panels** instead of directly manipulating core DOM.
+
+See: `docs/UI_RACK_LAYOUT.md` (draft).
+
 Client plugins can register via:
 ```js
 window.BzlPluginHost.register("polls", (ctx) => {
@@ -89,8 +95,36 @@ window.BzlPluginHost.register("polls", (ctx) => {
 - `ctx.id`
 - `ctx.toast(title, body)`
 - `ctx.getUser()` / `ctx.getRole()`
+- `ctx.ui.registerPanel(panelDef)` (experimental; only active when the core rack layout is enabled)
 - `ctx.send(eventName, payload)` -> sends `{ type: "plugin:<id>:<eventName>", ...payload }`
 - `ctx.devLog(level, message, data)` -> writes to the in-app dev log (Moderation -> Log -> Server dev log)
+
+### `ctx.ui.registerPanel(panelDef)` (experimental)
+
+This registers a dockable UI panel for your plugin under the rack layout system.
+
+Notes:
+- This is currently **experimental** and only works when the user has enabled the rack layout UI.
+- If rack layout is disabled, your plugin should still work using the existing DOM integration patterns.
+
+Example:
+```js
+window.BzlPluginHost.register("hello", (ctx) => {
+  ctx.ui?.registerPanel?.({
+    id: "hello",
+    title: "Hello",
+    icon: "👋",
+    defaultRack: "right", // or "main"
+    role: "aux", // "primary" | "aux" | "transient" | "utility"
+    presetHints: {
+      discordLike: { place: "docked.bottom" }
+    },
+    render(mount, api) {
+      mount.innerHTML = "<div class='small'>Hello from a plugin panel.</div>";
+    }
+  });
+});
+```
 
 ## Server plugin API
 

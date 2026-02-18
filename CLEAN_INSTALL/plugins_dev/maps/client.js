@@ -5,16 +5,49 @@
     const ws = window.__bzlWs;
     if (!ws) return;
 
-    const mainPanel = document.querySelector(".main .panelFill");
+    const appRootRef = document.querySelector(".app");
+    const inRackMode = (() => {
+      try {
+        // Rack mode reloads the page; this flag is available before the DOM gets the .rackMode class.
+        if (localStorage.getItem("bzl_rackLayout_enabled") === "1") return true;
+      } catch {
+        // ignore
+      }
+      return Boolean(appRootRef?.classList.contains("rackMode"));
+    })();
+
+    // In rack mode, Maps should render into its own dockable panel (not inside Hives).
+    if (inRackMode && ctx?.ui?.registerPanel) {
+      try {
+        ctx.ui.registerPanel({
+          id: "maps",
+          title: "Maps",
+          icon: "🗺️",
+          defaultRack: "main",
+          role: "primary",
+          render() {
+            // no-op: this plugin mounts into the panel shell below
+          }
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    let mainPanel = document.querySelector(".main .panelFill");
+    if (inRackMode) {
+      const shell = document.querySelector('.panel.pluginPanel[data-panel-id="maps"]');
+      if (shell instanceof HTMLElement) mainPanel = shell;
+    }
     const panelHeader = mainPanel ? mainPanel.querySelector(".panelHeader") : null;
     const panelTitle = panelHeader ? panelHeader.querySelector(".panelTitle") : null;
     const filters = panelHeader ? panelHeader.querySelector(".filters") : null;
-    const hiveTabs = document.getElementById("hiveTabs");
-    const feed = document.getElementById("feed");
-    const pollinatePanel = document.getElementById("pollinatePanel");
-    const chatPanel = document.querySelector(".chat");
-    const chatResizeHandle = document.getElementById("chatResizeHandle");
-    const appRoot = document.querySelector(".app");
+    const hiveTabs = inRackMode ? null : document.getElementById("hiveTabs");
+    const feed = inRackMode ? null : document.getElementById("feed");
+    const pollinatePanel = inRackMode ? null : document.getElementById("pollinatePanel");
+    const chatPanel = inRackMode ? null : document.querySelector(".chat");
+    const chatResizeHandle = inRackMode ? null : document.getElementById("chatResizeHandle");
+    const appRoot = inRackMode ? null : appRootRef;
 
     if (!mainPanel || !panelHeader || !panelTitle) return;
 
@@ -108,17 +141,23 @@
     `;
     document.head.appendChild(style);
 
-    const mapsBtn = document.createElement("button");
-    mapsBtn.type = "button";
-    mapsBtn.className = "ghost smallBtn mapsTabBtn";
-    mapsBtn.textContent = "Maps";
-    panelTitle.insertAdjacentElement("afterend", mapsBtn);
+    const mapsBtn = inRackMode
+      ? null
+      : (() => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ghost smallBtn mapsTabBtn";
+          btn.textContent = "Maps";
+          panelTitle.insertAdjacentElement("afterend", btn);
+          return btn;
+        })();
 
     const mapsPanel = document.createElement("div");
-    mapsPanel.className = "mapsPanel hidden";
-    mainPanel.appendChild(mapsPanel);
+    mapsPanel.className = inRackMode ? "mapsPanel" : "mapsPanel hidden";
+    const mount = inRackMode ? mainPanel.querySelector("[data-pluginmount]") : null;
+    (mount || mainPanel).appendChild(mapsPanel);
 
-    let mode = "hives"; // "hives" | "maps" | "map"
+    let mode = inRackMode ? "maps" : "hives"; // "hives" | "maps" | "map"
     let maps = [];
     let activeMap = null;
     let users = new Map(); // username -> {x,y,color,image}
@@ -558,8 +597,10 @@
 
     function enterMaps() {
       mode = "maps";
-      mapsBtn.classList.add("primary");
-      mapsBtn.classList.remove("ghost");
+      if (mapsBtn) {
+        mapsBtn.classList.add("primary");
+        mapsBtn.classList.remove("ghost");
+      }
       setHidden(filters, true);
       setHidden(hiveTabs, true);
       setHidden(feed, true);
@@ -574,8 +615,10 @@
 
     function exitMapsToHives() {
       mode = "hives";
-      mapsBtn.classList.add("ghost");
-      mapsBtn.classList.remove("primary");
+      if (mapsBtn) {
+        mapsBtn.classList.add("ghost");
+        mapsBtn.classList.remove("primary");
+      }
       setHidden(filters, false);
       setHidden(hiveTabs, false);
       setHidden(feed, false);
@@ -2980,10 +3023,12 @@
       renderMapsList();
     }
 
-    mapsBtn.addEventListener("click", () => {
-      if (mode === "hives") enterMaps();
-      else exitMapsToHives();
-    });
+    if (mapsBtn) {
+      mapsBtn.addEventListener("click", () => {
+        if (mode === "hives") enterMaps();
+        else exitMapsToHives();
+      });
+    }
 
     mapsPanel.addEventListener("click", (e) => {
       const enter = e.target.closest("[data-mapenter]");
@@ -3500,9 +3545,14 @@
       }
     });
 
-    // Initial list request (in case the Maps view is opened immediately).
-    // The Maps panel triggers another list() on open.
-    ctx.send("list", {});
+    if (inRackMode) {
+      // In rack mode, Maps is its own panel: start in the list view immediately.
+      enterMaps();
+    } else {
+      // Initial list request (in case the Maps view is opened immediately).
+      // The Maps panel triggers another list() on open.
+      ctx.send("list", {});
+    }
   });
 })();
 

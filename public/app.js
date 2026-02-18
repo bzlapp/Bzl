@@ -20,6 +20,14 @@ const mobileModBtn = document.getElementById("mobileModBtn");
 const enableNotifsBtn = document.getElementById("enableNotifs");
 const notifStatus = document.getElementById("notifStatus");
 const toggleReactionsEl = document.getElementById("toggleReactions");
+const hivesViewModeEl = document.getElementById("hivesViewMode");
+const toggleRackLayoutEl = document.getElementById("toggleRackLayout");
+const toggleSideRackEl = document.getElementById("toggleSideRack");
+const toggleRightRackEl = document.getElementById("toggleRightRack");
+const layoutPresetEl = document.getElementById("layoutPreset");
+const dockHotbarEl = document.getElementById("dockHotbar");
+const showSideRackBtn = document.getElementById("showSideRack");
+const showRightRackBtn = document.getElementById("showRightRack");
 
 const authHint = document.getElementById("authHint");
 const userLabel = document.getElementById("userLabel");
@@ -61,6 +69,10 @@ const newPostForm = document.getElementById("newPostForm");
 const pollinatePanel = document.getElementById("pollinatePanel");
 const toggleComposerBtn = document.getElementById("toggleComposer");
 const toggleComposerInlineBtn = document.getElementById("toggleComposerInline");
+const mainRackEl = document.getElementById("mainRack");
+const mainWorkspaceRackEl = document.getElementById("mainWorkspaceRack");
+const mainSideRackEl = document.getElementById("mainSideRack");
+const hivesPanelEl = document.getElementById("hivesPanel");
 const postTitleInput = document.getElementById("postTitle");
 const postImageInput = document.getElementById("postImage");
 const postAudioInput = document.getElementById("postAudio");
@@ -218,8 +230,1605 @@ let customRoles = [];
 let plugins = [];
 const loadedPluginClientVersionById = new Map(); // pluginId -> version string
 let centerView = "hives";
+const HIVES_VIEW_MODE_KEY = "bzl_hivesViewMode";
+const HIVES_LIST_AUTO_THRESHOLD_PX = 520;
+let lastHivesWidthPx = 0;
+let hivesResizeObserver = null;
+
+// --- Rack layout (experimental) ------------------------------------------------
+
+const RACK_LAYOUT_ENABLED_KEY = "bzl_rackLayout_enabled";
+const RACK_LAYOUT_STATE_KEY = "bzl_rackLayout_state_v2";
+const RACK_SIDE_COLLAPSED_KEY = "bzl_rackLayout_sideCollapsed";
+const RACK_RIGHT_COLLAPSED_KEY = "bzl_rackLayout_rightCollapsed";
+const WORKSPACE_EXPANDED_PRIMARY_KEY = "bzl_workspace_expandedPrimary";
+const WORKSPACE_EXPANDED_DISPLACED_KEY = "bzl_workspace_expandedDisplaced";
+
+/**
+ * @typedef {{
+ *   version: 2,
+ *   presetId: string,
+ *   docked: { bottom: string[] },
+ *   racks?: { workspaceLeft?: string[], workspaceRight?: string[], side?: string[], right?: string[] },
+ * }} RackLayoutState
+ */
+
+/** @type {RackLayoutState} */
+let rackLayoutState = {
+  version: 2,
+  presetId: "discordLike",
+  docked: { bottom: [] },
+  racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+};
+let rackLayoutEnabled = false;
+let rightRackEl = null;
+let mainRack = null;
+let mainSideRack = null;
+const WORKSPACE_ACTIVE_PRIMARY_KEY = "bzl_workspace_activePrimary";
+
+function readBoolPref(key, fallback = false) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return raw === "1" || raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeBoolPref(key, value) {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+function readWorkspaceExpandedPrimary() {
+  return readStringPref(WORKSPACE_EXPANDED_PRIMARY_KEY, "").trim();
+}
+
+function writeWorkspaceExpandedPrimary(panelId) {
+  writeStringPref(WORKSPACE_EXPANDED_PRIMARY_KEY, String(panelId || "").trim());
+}
+
+function readWorkspaceExpandedDisplaced() {
+  return readStringPref(WORKSPACE_EXPANDED_DISPLACED_KEY, "").trim();
+}
+
+function writeWorkspaceExpandedDisplaced(panelId) {
+  writeStringPref(WORKSPACE_EXPANDED_DISPLACED_KEY, String(panelId || "").trim());
+}
+
+function clearWorkspaceExpandedState() {
+  writeWorkspaceExpandedPrimary("");
+  writeWorkspaceExpandedDisplaced("");
+}
+
+function togglePrimaryExpand(panelId) {
+  if (!rackLayoutEnabled) return;
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!panelCanExpand(id)) return;
+
+  const current = readWorkspaceExpandedPrimary();
+  const left = ensureWorkspaceLeftRack();
+  const right = ensureWorkspaceRightRack();
+  if (!left || !right) return;
+
+  // If the panel isn't in a workspace slot, pull it into the workspace first.
+  const panelEl = getPanelElement(id);
+  if (panelEl) {
+    const inWorkspace = panelEl.parentElement === left || panelEl.parentElement === right;
+    if (!inWorkspace) {
+      const leftExisting = left.querySelector?.(":scope > .rackPanel:not(.hidden)");
+      const rightExisting = right.querySelector?.(":scope > .rackPanel:not(.hidden)");
+      const leftEmpty = !leftExisting;
+      const rightEmpty = !rightExisting;
+      // Prefer the right slot for "aux" expandables like Moderation/Composer.
+      const target = rightEmpty ? right : leftEmpty ? left : right;
+      const existing = target === left ? leftExisting : rightExisting;
+      if (existing instanceof HTMLElement && existing !== panelEl) {
+        const existingId = String(existing.dataset?.panelId || "").trim();
+        if (existingId) dockPanel(existingId);
+      }
+      target.appendChild(panelEl);
+      syncRackStateFromDom();
+      enforceWorkspaceRules();
+    }
+  }
+
+  const leftPanel = left.querySelector?.(":scope > .rackPanel");
+  const rightPanel = right.querySelector?.(":scope > .rackPanel");
+  const leftId = String(leftPanel?.dataset?.panelId || "").trim();
+  const rightId = String(rightPanel?.dataset?.panelId || "").trim();
+
+  if (current && current === id) {
+    // Collapse: try to restore the displaced panel (if any) back into the now-visible other slot.
+    const displaced = readWorkspaceExpandedDisplaced();
+    clearWorkspaceExpandedState();
+    if (displaced && isDocked(displaced)) {
+      undockPanel(displaced);
+      const el = getPanelElement(displaced);
+      if (el) {
+        if (leftId === id && !rightId) right.appendChild(el);
+        else if (rightId === id && !leftId) left.appendChild(el);
+      }
+    }
+    enforceWorkspaceRules();
+    return;
+  }
+
+  // Expand: if the other slot is occupied, dock it so it stays accessible via hotbar.
+  writeWorkspaceExpandedPrimary(id);
+  let displaced = "";
+  if (leftId === id && rightId) displaced = rightId;
+  if (rightId === id && leftId) displaced = leftId;
+  if (displaced && displaced !== id) {
+    writeWorkspaceExpandedDisplaced(displaced);
+    dockPanel(displaced);
+  } else {
+    writeWorkspaceExpandedDisplaced("");
+  }
+  enforceWorkspaceRules();
+}
+
+function readStringPref(key, fallback = "") {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return String(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStringPref(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // ignore
+  }
+}
+
+function resolveHivesViewMode() {
+  const pref = readStringPref(HIVES_VIEW_MODE_KEY, "list");
+  const normalized = String(pref || "auto").toLowerCase();
+  if (normalized === "list") return "list";
+  if (normalized === "cards") return "cards";
+  // auto (currently treated as list by default; we can reintroduce responsive modes later)
+  return "list";
+}
+
+function applyHivesViewMode() {
+  const mode = resolveHivesViewMode();
+  const list = mode === "list";
+  feedEl?.classList.toggle("hivesListView", list);
+  hivesPanelEl?.classList.toggle("hivesListView", list);
+}
+
+function installHivesAutoViewMode() {
+  if (!hivesPanelEl) return;
+  if (typeof ResizeObserver === "undefined") {
+    window.addEventListener("resize", () => applyHivesViewMode());
+    return;
+  }
+  if (hivesResizeObserver) return;
+  hivesResizeObserver = new ResizeObserver((entries) => {
+    const entry = entries && entries[0];
+    const w = Number(entry?.contentRect?.width || 0);
+    if (!w) return;
+    const rounded = Math.round(w);
+    if (rounded === lastHivesWidthPx) return;
+    lastHivesWidthPx = rounded;
+    applyHivesViewMode();
+  });
+  try {
+    hivesResizeObserver.observe(hivesPanelEl);
+  } catch {
+    // ignore
+  }
+}
+
+function setSideCollapsed(collapsed, opts) {
+  const options = opts && typeof opts === "object" ? opts : {};
+  const persist = options.persist !== false;
+  const updateControls = options.updateControls !== false;
+  if (!appRoot) return;
+  appRoot.classList.toggle("sideCollapsed", Boolean(collapsed));
+  if (persist) writeBoolPref(RACK_SIDE_COLLAPSED_KEY, Boolean(collapsed));
+  if (updateControls && toggleSideRackEl) toggleSideRackEl.checked = !Boolean(collapsed);
+  updateSideRackEmptyState();
+}
+
+function setRightCollapsed(collapsed, opts) {
+  const options = opts && typeof opts === "object" ? opts : {};
+  const persist = options.persist !== false;
+  const updateControls = options.updateControls !== false;
+  if (!appRoot) return;
+  appRoot.classList.toggle("rightCollapsed", Boolean(collapsed));
+  if (persist) writeBoolPref(RACK_RIGHT_COLLAPSED_KEY, Boolean(collapsed));
+  if (updateControls && toggleRightRackEl) toggleRightRackEl.checked = !Boolean(collapsed);
+}
+
+function updateSideRackEmptyState() {
+  if (!appRoot) return;
+  const side = mainSideRackEl || mainSideRack || document.getElementById("mainSideRack");
+  if (!(side instanceof HTMLElement)) return;
+  const hasVisible = Boolean(side.querySelector?.(".rackPanel:not(.hidden)"));
+  appRoot.classList.toggle("sideRackEmpty", !hasVisible);
+}
+
+// Panel registry (skeleton): this will become the primary way core + plugins register UI panels.
+// For now, it powers rack mode (docking + ordering + workspace rules) and plugin panel shells.
+/** @type {Map<string, {id:string,title:string,icon?:string,source:string,role:string,defaultRack:string,element?:HTMLElement|null}>} */
+const panelRegistry = new Map();
+
+function registerCorePanel(def) {
+  const id = String(def?.id || "").trim();
+  if (!id) return;
+  const title = String(def?.title || id).trim();
+  const icon = typeof def?.icon === "string" ? def.icon : "";
+  const role = typeof def?.role === "string" ? def.role : "aux";
+  const defaultRack = typeof def?.defaultRack === "string" ? def.defaultRack : "right";
+  const element = def?.element instanceof HTMLElement ? def.element : null;
+  panelRegistry.set(id, { id, title, icon, source: "core", role, defaultRack, element });
+}
+
+registerCorePanel({ id: "chat", title: "Chat", icon: "💬", role: "primary", defaultRack: "main", element: chatPanelEl });
+registerCorePanel({ id: "hives", title: "Hives", icon: "🐝", role: "primary", defaultRack: "main", element: hivesPanelEl });
+registerCorePanel({ id: "people", title: "People", icon: "👥", role: "aux", defaultRack: "right", element: peopleDrawerEl });
+registerCorePanel({ id: "moderation", title: "Moderation", icon: "🛡️", role: "aux", defaultRack: "right", element: modPanelEl });
+registerCorePanel({ id: "profile", title: "Profile", icon: "👤", role: "transient", defaultRack: "main", element: profileViewPanel });
+registerCorePanel({ id: "composer", title: "New Hive", icon: "✍️", role: "aux", defaultRack: "main", element: pollinatePanel });
+
+// Rack mode: Profile should behave like a normal dockable panel (not a flow that replaces Hives).
+// Override the role after the initial core registration (Map#set will replace the previous entry).
+panelRegistry.set("profile", { ...(panelRegistry.get("profile") || { id: "profile", source: "core" }), role: "aux" });
+
+// Expose for quick inspection in the browser console while iterating.
+window.__bzlPanels = { panelRegistry };
+
+const PRESET_DEFS = {
+  // Presets are hard-applied (exact placement). Anything not explicitly placed starts in the hotbar.
+  // Workspace uses two full-height primary slots (left + right). No vertical splits.
+  social: {
+    presetId: "social",
+    label: "Default (Social)",
+    group: "user",
+    workspaceLeftOrder: ["hives"],
+    workspaceRightOrder: ["chat"],
+    sideOrder: ["profile", "composer"],
+    rightOrder: ["people"],
+    dockBottom: ["maps", "library"],
+  },
+  chatFocus: {
+    presetId: "chatFocus",
+    label: "Chat Focus",
+    group: "user",
+    workspaceLeftOrder: ["chat"],
+    workspaceRightOrder: [],
+    expandedPrimary: "chat",
+    sideOrder: ["profile"],
+    rightOrder: ["people"],
+    dockBottom: ["hives", "composer", "maps", "library"],
+  },
+  browse: {
+    presetId: "browse",
+    label: "Browse",
+    group: "user",
+    workspaceLeftOrder: ["hives"],
+    workspaceRightOrder: [],
+    expandedPrimary: "hives",
+    sideOrder: ["chat"],
+    rightOrder: ["profile"],
+    dockBottom: ["people", "composer", "maps", "library"],
+  },
+  creator: {
+    presetId: "creator",
+    label: "Creator",
+    group: "user",
+    workspaceLeftOrder: ["hives"],
+    workspaceRightOrder: ["composer"],
+    composerOpen: true,
+    sideOrder: ["people"],
+    rightOrder: ["profile"],
+    dockBottom: ["chat", "maps", "library"],
+  },
+  mapsSession: {
+    presetId: "mapsSession",
+    label: "Maps Session",
+    group: "user",
+    workspaceLeftOrder: ["maps"], // if installed
+    workspaceRightOrder: ["chat"],
+    sideOrder: ["hives"],
+    rightOrder: ["people"],
+    dockBottom: ["profile", "composer", "library"],
+  },
+  quiet: {
+    presetId: "quiet",
+    label: "Quiet (No People)",
+    group: "user",
+    workspaceLeftOrder: ["hives"],
+    workspaceRightOrder: ["profile"],
+    sideOrder: ["composer"],
+    rightOrder: [],
+    rightCollapsed: true,
+    dockBottom: ["chat", "people", "maps", "library"],
+  },
+  ops: {
+    presetId: "ops",
+    label: "Ops",
+    group: "mod",
+    modOnly: true,
+    workspaceLeftOrder: ["moderation"],
+    workspaceRightOrder: ["chat"],
+    sideOrder: ["hives"],
+    rightOrder: ["people"],
+    dockBottom: ["profile", "composer", "maps", "library"],
+  },
+  reportsFocus: {
+    presetId: "reportsFocus",
+    label: "Reports Focus",
+    group: "mod",
+    modOnly: true,
+    workspaceLeftOrder: ["moderation"],
+    workspaceRightOrder: [],
+    expandedPrimary: "moderation",
+    sideOrder: ["people"],
+    rightOrder: ["chat"],
+    dockBottom: ["hives", "profile", "composer", "maps", "library"],
+  },
+  communityWatch: {
+    presetId: "communityWatch",
+    label: "Community Watch",
+    group: "mod",
+    modOnly: true,
+    workspaceLeftOrder: ["hives"],
+    workspaceRightOrder: ["moderation"],
+    sideOrder: ["chat"],
+    rightOrder: ["people"],
+    dockBottom: ["profile", "composer", "maps", "library"],
+  },
+  serverAdmin: {
+    presetId: "serverAdmin",
+    label: "Server Admin",
+    group: "mod",
+    modOnly: true,
+    workspaceLeftOrder: ["moderation"],
+    workspaceRightOrder: ["hives"],
+    sideOrder: ["chat"],
+    rightOrder: ["people"],
+    dockBottom: ["profile", "composer", "maps", "library"],
+  },
+};
+
+const PRESET_ALIASES = {
+  // Back-compat for older preset ids.
+  discordLike: "social",
+  chat: "chatFocus",
+  browsing: "browse",
+  maps: "mapsSession",
+  focus: "quiet",
+  clean: "social",
+  moderation: "ops",
+};
+
+function resolvePresetKey(presetId) {
+  const raw = String(presetId || "").trim();
+  const mapped = Object.prototype.hasOwnProperty.call(PRESET_ALIASES, raw) ? PRESET_ALIASES[raw] : raw;
+  return Object.prototype.hasOwnProperty.call(PRESET_DEFS, mapped) ? mapped : "social";
+}
+
+function updateLayoutPresetOptions() {
+  if (!layoutPresetEl) return;
+  const current = resolvePresetKey(rackLayoutState?.presetId || layoutPresetEl.value || "social");
+
+  const defs = Object.values(PRESET_DEFS).filter((d) => d && typeof d === "object");
+  const userDefs = defs.filter((d) => d.group === "user");
+  const modDefs = defs.filter((d) => d.group === "mod");
+
+  const makeOpt = (def) => {
+    const opt = document.createElement("option");
+    opt.value = String(def.presetId || "");
+    opt.textContent = String(def.label || def.presetId || "Preset");
+    return opt;
+  };
+
+  layoutPresetEl.innerHTML = "";
+
+  const userGroup = document.createElement("optgroup");
+  userGroup.label = "Presets";
+  for (const def of userDefs) userGroup.appendChild(makeOpt(def));
+  layoutPresetEl.appendChild(userGroup);
+
+  if (canModerate) {
+    const modGroup = document.createElement("optgroup");
+    modGroup.label = "Moderation (mods)";
+    for (const def of modDefs) modGroup.appendChild(makeOpt(def));
+    layoutPresetEl.appendChild(modGroup);
+  }
+
+  const nextValue = canModerate ? current : (PRESET_DEFS[current]?.modOnly ? "social" : current);
+  layoutPresetEl.value = Object.prototype.hasOwnProperty.call(PRESET_DEFS, nextValue) ? nextValue : "social";
+}
+
+function readRackLayoutEnabled() {
+  try {
+    return localStorage.getItem(RACK_LAYOUT_ENABLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeRackLayoutEnabled(enabled) {
+  rackLayoutEnabled = Boolean(enabled);
+  try {
+    localStorage.setItem(RACK_LAYOUT_ENABLED_KEY, rackLayoutEnabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+/** @returns {RackLayoutState} */
+function loadRackLayoutState() {
+  try {
+    const raw = localStorage.getItem(RACK_LAYOUT_STATE_KEY);
+    if (!raw)
+      return {
+        version: 2,
+        presetId: "discordLike",
+        docked: { bottom: [] },
+        racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+      };
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 2)
+      return {
+        version: 2,
+        presetId: "discordLike",
+        docked: { bottom: [] },
+        racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+      };
+    const bottom = Array.isArray(parsed?.docked?.bottom) ? parsed.docked.bottom.map((x) => String(x || "")).filter(Boolean) : [];
+    const presetId = typeof parsed?.presetId === "string" ? parsed.presetId : "discordLike";
+    const workspaceLeft = Array.isArray(parsed?.racks?.workspaceLeft) ? parsed.racks.workspaceLeft.map((x) => String(x || "")).filter(Boolean) : [];
+    const workspaceRight = Array.isArray(parsed?.racks?.workspaceRight) ? parsed.racks.workspaceRight.map((x) => String(x || "")).filter(Boolean) : [];
+    const side = Array.isArray(parsed?.racks?.side) ? parsed.racks.side.map((x) => String(x || "")).filter(Boolean) : [];
+    const right = Array.isArray(parsed?.racks?.right) ? parsed.racks.right.map((x) => String(x || "")).filter(Boolean) : [];
+    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right } };
+  } catch {
+    return { version: 2, presetId: "discordLike", docked: { bottom: [] }, racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] } };
+  }
+}
+
+function saveRackLayoutState() {
+  try {
+    localStorage.setItem(RACK_LAYOUT_STATE_KEY, JSON.stringify(rackLayoutState));
+  } catch {
+    // ignore
+  }
+}
+
+function ensureWorkspaceSlots() {
+  const workspace = mainWorkspaceRackEl || document.getElementById("mainWorkspaceRack");
+  if (!workspace) return { left: null, right: null };
+
+  let left = workspace.querySelector?.("#workspaceLeftSlot");
+  let right = workspace.querySelector?.("#workspaceRightSlot");
+
+  if (!left) {
+    left = document.createElement("div");
+    left.id = "workspaceLeftSlot";
+    left.className = "workspaceSlot workspaceSlotLeft";
+    left.setAttribute("aria-label", "Workspace left");
+    workspace.prepend(left);
+  }
+  if (!right) {
+    right = document.createElement("div");
+    right.id = "workspaceRightSlot";
+    right.className = "workspaceSlot workspaceSlotRight";
+    right.setAttribute("aria-label", "Workspace right");
+    const afterLeft = workspace.querySelector?.("#workspaceLeftSlot");
+    if (afterLeft && afterLeft.nextSibling) workspace.insertBefore(right, afterLeft.nextSibling);
+    else workspace.appendChild(right);
+  }
+  return { left, right };
+}
+
+function panelTitle(panelId) {
+  const entry = panelRegistry.get(panelId);
+  if (entry?.title) return entry.title;
+  if (panelId === "maps") return "Maps";
+  if (panelId === "library") return "Library";
+  return String(panelId || "");
+}
+
+function panelIcon(panelId) {
+  const entry = panelRegistry.get(panelId);
+  if (entry?.icon) return entry.icon;
+  if (panelId === "maps") return "🗺️";
+  if (panelId === "library") return "📚";
+  return "•";
+}
+
+function panelRole(panelId) {
+  const entry = panelRegistry.get(panelId);
+  return typeof entry?.role === "string" ? entry.role : "aux";
+}
+
+function panelCanExpand(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (panelRole(id) === "primary") return true;
+  // Allow a few core panels to take over the workspace even though they aren't "primary" by default.
+  return id === "moderation" || id === "composer";
+}
+
+function isDocked(panelId) {
+  return rackLayoutState.docked.bottom.includes(panelId);
+}
+
+function getPanelElement(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return null;
+  const entry = panelRegistry.get(id);
+  const el = entry?.element;
+  return el instanceof HTMLElement ? el : null;
+}
+
+function dockPanel(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!isDocked(id)) rackLayoutState.docked.bottom.push(id);
+  saveRackLayoutState();
+  applyDockState();
+}
+
+function undockPanel(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  rackLayoutState.docked.bottom = rackLayoutState.docked.bottom.filter((x) => x !== id);
+  saveRackLayoutState();
+  applyDockState();
+}
+
+function showHotbar(show) {
+  if (!dockHotbarEl) return;
+  if (!show && dockHotbarEl.dataset.lockVisible === "1") return;
+  dockHotbarEl.classList.toggle("hidden", !show);
+  dockHotbarEl.classList.toggle("show", Boolean(show));
+}
+
+function renderHotbar() {
+  if (!dockHotbarEl) return;
+  const items = rackLayoutState.docked.bottom.slice().filter((id) => getPanelElement(id));
+  if (!items.length) {
+    dockHotbarEl.classList.add("hidden");
+    dockHotbarEl.classList.remove("show");
+    dockHotbarEl.innerHTML = "";
+    return;
+  }
+  dockHotbarEl.innerHTML = items
+    .map(
+      (id) => `
+    <button type="button" class="dockOrb" data-undock="${escapeHtml(id)}" title="Restore ${escapeHtml(panelTitle(id))}">
+      <span class="dockOrbIcon" aria-hidden="true">${escapeHtml(panelIcon(id))}</span>
+      <span>${escapeHtml(panelTitle(id))}</span>
+    </button>
+  `
+    )
+    .join("");
+  dockHotbarEl.classList.remove("hidden");
+  requestAnimationFrame(() => showHotbar(true));
+}
+
+function applyDockState() {
+  // For the first implementation phase, we support docking any registered panel that has a DOM element.
+  for (const [id, p] of panelRegistry.entries()) {
+    const el = p?.element;
+    if (!(el instanceof HTMLElement)) continue;
+    if (id === "moderation" && !canModerate) {
+      el.classList.add("hidden");
+      continue;
+    }
+    el.classList.toggle("hidden", isDocked(id));
+  }
+
+  renderHotbar();
+  updateSideRackEmptyState();
+}
+
+function readRackOrder(rackEl) {
+  if (!(rackEl instanceof HTMLElement)) return [];
+  return Array.from(rackEl.querySelectorAll(".rackPanel"))
+    .filter((el) => el instanceof HTMLElement && !el.classList.contains("hidden"))
+    .map((el) => String(el?.dataset?.panelId || "").trim())
+    .filter(Boolean);
+}
+
+function applyRackStateToDom() {
+  if (!rackLayoutEnabled) return;
+  const left = ensureWorkspaceLeftRack();
+  const rightWorkspace = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+  const right = ensureRightRack();
+  if (!left || !rightWorkspace || !side || !right) return;
+  const leftOrder = Array.isArray(rackLayoutState?.racks?.workspaceLeft) ? rackLayoutState.racks.workspaceLeft : [];
+  const rightOrderW = Array.isArray(rackLayoutState?.racks?.workspaceRight) ? rackLayoutState.racks.workspaceRight : [];
+  const sideOrder = Array.isArray(rackLayoutState?.racks?.side) ? rackLayoutState.racks.side : [];
+  const rightOrder = Array.isArray(rackLayoutState?.racks?.right) ? rackLayoutState.racks.right : [];
+
+  for (const panelId of leftOrder) {
+    const el = getPanelElement(panelId);
+    if (el) left.appendChild(el);
+  }
+  for (const panelId of rightOrderW) {
+    const el = getPanelElement(panelId);
+    if (el) rightWorkspace.appendChild(el);
+  }
+  for (const panelId of sideOrder) {
+    const el = getPanelElement(panelId);
+    if (el) side.appendChild(el);
+  }
+  for (const panelId of rightOrder) {
+    const el = getPanelElement(panelId);
+    if (el) right.appendChild(el);
+  }
+}
+
+function readWorkspaceActivePrimary() {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_ACTIVE_PRIMARY_KEY);
+    return raw ? String(raw) : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeWorkspaceActivePrimary(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  try {
+    localStorage.setItem(WORKSPACE_ACTIVE_PRIMARY_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
+function enforceWorkspaceRules() {
+  if (!rackLayoutEnabled) return;
+  const left = ensureWorkspaceLeftRack();
+  const rightWorkspace = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+  const rightRack = ensureRightRack();
+  if (!left || !rightWorkspace || !side || !rightRack) return;
+
+  // Primary panels: allow up to 2 visible (one per workspace slot). Enforce max 1 per slot.
+  const cleanupSlot = (slotEl) => {
+    const kids = Array.from(slotEl.querySelectorAll(":scope > .rackPanel"));
+    if (kids.length <= 1) return;
+    for (const extra of kids.slice(1)) side.appendChild(extra);
+  };
+  cleanupSlot(left);
+  cleanupSlot(rightWorkspace);
+
+  // Right rack is single-slot: keep at most one visible panel.
+  const rightKids = Array.from(rightRack.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
+  if (rightKids.length > 1) {
+    for (const extra of rightKids.slice(1)) {
+      const id = String(extra?.dataset?.panelId || "").trim();
+      if (id) dockPanel(id);
+    }
+  }
+
+  // Panels that live in the workspace slots should be "full" by default (especially primaries).
+  for (const slot of [left, rightWorkspace]) {
+    const panel = slot.querySelector?.(":scope > .rackPanel");
+    if (!(panel instanceof HTMLElement)) continue;
+    const id = String(panel.dataset.panelId || "").trim();
+    if (!id) continue;
+    panel.classList.remove("panelCollapsed");
+    panel.dataset.panelDisplay = "full";
+  }
+
+  // If only one workspace slot is occupied, allow it to expand to full width to avoid blank space.
+  // (We temporarily disable this during drag so the empty slot remains a visible drop target.)
+  const leftPanel = left.querySelector?.(":scope > .rackPanel");
+  const rightPanel = rightWorkspace.querySelector?.(":scope > .rackPanel");
+  const leftId = String(leftPanel?.dataset?.panelId || "").trim();
+  const rightId = String(rightPanel?.dataset?.panelId || "").trim();
+
+  // Workspace expansion (explicit maximize for primaries).
+  const expandedId = readWorkspaceExpandedPrimary();
+  const expandedInLeft = Boolean(expandedId && expandedId === leftId);
+  const expandedInRight = Boolean(expandedId && expandedId === rightId);
+  const expandedValid = expandedInLeft || expandedInRight;
+  if (appRoot) {
+    appRoot.classList.toggle("workspaceExpandedLeft", expandedInLeft);
+    appRoot.classList.toggle("workspaceExpandedRight", expandedInRight);
+    if (!expandedValid) appRoot.classList.remove("workspaceExpandedLeft", "workspaceExpandedRight");
+  }
+  if (expandedId && !expandedValid) clearWorkspaceExpandedState();
+
+  // If expanded and the other slot is occupied, keep it accessible via hotbar.
+  if (expandedInLeft && rightId && rightId !== expandedId) {
+    if (!readWorkspaceExpandedDisplaced()) writeWorkspaceExpandedDisplaced(rightId);
+    dockPanel(rightId);
+  }
+  if (expandedInRight && leftId && leftId !== expandedId) {
+    if (!readWorkspaceExpandedDisplaced()) writeWorkspaceExpandedDisplaced(leftId);
+    dockPanel(leftId);
+  }
+
+  // Auto-expand single-primary only when not explicitly expanded.
+  if (appRoot && !appRoot.classList.contains("rackIsDragging") && !expandedValid) {
+    const leftOnly = Boolean(leftPanel && !rightPanel);
+    const rightOnly = Boolean(!leftPanel && rightPanel);
+    appRoot.classList.toggle("workspaceSingleLeft", leftOnly);
+    appRoot.classList.toggle("workspaceSingleRight", rightOnly);
+  } else if (appRoot) {
+    appRoot.classList.remove("workspaceSingleLeft", "workspaceSingleRight");
+  }
+
+  // If a primary ends up outside the workspace slots, dock it (no half-width primaries).
+  const primariesToDock = [];
+  for (const el of Array.from(appRoot.querySelectorAll(".rackPanel"))) {
+    const id = String(el?.dataset?.panelId || "").trim();
+    if (!id) continue;
+    if (panelRole(id) !== "primary") continue;
+    if (el.parentElement === left || el.parentElement === rightWorkspace) continue;
+    primariesToDock.push(id);
+  }
+  for (const id of primariesToDock) dockPanel(id);
+
+  // Transient panels should live in the side column and be collapsed by default.
+  for (const el of Array.from(appRoot.querySelectorAll("#mainWorkspaceRack .rackPanel, #mainSideRack .rackPanel"))) {
+    const id = String(el?.dataset?.panelId || "").trim();
+    if (!id) continue;
+    if (panelRole(id) !== "transient") continue;
+    if (el.parentElement !== side) side.appendChild(el);
+    el.classList.add("panelCollapsed");
+    el.dataset.panelDisplay = "collapsed";
+  }
+
+  syncRackStateFromDom();
+}
+
+function installWorkspaceInteractions() {
+  if (!rackLayoutEnabled) return;
+  if (!appRoot) return;
+  if (appRoot.dataset.workspaceClicks === "1") return;
+  appRoot.dataset.workspaceClicks = "1";
+
+  appRoot.addEventListener("click", (e) => {
+    if (!rackLayoutEnabled) return;
+    const target = e.target;
+    const interactive = target?.closest?.("button,a,input,select,textarea,label");
+    if (interactive) return;
+    const panel = target?.closest?.(".rackPanel");
+    if (!panel) return;
+    if (!(panel instanceof HTMLElement)) return;
+    if (!panel.closest?.("#mainRack")) return;
+    const panelId = String(panel.dataset.panelId || "").trim();
+    if (!panelId) return;
+    if (panelRole(panelId) !== "primary") return;
+    writeWorkspaceActivePrimary(panelId);
+    enforceWorkspaceRules();
+  });
+}
+
+function syncRackStateFromDom() {
+  if (!rackLayoutEnabled) return;
+  const left = ensureWorkspaceLeftRack();
+  const rightWorkspace = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+  const right = ensureRightRack();
+  if (!left || !rightWorkspace || !side || !right) return;
+  rackLayoutState.racks = {
+    workspaceLeft: readRackOrder(left),
+    workspaceRight: readRackOrder(rightWorkspace),
+    side: readRackOrder(side),
+    right: readRackOrder(right),
+  };
+  saveRackLayoutState();
+}
+
+function ensureRightRack() {
+  if (!appRoot) return null;
+  if (rightRackEl && rightRackEl.isConnected) return rightRackEl;
+  const el = document.createElement("aside");
+  el.id = "rightRack";
+  el.className = "rightRack";
+  appRoot.appendChild(el);
+  rightRackEl = el;
+  return el;
+}
+
+function ensureMainRack() {
+  // In rack mode, "main rack" is the workspace column inside #mainRack.
+  if (mainRack && mainRack.isConnected) return mainRack;
+  if (mainWorkspaceRackEl) {
+    mainRack = mainWorkspaceRackEl;
+    return mainRack;
+  }
+
+  const wrapper = mainRackEl || document.querySelector("#mainRack") || document.querySelector("main.main");
+  if (!wrapper) return null;
+
+  let workspace = wrapper.querySelector?.("#mainWorkspaceRack");
+  let side = wrapper.querySelector?.("#mainSideRack");
+  if (!workspace) {
+    const w = document.createElement("div");
+    w.id = "mainWorkspaceRack";
+    w.className = "workspaceRack";
+    w.setAttribute("aria-label", "Workspace");
+    wrapper.appendChild(w);
+    workspace = w;
+  }
+  if (!side) {
+    const s = document.createElement("div");
+    s.id = "mainSideRack";
+    s.className = "sideRack";
+    s.setAttribute("aria-label", "Side panels");
+    wrapper.appendChild(s);
+    side = s;
+  }
+  mainSideRack = side;
+  mainRack = workspace;
+  return mainRack;
+}
+
+function ensureMainSideRack() {
+  if (mainSideRack && mainSideRack.isConnected) return mainSideRack;
+  if (mainSideRackEl) {
+    mainSideRack = mainSideRackEl;
+    return mainSideRack;
+  }
+  // Ensure the workspace rack exists too (creates both columns if missing).
+  ensureMainRack();
+  return mainSideRack instanceof HTMLElement ? mainSideRack : null;
+}
+
+function ensureWorkspaceLeftRack() {
+  const { left } = ensureWorkspaceSlots();
+  return left instanceof HTMLElement ? left : null;
+}
+
+function ensureWorkspaceRightRack() {
+  const { right } = ensureWorkspaceSlots();
+  return right instanceof HTMLElement ? right : null;
+}
+
+function enableRackLayoutDom() {
+  if (!appRoot) return;
+  appRoot.classList.add("rackMode");
+  const rack = ensureRightRack();
+  if (!rack) return;
+  const main = ensureMainRack();
+  const left = ensureWorkspaceLeftRack();
+  const rightWorkspace = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+
+  const mark = (el, panelId) => {
+    if (!el) return;
+    el.classList.add("rackPanel");
+    el.dataset.panelId = panelId;
+  };
+
+  // Move right-side panels into the rack so they become stackable.
+  // (This is a stepping stone toward full dockable panels.)
+  if (chatPanelEl) {
+    mark(chatPanelEl, "chat");
+    // Chat is a workspace primary in rack mode by default; enforceWorkspaceRules will manage if moved.
+    if (rightWorkspace && chatPanelEl.parentElement !== rightWorkspace) rightWorkspace.appendChild(chatPanelEl);
+  }
+  if (peopleDrawerEl) {
+    mark(peopleDrawerEl, "people");
+    if (peopleDrawerEl.parentElement !== rack) rack.appendChild(peopleDrawerEl);
+  }
+  if (modPanelEl) {
+    mark(modPanelEl, "moderation");
+    if (modPanelEl.parentElement !== rack) rack.appendChild(modPanelEl);
+  }
+
+  // Mark center panels as rack panels too (they already live in mainRack in normal DOM).
+  if (main) {
+    if (hivesPanelEl) {
+      mark(hivesPanelEl, "hives");
+      if (left && hivesPanelEl.parentElement !== left) left.appendChild(hivesPanelEl);
+    }
+    if (profileViewPanel) {
+      mark(profileViewPanel, "profile");
+      if (side && profileViewPanel.parentElement !== side) side.appendChild(profileViewPanel);
+      // In rack mode, profile is its own panel; don't keep it hidden behind the legacy center-view toggle.
+      profileViewPanel.classList.remove("hidden");
+    }
+    if (pollinatePanel) {
+      mark(pollinatePanel, "composer");
+      if (side && pollinatePanel.parentElement !== side) side.appendChild(pollinatePanel);
+    }
+  }
+
+  // Hide old resizers in rack mode (we'll replace with rack-aware resizing later).
+  chatResizeHandle?.classList.add("hidden");
+  peopleResizeHandle?.classList.add("hidden");
+
+  // People drawer chrome: hide the close button (panel is now a rack item).
+  closePeopleBtn?.classList.add("hidden");
+  // People drawer toggle button is obsolete in rack mode.
+  togglePeopleBtn?.classList.add("hidden");
+  // Ensure people panel isn't hidden by legacy state.
+  peopleDrawerEl?.classList.remove("hidden");
+  peopleOpen = true;
+
+  // Profile panel no longer "replaces" the feed in rack mode, so the back button is confusing.
+  profileBackBtn?.classList.add("hidden");
+}
+
+function disableRackLayoutDom() {
+  if (!appRoot) return;
+  appRoot.classList.remove("rackMode");
+  // No attempt to move elements back (yet). Disable is meant for page reload use.
+}
+
+function applyPreset(presetId) {
+  const key = resolvePresetKey(presetId);
+  const def = PRESET_DEFS[key];
+  if (!def) return;
+  if (def.modOnly && !canModerate) {
+    applyPreset("social");
+    return;
+  }
+
+  rackLayoutState.presetId = def.presetId || key;
+
+  const workspaceLeftOrder = Array.isArray(def.workspaceLeftOrder) ? def.workspaceLeftOrder.map((x) => String(x || "")).filter(Boolean) : [];
+  const workspaceRightOrder = Array.isArray(def.workspaceRightOrder) ? def.workspaceRightOrder.map((x) => String(x || "")).filter(Boolean) : [];
+  const sideOrder = Array.isArray(def.sideOrder) ? def.sideOrder.map((x) => String(x || "")).filter(Boolean) : [];
+  const rightOrderRaw = Array.isArray(def.rightOrder) ? def.rightOrder.map((x) => String(x || "")).filter(Boolean) : [];
+  // Right rack is a single skinny-capable panel.
+  const rightOrder = rightOrderRaw.length ? [rightOrderRaw[0]] : [];
+
+  // Applying a preset should be deterministic even after the user has rearranged panels.
+  clearWorkspaceExpandedState();
+  const expandedPrimary = typeof def.expandedPrimary === "string" ? def.expandedPrimary.trim() : "";
+  if (expandedPrimary) writeWorkspaceExpandedPrimary(expandedPrimary);
+
+  if (typeof def.composerOpen === "boolean") setComposerOpen(def.composerOpen);
+  setSideCollapsed(Boolean(def.sideCollapsed), { persist: true });
+  setRightCollapsed(Boolean(def.rightCollapsed), { persist: true });
+
+  const leftRack = ensureWorkspaceLeftRack();
+  const rightWorkspaceRack = ensureWorkspaceRightRack();
+  const sideRack = ensureMainSideRack();
+  const rightRack = ensureRightRack();
+  if (!leftRack || !rightWorkspaceRack || !sideRack || !rightRack) return;
+
+  const placed = new Set([...workspaceLeftOrder, ...workspaceRightOrder, ...sideOrder, ...rightOrder]);
+  const docked = new Set(Array.isArray(def.dockBottom) ? def.dockBottom.map((x) => String(x || "")).filter(Boolean) : []);
+  for (const id of placed) docked.delete(id);
+
+  // Default: anything not explicitly placed by the preset goes to the hotbar.
+  for (const id of Array.from(panelRegistry.keys())) {
+    if (!placed.has(id)) docked.add(id);
+  }
+
+  // Moderation panel should not be forced visible for non-mods.
+  if (!canModerate) {
+    docked.add("moderation");
+    // Also ensure moderation isn't placed anywhere.
+    workspaceLeftOrder.splice(0, workspaceLeftOrder.length, ...workspaceLeftOrder.filter((x) => x !== "moderation"));
+    workspaceRightOrder.splice(0, workspaceRightOrder.length, ...workspaceRightOrder.filter((x) => x !== "moderation"));
+    sideOrder.splice(0, sideOrder.length, ...sideOrder.filter((x) => x !== "moderation"));
+  }
+
+  rackLayoutState.docked.bottom = Array.from(docked);
+
+  saveRackLayoutState();
+  applyDockState();
+
+  // Detach all known panels before re-placing, so we don't end up with "stale" panels sticking in old racks.
+  const elsById = new Map();
+  for (const id of Array.from(panelRegistry.keys())) {
+    const el = getPanelElement(id);
+    if (el) elsById.set(id, el);
+  }
+  for (const el of elsById.values()) {
+    if (el.parentElement) el.parentElement.removeChild(el);
+  }
+
+  if (leftRack) {
+    for (const panelId of workspaceLeftOrder) {
+      if (docked.has(panelId)) continue;
+      const el = elsById.get(panelId) || getPanelElement(panelId);
+      if (el) leftRack.appendChild(el);
+    }
+  }
+  if (rightWorkspaceRack) {
+    for (const panelId of workspaceRightOrder) {
+      if (docked.has(panelId)) continue;
+      const el = elsById.get(panelId) || getPanelElement(panelId);
+      if (el) rightWorkspaceRack.appendChild(el);
+    }
+  }
+  if (sideRack) {
+    for (const panelId of sideOrder) {
+      if (docked.has(panelId)) continue;
+      const el = elsById.get(panelId) || getPanelElement(panelId);
+      if (el) sideRack.appendChild(el);
+    }
+  }
+  if (rightRack) {
+    for (const panelId of rightOrder) {
+      if (docked.has(panelId)) continue;
+      const el = elsById.get(panelId) || getPanelElement(panelId);
+      if (el) rightRack.appendChild(el);
+    }
+  }
+
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+  updateLayoutPresetOptions();
+}
+
+function installPanelMinimizeButtons() {
+  const addMinBtn = (headerEl, panelId) => {
+    if (!headerEl) return;
+    const row = headerEl.querySelector(".row") || headerEl.querySelector(".filters") || headerEl;
+
+    if (!headerEl.querySelector(`[data-rackdrag="${panelId}"]`)) {
+      const drag = document.createElement("button");
+      drag.type = "button";
+      drag.className = "ghost smallBtn rackDragHandle";
+      drag.textContent = "☰";
+      drag.title = "Drag to reorder";
+      drag.setAttribute("data-rackdrag", panelId);
+      row.appendChild(drag);
+    }
+
+    if (panelCanExpand(panelId) && !headerEl.querySelector(`[data-expand="${panelId}"]`)) {
+      const expand = document.createElement("button");
+      expand.type = "button";
+      expand.className = "ghost smallBtn";
+      expand.textContent = "[]";
+      expand.title = "Expand workspace";
+      expand.setAttribute("data-expand", panelId);
+      expand.onclick = () => togglePrimaryExpand(panelId);
+      row.appendChild(expand);
+    }
+
+    if (!headerEl.querySelector(`[data-minimize="${panelId}"]`)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ghost smallBtn";
+      btn.textContent = "—";
+      btn.title = "Minimize to hotbar";
+      btn.setAttribute("data-minimize", panelId);
+      btn.onclick = () => dockPanel(panelId);
+      row.appendChild(btn);
+    }
+  };
+
+  addMinBtn(chatHeaderEl, "chat");
+  addMinBtn(modPanelEl?.querySelector(".panelHeader"), "moderation");
+  addMinBtn(peopleDrawerEl?.querySelector(".panelHeader"), "people");
+  addMinBtn(hivesPanelEl?.querySelector(".panelHeader"), "hives");
+  addMinBtn(profileViewPanel?.querySelector(".panelHeader"), "profile");
+  addMinBtn(pollinatePanel?.querySelector(".panelHeader"), "composer");
+}
+
+function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
+  const wantsMain = String(defaultRack || "").toLowerCase() === "main";
+  const isPrimary = String(role || "").toLowerCase() === "primary";
+  let preferred = null;
+  if (wantsMain && isPrimary) {
+    // Primary panels should live inside a workspace slot, not as loose items in the workspace grid.
+    const left = ensureWorkspaceLeftRack();
+    const right = ensureWorkspaceRightRack();
+    const side = ensureMainSideRack();
+    const leftEmpty = left ? left.querySelectorAll(":scope > .rackPanel").length === 0 : false;
+    const rightEmpty = right ? right.querySelectorAll(":scope > .rackPanel").length === 0 : false;
+    preferred = leftEmpty ? left : rightEmpty ? right : side;
+  } else if (wantsMain) {
+    preferred = ensureMainSideRack();
+  } else {
+    preferred = ensureRightRack();
+  }
+  const rack = preferred || ensureRightRack() || ensureMainSideRack() || ensureWorkspaceLeftRack() || ensureWorkspaceRightRack() || ensureMainRack();
+  if (!rack) return null;
+
+  const existing = document.querySelector?.(`.panel.pluginPanel[data-panel-id="${CSS.escape(panelId)}"]`);
+  if (existing instanceof HTMLElement) {
+    if (existing.parentElement !== rack) rack.appendChild(existing);
+    return existing;
+  }
+
+  const shell = document.createElement("section");
+  shell.className = "panel panelFill pluginPanel rackPanel";
+  shell.dataset.panelId = panelId;
+  shell.innerHTML = `
+    <div class="panelHeader">
+      <div class="panelTitle">${escapeHtml(title || panelId)}</div>
+      <div class="row">
+        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">☰</button>
+        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">—</button>
+      </div>
+    </div>
+    <div class="panelBody" data-pluginmount="1"></div>
+  `;
+
+  const minBtn = shell.querySelector(`[data-minimize="${panelId}"]`);
+  if (isPrimary || panelCanExpand(panelId)) {
+    const headerRow = shell.querySelector(".panelHeader .row");
+    if (headerRow && !headerRow.querySelector(`[data-expand="${panelId}"]`)) {
+      const expand = document.createElement("button");
+      expand.type = "button";
+      expand.className = "ghost smallBtn";
+      expand.textContent = "[]";
+      expand.title = "Expand workspace";
+      expand.setAttribute("data-expand", panelId);
+      expand.addEventListener("click", () => togglePrimaryExpand(panelId));
+      if (minBtn && minBtn.parentElement === headerRow) headerRow.insertBefore(expand, minBtn);
+      else headerRow.appendChild(expand);
+    }
+  }
+  if (minBtn) minBtn.addEventListener("click", () => dockPanel(panelId));
+
+  rack.appendChild(shell);
+  return shell;
+}
+
+function applyPluginPresetHint(panelDef) {
+  if (!rackLayoutEnabled) return;
+  const id = String(panelDef?.id || "").trim();
+  if (!id) return;
+  if (isDocked(id)) return;
+  const presetId = rackLayoutState?.presetId || "";
+  const hint = panelDef?.presetHints && typeof panelDef.presetHints === "object" ? panelDef.presetHints[presetId] : null;
+  const place = hint && typeof hint === "object" ? String(hint.place || "") : "";
+  if (place === "docked.bottom") {
+    dockPanel(id);
+    return;
+  }
+  if (place === "main" || place === "right") {
+    const rack = place === "main" ? ensureMainSideRack() : ensureRightRack();
+    const el = getPanelElement(id);
+    if (rack && el) rack.appendChild(el);
+  }
+}
+
+function enableRackDnD() {
+  if (!rackLayoutEnabled) return;
+  const right = ensureRightRack();
+  const left = ensureWorkspaceLeftRack();
+  const rightWorkspace = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+  if (!right || !left || !rightWorkspace || !side) return;
+  const racks = [left, rightWorkspace, side, right];
+
+  // Guard against double-install if initRackLayout is called more than once.
+  if (appRoot?.dataset?.rackDnd === "1") return;
+  if (appRoot) appRoot.dataset.rackDnd = "1";
+
+  let draggingEl = null;
+  let placeholderEl = null;
+  let pointerId = null;
+  let dragOffset = { x: 0, y: 0 };
+  let draggingPanelId = "";
+  let activeRack = null;
+  let originRack = null;
+  let originBefore = null;
+
+  const cancelDrag = () => {
+    if (!draggingEl) return;
+    cleanup();
+    enforceWorkspaceRules();
+  };
+
+  const cleanup = () => {
+    if (appRoot) appRoot.classList.remove("rackIsDragging");
+    if (draggingEl) {
+      draggingEl.classList.remove("rackDragging");
+      draggingEl.style.position = "";
+      draggingEl.style.left = "";
+      draggingEl.style.top = "";
+      draggingEl.style.width = "";
+      draggingEl.style.zIndex = "";
+      draggingEl.style.pointerEvents = "";
+    }
+    if (dockHotbarEl) dockHotbarEl.classList.remove("dockTarget");
+    if (placeholderEl && placeholderEl.parentElement) placeholderEl.parentElement.removeChild(placeholderEl);
+    draggingEl = null;
+    placeholderEl = null;
+    pointerId = null;
+    draggingPanelId = "";
+    activeRack = null;
+    originRack = null;
+    originBefore = null;
+  };
+
+  const siblings = (rack) => Array.from(rack.querySelectorAll(".rackPanel")).filter((el) => el !== draggingEl && el !== placeholderEl);
+
+  const insertPlaceholderAt = (rack, y) => {
+    const items = siblings(rack);
+    for (const el of items) {
+      const r = el.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (y < mid) {
+        rack.insertBefore(placeholderEl, el);
+        return;
+      }
+    }
+    rack.appendChild(placeholderEl);
+  };
+
+  const rackAtPoint = (x, y) => {
+    for (const r of racks) {
+      const rect = r.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return r;
+    }
+    return null;
+  };
+
+  const onMove = (e) => {
+    if (!draggingEl || e.pointerId !== pointerId) return;
+    e.preventDefault();
+    const x = e.clientX - dragOffset.x;
+    const y = e.clientY - dragOffset.y;
+    draggingEl.style.left = `${x}px`;
+    draggingEl.style.top = `${y}px`;
+
+    const targetRack = rackAtPoint(e.clientX, e.clientY) || activeRack;
+    if (targetRack && placeholderEl && placeholderEl.parentElement !== targetRack) {
+      targetRack.appendChild(placeholderEl);
+    }
+    if (targetRack) {
+      activeRack = targetRack;
+      insertPlaceholderAt(targetRack, e.clientY);
+    }
+
+    if (dockHotbarEl) {
+      const nearBottom = e.clientY > window.innerHeight - 90;
+      dockHotbarEl.classList.toggle("dockTarget", Boolean(nearBottom));
+      if (nearBottom) showHotbar(true);
+    }
+  };
+
+    const onUp = (e) => {
+      if (!draggingEl || e.pointerId !== pointerId) return;
+      e.preventDefault();
+      const targetRack = placeholderEl?.parentElement || activeRack;
+      if (targetRack && placeholderEl && placeholderEl.parentElement === targetRack) {
+        const isWorkspaceSlot = targetRack.id === "workspaceLeftSlot" || targetRack.id === "workspaceRightSlot";
+        const isRightRackSlot = targetRack.id === "rightRack";
+        const isPrimary = panelRole(draggingPanelId) === "primary";
+
+        // Primaries are only allowed in the workspace slots. Dropping elsewhere snaps them back.
+        if (isPrimary && !isWorkspaceSlot) {
+          if (originRack) {
+            if (originBefore && originBefore.parentElement === originRack) originRack.insertBefore(draggingEl, originBefore);
+            else originRack.appendChild(draggingEl);
+          }
+          cleanup();
+          syncRackStateFromDom();
+          enforceWorkspaceRules();
+          return;
+        }
+
+        if (isWorkspaceSlot || isRightRackSlot) {
+          const existing = Array.from(targetRack.querySelectorAll(":scope > .rackPanel")).find((x) => x !== draggingEl);
+          targetRack.insertBefore(draggingEl, placeholderEl);
+          // Swap if occupied: send the previous occupant back to the origin rack position.
+          if (existing && originRack) {
+            if (originBefore && originBefore.parentElement === originRack) originRack.insertBefore(existing, originBefore);
+            else originRack.appendChild(existing);
+          }
+        } else {
+          targetRack.insertBefore(draggingEl, placeholderEl);
+        }
+      }
+    const shouldDock = Boolean(dockHotbarEl && e.clientY > window.innerHeight - 90);
+    const dockId = draggingPanelId;
+    cleanup();
+    if (shouldDock && dockId) dockPanel(dockId);
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+  };
+
+  // Use window-level listeners so cross-rack dragging stays responsive even when the cursor passes over gaps/resizers.
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+  // Extra safety: pointer events can fail to deliver pointerup if the mouse is released outside the window.
+  window.addEventListener("blur", cancelDrag);
+  window.addEventListener("mouseup", cancelDrag);
+  window.addEventListener("touchend", cancelDrag, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") cancelDrag();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") cancelDrag();
+  });
+
+  const onDown = (e) => {
+    const btn = e.target.closest?.("[data-rackdrag]");
+    if (!btn) return;
+    const el = btn.closest?.(".rackPanel");
+    if (!(el instanceof HTMLElement)) return;
+    if (el.classList.contains("hidden")) return;
+
+    e.preventDefault();
+    // If a drag somehow got stuck, start clean.
+    cleanup();
+    if (appRoot) appRoot.classList.add("rackIsDragging");
+    draggingEl = el;
+    draggingPanelId = String(el.dataset.panelId || "");
+    pointerId = e.pointerId;
+    draggingEl.setPointerCapture?.(pointerId);
+
+    activeRack = el.parentElement;
+    originRack = activeRack;
+    originBefore = draggingEl.nextSibling;
+    const rect = draggingEl.getBoundingClientRect();
+    dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    placeholderEl = document.createElement("div");
+    placeholderEl.className = "rackPlaceholder";
+    placeholderEl.style.height = `${Math.max(40, Math.round(rect.height))}px`;
+
+    (activeRack || main).insertBefore(placeholderEl, draggingEl.nextSibling);
+
+    draggingEl.classList.add("rackDragging");
+    draggingEl.style.position = "fixed";
+    draggingEl.style.left = `${rect.left}px`;
+    draggingEl.style.top = `${rect.top}px`;
+    draggingEl.style.width = `${rect.width}px`;
+    draggingEl.style.zIndex = "80";
+    draggingEl.style.pointerEvents = "none";
+  };
+
+  // Delegate to the app root so panels can be dragged regardless of which rack they're currently in.
+  (appRoot || document).addEventListener("pointerdown", onDown);
+}
+
+function initRackLayout() {
+  rackLayoutEnabled = readRackLayoutEnabled();
+  let hadState = false;
+  try {
+    hadState = Boolean(localStorage.getItem(RACK_LAYOUT_STATE_KEY));
+  } catch {
+    hadState = false;
+  }
+  rackLayoutState = loadRackLayoutState();
+  // Normalize older preset ids in persisted state.
+  rackLayoutState.presetId = resolvePresetKey(rackLayoutState.presetId);
+
+  if (toggleRackLayoutEl) {
+    toggleRackLayoutEl.checked = rackLayoutEnabled;
+    toggleRackLayoutEl.onchange = () => {
+      writeRackLayoutEnabled(Boolean(toggleRackLayoutEl.checked));
+      // Reload is the simplest safe path while the feature is in flux.
+      location.reload();
+    };
+  }
+
+  if (layoutPresetEl) {
+    updateLayoutPresetOptions();
+    layoutPresetEl.value = resolvePresetKey(rackLayoutState.presetId || "social");
+    layoutPresetEl.disabled = !rackLayoutEnabled;
+    layoutPresetEl.onchange = () => {
+      if (!rackLayoutEnabled) return;
+      const next = String(layoutPresetEl.value || "social");
+      applyPreset(next);
+    };
+  }
+
+  if (!rackLayoutEnabled) {
+    disableRackLayoutDom();
+    setSideCollapsed(false, { persist: false, updateControls: false });
+    setRightCollapsed(false, { persist: false, updateControls: false });
+    toggleSideRackEl && (toggleSideRackEl.disabled = true);
+    toggleRightRackEl && (toggleRightRackEl.disabled = true);
+    showSideRackBtn?.classList.add("hidden");
+    showRightRackBtn?.classList.add("hidden");
+    showHotbar(false);
+    return;
+  }
+
+  enableRackLayoutDom();
+
+  // Side racks behave like summonable hotbars: hide/show without changing panel layout state.
+  toggleSideRackEl && (toggleSideRackEl.disabled = false);
+  toggleRightRackEl && (toggleRightRackEl.disabled = false);
+
+  if (showSideRackBtn) {
+    showSideRackBtn.classList.remove("hidden");
+    showSideRackBtn.onclick = () => setSideCollapsed(false);
+  }
+  if (showRightRackBtn) {
+    showRightRackBtn.classList.remove("hidden");
+    showRightRackBtn.onclick = () => setRightCollapsed(false);
+  }
+
+  if (toggleSideRackEl) {
+    toggleSideRackEl.onchange = () => {
+      if (!rackLayoutEnabled) return;
+      setSideCollapsed(!Boolean(toggleSideRackEl.checked));
+    };
+  }
+  if (toggleRightRackEl) {
+    toggleRightRackEl.onchange = () => {
+      if (!rackLayoutEnabled) return;
+      setRightCollapsed(!Boolean(toggleRightRackEl.checked));
+    };
+  }
+
+  setSideCollapsed(readBoolPref(RACK_SIDE_COLLAPSED_KEY, false), { persist: false });
+  setRightCollapsed(readBoolPref(RACK_RIGHT_COLLAPSED_KEY, false), { persist: false });
+
+  applyRackStateToDom();
+  installPanelMinimizeButtons();
+  enableRackDnD();
+  installWorkspaceInteractions();
+  enforceWorkspaceRules();
+  renderProfilePanel();
+
+  // Hotbar interactions
+  if (dockHotbarEl) {
+    dockHotbarEl.onmouseenter = () => showHotbar(true);
+    dockHotbarEl.onmouseleave = () => showHotbar(false);
+    dockHotbarEl.onclick = (e) => {
+      if (dockHotbarEl.dataset.dragging === "1") return;
+      const btn = e.target.closest?.("[data-undock]");
+      if (!btn) return;
+      const id = String(btn.getAttribute("data-undock") || "");
+      if (!id) return;
+      undockPanel(id);
+    };
+  }
+
+  // Drag orbs back into the rack to restore (MVP: restore to end of rack).
+  if (dockHotbarEl) {
+    let orbDragId = "";
+    let orbPointer = null;
+    let orbStart = null;
+    let orbMoved = false;
+
+    const lockHotbarVisible = (lock) => {
+      dockHotbarEl.dataset.lockVisible = lock ? "1" : "0";
+      dockHotbarEl.dataset.dragging = lock ? "1" : "0";
+      // While dragging an orb, keep both workspace slots visible as drop targets.
+      if (appRoot) {
+        if (lock) {
+          appRoot.classList.add("rackIsDragging");
+          appRoot.dataset.orbDragging = "1";
+        } else if (appRoot.dataset.orbDragging === "1") {
+          delete appRoot.dataset.orbDragging;
+          appRoot.classList.remove("rackIsDragging");
+        }
+      }
+      if (lock) showHotbar(true);
+    };
+
+    const resolveOrbDropRack = (panelId, rackEl) => {
+      const id = String(panelId || "").trim();
+      if (!id) return rackEl;
+      if (panelRole(id) !== "primary") return rackEl;
+      const isWorkspaceSlot = rackEl && (rackEl.id === "workspaceLeftSlot" || rackEl.id === "workspaceRightSlot");
+      if (isWorkspaceSlot) return rackEl;
+      const left = ensureWorkspaceLeftRack();
+      const right = ensureWorkspaceRightRack();
+      const leftEmpty = left ? left.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+      const rightEmpty = right ? right.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+      return leftEmpty ? left : rightEmpty ? right : left;
+    };
+
+      const dropOrbIntoRack = (panelId, targetRack) => {
+        const id = String(panelId || "").trim();
+        if (!id) return;
+        const rack = resolveOrbDropRack(id, targetRack);
+        if (!(rack instanceof HTMLElement)) return;
+        undockPanel(id);
+        const panelEl = getPanelElement(id);
+        if (!panelEl) return;
+
+        const isWorkspaceSlot = rack.id === "workspaceLeftSlot" || rack.id === "workspaceRightSlot";
+        const isRightRackSlot = rack.id === "rightRack";
+        if (isWorkspaceSlot) {
+          const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+          if (existing instanceof HTMLElement && existing !== panelEl) {
+            const existingId = String(existing.dataset.panelId || "").trim();
+            if (existingId) dockPanel(existingId);
+          }
+        }
+        if (isRightRackSlot) {
+          const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+          if (existing instanceof HTMLElement && existing !== panelEl) {
+            const existingId = String(existing.dataset.panelId || "").trim();
+            if (existingId) dockPanel(existingId);
+          }
+        }
+
+        if (panelEl.parentElement !== rack) rack.appendChild(panelEl);
+        syncRackStateFromDom();
+        enforceWorkspaceRules();
+      };
+
+    dockHotbarEl.addEventListener("pointerdown", (e) => {
+      const orb = e.target.closest?.("[data-undock]");
+      if (!orb) return;
+      orbDragId = String(orb.getAttribute("data-undock") || "");
+      if (!orbDragId) return;
+      orbPointer = e.pointerId;
+      orbStart = { x: e.clientX, y: e.clientY };
+      orbMoved = false;
+      orb.classList.add("dragging");
+      orb.setPointerCapture?.(orbPointer);
+      lockHotbarVisible(true);
+      e.preventDefault();
+    });
+    window.addEventListener("pointermove", (e) => {
+      if (!orbDragId || e.pointerId !== orbPointer) return;
+      if (!orbStart) return;
+      const dx = Math.abs(e.clientX - orbStart.x);
+      const dy = Math.abs(e.clientY - orbStart.y);
+      if (dx + dy > 6) orbMoved = true;
+    });
+    dockHotbarEl.addEventListener("pointerup", (e) => {
+      if (!orbDragId || e.pointerId !== orbPointer) return;
+      const orb = dockHotbarEl.querySelector(`[data-undock="${CSS.escape(orbDragId)}"]`);
+      if (orb) orb.classList.remove("dragging");
+      const leftRack = ensureWorkspaceLeftRack();
+      const rightWorkspaceRack = ensureWorkspaceRightRack();
+      const sideRack = ensureMainSideRack();
+      const rightRack = ensureRightRack();
+      const racks = [leftRack, rightWorkspaceRack, sideRack, rightRack].filter((x) => x instanceof HTMLElement);
+      let targetRack = null;
+      for (const r of racks) {
+        const rect = r.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          targetRack = r;
+          break;
+        }
+      }
+      if (orbMoved && targetRack) dropOrbIntoRack(orbDragId, targetRack);
+      orbDragId = "";
+      orbPointer = null;
+      orbStart = null;
+      orbMoved = false;
+      lockHotbarVisible(false);
+    });
+    dockHotbarEl.addEventListener("pointercancel", () => {
+      orbDragId = "";
+      orbPointer = null;
+      orbStart = null;
+      orbMoved = false;
+      lockHotbarVisible(false);
+      dockHotbarEl.querySelectorAll(".dockOrb.dragging").forEach((x) => x.classList.remove("dragging"));
+    });
+  }
+
+  // Reveal hotbar when cursor is near bottom if there are docked items.
+  window.addEventListener("mousemove", (e) => {
+    if (!dockHotbarEl) return;
+    if (!rackLayoutEnabled) return;
+    if (!rackLayoutState.docked.bottom.length) return;
+    const nearBottom = e.clientY > window.innerHeight - 80;
+    showHotbar(Boolean(nearBottom));
+  });
+
+  // First enable: seed state from the selected preset so users immediately get a sensible layout.
+  if (!hadState) {
+    const preset = resolvePresetKey(rackLayoutState.presetId || (layoutPresetEl ? String(layoutPresetEl.value || "") : "") || "social");
+    applyPreset(preset);
+  }
+
+  applyDockState();
+  enforceWorkspaceRules();
+}
 let activeProfileUsername = "";
 let activeProfile = null;
+let lastRequestedProfileUsername = "";
 let isEditingProfile = false;
 let replyToMessage = null;
 let chatResizeDragging = false;
@@ -828,14 +2437,24 @@ function getSidebarHidden() {
 }
 
 function setPeopleOpen(open) {
-  peopleOpen = Boolean(open);
-  if (!peopleDrawerEl || !togglePeopleBtn) return;
-  peopleDrawerEl.classList.toggle("hidden", !peopleOpen);
-  togglePeopleBtn.textContent = peopleOpen ? "Hide people" : "People";
-  togglePeopleBtn.title = peopleOpen ? "Hide people" : "Show people";
+  const inRackMode = Boolean(appRoot?.classList.contains("rackMode"));
+  peopleOpen = inRackMode ? true : Boolean(open);
+  if (!peopleDrawerEl) return;
+  // In rack mode, "People" is a normal dockable panel; don't hide it behind a special toggle.
+  peopleDrawerEl.classList.toggle("hidden", !peopleOpen && !inRackMode);
+  if (togglePeopleBtn) {
+    if (inRackMode) {
+      togglePeopleBtn.classList.add("hidden");
+    } else {
+      togglePeopleBtn.classList.remove("hidden");
+      togglePeopleBtn.textContent = peopleOpen ? "Hide people" : "People";
+      togglePeopleBtn.title = peopleOpen ? "Hide people" : "Show people";
+    }
+  }
   if (peopleOpen && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "peopleList" }));
   }
+  if (inRackMode) return;
   try {
     localStorage.setItem("bzl_peopleOpen", peopleOpen ? "1" : "0");
   } catch {
@@ -859,6 +2478,7 @@ function setComposerOpen(open) {
     toggleComposerBtn.title = composerOpen ? "Hide hive creator" : "Open hive creator";
   }
   renderCenterPanels();
+  updateSideRackEmptyState();
   try {
     localStorage.setItem("bzl_composerOpen", composerOpen ? "1" : "0");
   } catch {
@@ -1272,6 +2892,18 @@ function renderProfileEditor() {
 }
 
 function renderCenterPanels() {
+  // In rack mode, panels are independent. Profile shouldn't "replace" the Hives panel.
+  if (rackLayoutEnabled) {
+    if (pollinatePanel) {
+      pollinatePanel.classList.remove("hidden");
+      pollinatePanel.classList.toggle("panelCollapsed", !composerOpen);
+      pollinatePanel.dataset.panelDisplay = composerOpen ? "full" : "collapsed";
+    }
+    renderProfilePanel();
+    updateSideRackEmptyState();
+    return;
+  }
+
   const profileMode = centerView === "profile";
   if (profileViewPanel) profileViewPanel.classList.toggle("hidden", !profileMode);
   if (feedEl?.closest("section")) feedEl.closest("section").classList.toggle("hidden", profileMode);
@@ -1280,7 +2912,37 @@ function renderCenterPanels() {
     else pollinatePanel.classList.toggle("hidden", !composerOpen);
   }
   if (!profileMode) return;
-  const username = activeProfile?.username || activeProfileUsername || "";
+  renderProfilePanel();
+}
+
+function renderProfilePanel() {
+  if (!profileViewPanel) return;
+  if (!activeProfileUsername && !activeProfile && loggedInUser) {
+    activeProfileUsername = String(loggedInUser || "").trim().toLowerCase();
+  }
+
+  const username = String(activeProfile?.username || activeProfileUsername || "")
+    .trim()
+    .toLowerCase();
+
+  if (username) {
+    // Ensure we always have *some* profile data to show immediately.
+    if (!activeProfile || String(activeProfile.username || "").toLowerCase() !== username) {
+      const basic = getProfile(username);
+      activeProfile = normalizeProfileData({ username, image: basic.image || "", color: basic.color || "" });
+    }
+
+    // Pull the full profile from the server (bio/links/song) once per username selection.
+    try {
+      if (ws?.readyState === WebSocket.OPEN && lastRequestedProfileUsername !== username) {
+        lastRequestedProfileUsername = username;
+        ws.send(JSON.stringify({ type: "getUserProfile", username }));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   if (profileViewTitle) profileViewTitle.textContent = username ? `@${username}` : "Profile";
   if (profileViewMeta) profileViewMeta.textContent = username === loggedInUser ? "Your profile" : "Community profile";
   renderProfileCard();
@@ -1288,6 +2950,32 @@ function renderCenterPanels() {
 }
 
 function setCenterView(next, username = "") {
+  if (rackLayoutEnabled) {
+    // Keep the legacy centerView on "hives" in rack mode; just update profile context.
+    const wantsProfile = next === "profile";
+    if (wantsProfile) {
+      activeProfileUsername = String(username || activeProfileUsername || "")
+        .trim()
+        .toLowerCase();
+      isEditingProfile = false;
+      if (profileEditToggleBtn) profileEditToggleBtn.textContent = "Edit profile";
+
+      // Make sure the profile panel is actually visible as its own panel.
+      undockPanel("profile");
+      profileViewPanel.classList.remove("panelCollapsed");
+      profileViewPanel.dataset.panelDisplay = "full";
+      enforceWorkspaceRules();
+      renderProfilePanel();
+    } else {
+      activeProfileUsername = "";
+      activeProfile = null;
+      isEditingProfile = false;
+      if (profileEditToggleBtn) profileEditToggleBtn.textContent = "Edit profile";
+      renderProfilePanel();
+    }
+    return;
+  }
+
   centerView = next === "profile" ? "profile" : "hives";
   if (centerView === "hives") {
     activeProfileUsername = "";
@@ -1392,7 +3080,7 @@ window.bzlDevLog = sendDevLog;
 if (!window.BzlPluginHost) {
   const pluginInits = new Map();
   window.BzlPluginHost = {
-    apiVersion: 1,
+    apiVersion: 2,
     register(pluginId, initFn) {
       const id = String(pluginId || "").trim().toLowerCase();
       if (!/^[a-z0-9][a-z0-9_.-]{0,31}$/.test(id)) throw new Error("Invalid plugin id");
@@ -1405,6 +3093,84 @@ if (!window.BzlPluginHost) {
           toast,
           getUser: () => loggedInUser,
           getRole: () => loggedInRole,
+          ui: {
+            registerPanel(panelDef) {
+              const panelId = String(panelDef?.id || id).trim().toLowerCase();
+              if (!/^[a-z0-9][a-z0-9_.-]{0,31}$/.test(panelId)) throw new Error("Invalid panel id");
+              const title = typeof panelDef?.title === "string" ? panelDef.title.trim().slice(0, 40) : panelId;
+              const icon = typeof panelDef?.icon === "string" ? panelDef.icon.trim().slice(0, 10) : "";
+              const defaultRack =
+                typeof panelDef?.defaultRack === "string" && /^(main|right)$/i.test(panelDef.defaultRack)
+                  ? panelDef.defaultRack.toLowerCase()
+                  : "right";
+              const role =
+                typeof panelDef?.role === "string" && /^(primary|aux|transient|utility)$/i.test(panelDef.role)
+                  ? panelDef.role.toLowerCase()
+                  : "aux";
+              const source = `plugin:${id}`;
+
+              // Create a visible shell only when rack layout is enabled (for now).
+              // Otherwise, plugins should continue using their existing DOM hooks.
+              let element = null;
+              if (rackLayoutEnabled) {
+                const shell = ensurePluginPanelShell(panelId, title, icon, defaultRack, role);
+                element = shell;
+                const mount = shell ? shell.querySelector("[data-pluginmount]") : null;
+                if (mount) {
+                  mount.innerHTML = "";
+                  const api = {
+                    toast,
+                    send: (eventName, payload) => {
+                      const ev = String(eventName || "").trim();
+                      if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ev)) return false;
+                      const wsRef = window.__bzlWs;
+                      if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return false;
+                      const msg = payload && typeof payload === "object" ? payload : {};
+                      wsRef.send(JSON.stringify({ ...msg, type: `plugin:${id}:${ev}` }));
+                      return true;
+                    },
+                    getUser: () => loggedInUser,
+                    getRole: () => loggedInRole,
+                    storage: {
+                      get(key) {
+                        try {
+                          return localStorage.getItem(`bzl_panel_${panelId}_${String(key || "")}`);
+                        } catch {
+                          return null;
+                        }
+                      },
+                      set(key, value) {
+                        try {
+                          localStorage.setItem(`bzl_panel_${panelId}_${String(key || "")}`, String(value ?? ""));
+                          return true;
+                        } catch {
+                          return false;
+                        }
+                      },
+                    },
+                  };
+                  try {
+                    const cleanup = typeof panelDef?.render === "function" ? panelDef.render(mount, api) : null;
+                    if (typeof cleanup === "function") {
+                      // Store cleanup on the shell so future hot-reload / uninstall can call it.
+                      shell.__panelCleanup = cleanup;
+                    }
+                  } catch (e) {
+                    console.warn(`Plugin ${id} panel render failed:`, e?.message || e);
+                    mount.textContent = `Failed to render panel "${panelId}".`;
+                  }
+                }
+
+                enableRackDnD();
+              }
+
+              panelRegistry.set(panelId, { id: panelId, title, icon, source, role, defaultRack, element });
+              applyPluginPresetHint(panelDef);
+              applyDockState();
+              syncRackStateFromDom();
+              return true;
+            },
+          },
           devLog: (level, message, data) => sendDevLog(level, `plugin:${id}`, message, data),
           send(eventName, payload) {
             const ev = String(eventName || "").trim();
@@ -2414,7 +4180,7 @@ function renderFeed() {
       `.trim();
       const hasMenu = Boolean(menuItems);
       const kebabBtn = hasMenu
-        ? `<button type="button" class="ghost smallBtn kebabBtn" data-postmenu="${p.id}" aria-haspopup="menu" aria-expanded="false" title="More">â‹¯</button>`
+        ? `<button type="button" class="ghost smallBtn kebabBtn" data-postmenu="${p.id}" aria-haspopup="menu" aria-expanded="false" title="More">&#8942;</button>`
         : "";
       const postMenu = hasMenu
         ? `<div class="postMenu hidden" role="menu" data-postmenu-panel="${p.id}">${menuItems}</div>`
@@ -2427,6 +4193,10 @@ function renderFeed() {
       const buzzClass = buzzTimers.has(p.id) ? " isBuzz" : "";
       const lockLine = p.locked ? `<div class="small muted">🔒 password protected</div>` : "";
       const cardTint = p.author ? cardTintStylesFromHex(getProfile(p.author).color) : "";
+      const contentHtml = typeof p.contentHtml === "string" && p.contentHtml.trim() ? p.contentHtml : "";
+      const contentText = typeof p.content === "string" && p.content.trim() ? escapeHtml(p.content) : "";
+      const content = contentHtml ? contentHtml : contentText ? `<div class="muted">${contentText}</div>` : "";
+      const contentBlock = content ? `<div class="postContent">${content}</div>` : "";
 
       return `
       <article class="post${unreadClass}${newClass}${buzzClass}" data-id="${p.id}" ${cardTint}>
@@ -2451,11 +4221,18 @@ function renderFeed() {
         </div>
         ${deletedLine}
         ${editedLine}
+        ${contentBlock}
         <div class="postMeta">${collectionTag}${tags ? ` ${tags}` : ""}</div>
         ${reactionsHtml}
       </article>`;
     })
     .join("");
+
+  try {
+    feedEl.querySelectorAll?.(".postContent").forEach((el) => decorateYouTubeEmbedsInElement(el));
+  } catch {
+    // ignore
+  }
 }
 
 function setAuthUi() {
@@ -5741,6 +7518,8 @@ ws.addEventListener("message", (evt) => {
       renderCenterPanels();
     }
     if (canModerate) requestModData();
+    if (rackLayoutEnabled) applyDockState();
+    updateLayoutPresetOptions();
     return;
   }
 
@@ -5765,6 +7544,8 @@ ws.addEventListener("message", (evt) => {
     renderLanHint();
     renderPeoplePanel();
     renderCenterPanels();
+    if (rackLayoutEnabled) applyDockState();
+    updateLayoutPresetOptions();
     return;
   }
 
@@ -5776,8 +7557,10 @@ ws.addEventListener("message", (evt) => {
     if (msg.prefs && typeof msg.prefs === "object") setUserPrefs(msg.prefs);
     setAuthUi();
     renderLanHint();
+    if (rackLayoutEnabled) applyDockState();
     renderPeoplePanel();
     if (canModerate) requestModData();
+    updateLayoutPresetOptions();
     return;
   }
 
@@ -6156,6 +7939,18 @@ if (toggleReactionsEl) {
     renderChatPanel();
   });
 }
+
+if (hivesViewModeEl) {
+  const pref = readStringPref(HIVES_VIEW_MODE_KEY, "auto");
+  hivesViewModeEl.value = pref === "cards" || pref === "list" ? pref : "auto";
+  hivesViewModeEl.addEventListener("change", () => {
+    const next = String(hivesViewModeEl.value || "auto").toLowerCase();
+    writeStringPref(HIVES_VIEW_MODE_KEY, next === "cards" || next === "list" ? next : "auto");
+    applyHivesViewMode();
+  });
+}
+installHivesAutoViewMode();
+applyHivesViewMode();
 
 if (chatHeaderEl && appRoot) {
   chatHeaderEl.setAttribute("draggable", "true");
@@ -6539,6 +8334,9 @@ appRoot?.addEventListener(
 
 window.addEventListener("resize", applyMobileMode);
 applyMobileMode();
+
+// Initialize experimental rack layout (safe no-op when disabled).
+initRackLayout();
 
 window.addEventListener("focus", () => {
   windowFocused = true;

@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=83" />
+    <link rel="stylesheet" href="/styles.css?v=88" />
   </head>
   <body>
-    <div class="app">
-      <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
-      <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
-      <aside class="sidebar">
+      <div class="app">
+        <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
+        <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
+        <button id="showRightRack" class="ghost smallBtn rightRackToggle hidden" type="button" title="Show right rack">Right</button>
+        <aside class="sidebar">
         <div class="sidebarScroll">
           <div class="brand">
             <div id="instanceTitle" class="logo">Bzl</div>
@@ -30,6 +31,31 @@
           <label class="checkRow">
             <span>Show reactions bar</span>
             <input id="toggleReactions" type="checkbox" />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Rack layout (experimental)</span>
+            <input id="toggleRackLayout" type="checkbox" />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Side panels</span>
+            <input id="toggleSideRack" type="checkbox" checked />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Right rack</span>
+            <input id="toggleRightRack" type="checkbox" checked />
+          </label>
+          <label style="margin-top:10px;">
+            <span>Layout preset</span>
+            <select id="layoutPreset">
+              <option value="discordLike">Discord-like</option>
+              <option value="chat">Chat</option>
+              <option value="browsing">Browsing</option>
+              <option value="maps">Maps</option>
+              <option value="moderation">Moderation</option>
+              <option value="focus">Focus</option>
+              <option value="clean">Clean</option>
+              <option value="ops">Ops</option>
+            </select>
           </label>
         </section>
 
@@ -104,7 +130,10 @@
       <div id="sidebarResizeHandle" class="panelResizeHandle sidebarResizeHandle" title="Drag to resize sidebar" aria-hidden="true"></div>
 
       <main class="main">
-        <section class="panel panelFill">
+        <div id="mainRack" class="mainRack">
+          <button id="showSideRack" class="ghost smallBtn sideRackToggle hidden" type="button" title="Show side panels">Side</button>
+          <div id="mainWorkspaceRack" class="workspaceRack" aria-label="Workspace">
+        <section id="hivesPanel" class="panel panelFill">
           <div class="panelHeader">
             <div class="panelTitle">Hives</div>
             <div class="filters">
@@ -249,6 +278,9 @@
             </div>
           </form>
         </section>
+          </div>
+          <div id="mainSideRack" class="sideRack" aria-label="Side panels"></div>
+        </div>
       </main>
 
       <div id="chatResizeHandle" class="panelResizeHandle chatResizeHandle" title="Drag to resize chat" aria-hidden="true"></div>
@@ -466,6 +498,7 @@
       </div>
     </div>
 
-    <script src="/app.js?v=91"></script>
+    <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
+    <script src="/app.js?v=99"></script>
   </body>
 </html>
