@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=88" />
+    <link rel="stylesheet" href="/styles.css?v=103" />
   </head>
   <body>
       <div class="app">
@@ -28,21 +28,9 @@
 
         <section class="panel">
           <div class="panelTitle">View</div>
-          <label class="checkRow">
-            <span>Show reactions bar</span>
-            <input id="toggleReactions" type="checkbox" />
-          </label>
           <label class="checkRow" style="margin-top:8px;">
             <span>Rack layout (experimental)</span>
             <input id="toggleRackLayout" type="checkbox" />
-          </label>
-          <label class="checkRow" style="margin-top:8px;">
-            <span>Side panels</span>
-            <input id="toggleSideRack" type="checkbox" checked />
-          </label>
-          <label class="checkRow" style="margin-top:8px;">
-            <span>Right rack</span>
-            <input id="toggleRightRack" type="checkbox" checked />
           </label>
           <label style="margin-top:10px;">
             <span>Layout preset</span>
@@ -57,6 +45,45 @@
               <option value="ops">Ops</option>
             </select>
           </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Side panels</span>
+            <input id="toggleSideRack" type="checkbox" checked />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Right rack</span>
+            <input id="toggleRightRack" type="checkbox" checked />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Show reactions bar</span>
+            <input id="toggleReactions" type="checkbox" />
+          </label>
+
+          <details style="margin-top:10px;">
+            <summary class="small muted" style="cursor:pointer;user-select:none;">Advanced display</summary>
+            <div style="margin-top:10px;">
+              <label>
+                <span>Text size</span>
+                <select id="uiScale">
+                  <option value="auto" selected>Auto</option>
+                  <option value="xs">Compact</option>
+                  <option value="sm">Small</option>
+                  <option value="md">Default</option>
+                  <option value="lg">Large</option>
+                </select>
+              </label>
+              <label style="margin-top:10px;">
+                <span>Device layout</span>
+                <select id="deviceLayout">
+                  <option value="auto" selected>Auto</option>
+                  <option value="widescreen">16:9 / 16:10</option>
+                  <option value="fourThree">4:3</option>
+                  <option value="threeTwo">3:2</option>
+                  <option value="ultrawide">Ultrawide</option>
+                  <option value="portrait">Portrait</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </section>
 
         <section class="panel">
@@ -309,7 +336,7 @@
             </div>
             <button id="chatReplyCancel" class="ghost smallBtn" type="button">Cancel</button>
           </div>
-          <div class="chatComposer">
+            <div class="chatComposer">
             <div class="toolbar" role="toolbar" aria-label="Chat formatting">
               <button type="button" data-chatcmd="bold"><b>B</b></button>
               <button type="button" data-chatcmd="italic"><i>I</i></button>
@@ -323,6 +350,10 @@
               <button type="button" data-chataudio="1">Audio</button>
               <button type="button" data-chatemoji="1">Emoji</button>
               <button type="button" data-chatcmd="removeFormat">Clear</button>
+              <label id="chatModToggleWrap" class="checkRow chatModToggle hidden" title="Send as moderator/system message (left rail)">
+                <span>Mod</span>
+                <input id="chatModToggle" type="checkbox" />
+              </label>
             </div>
             <div id="chatEditor" class="editor chatEditor" contenteditable="true" aria-label="Chat editor"></div>
             <div id="mentionMenu" class="mentionMenu hidden" role="listbox" aria-label="Mention suggestions"></div>
@@ -499,6 +530,6 @@
     </div>
 
     <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
-    <script src="/app.js?v=99"></script>
+    <script src="/app.js?v=116"></script>
   </body>
 </html>

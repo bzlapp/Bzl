@@ -182,13 +182,44 @@ let usersByName = new Map();
 
 /** @type {any[]} */
 let moderationLog = [];
+let devLog = [];
+let devLogSeq = 1;
 /** @type {any[]} */
 let reports = [];
 /** @type {Map<string, any>} */
 let sessionsById = new Map();
 let collections = [];
 let customRoles = [];
-let instanceBranding = { title: "Bzl", subtitle: "Ephemeral hives + chat", allowMemberPermanentPosts: false };
+let instanceBranding = {
+  title: "Bzl",
+  subtitle: "Ephemeral hives + chat",
+  allowMemberPermanentPosts: false,
+  appearance: {
+    bg: "#060611",
+    panel: "#0c0c18",
+    text: "#f6f0ff",
+    accent: "#ff3ea5",
+    accent2: "#b84bff",
+    good: "#3ddc97",
+    bad: "#ff4d8a",
+    fontBody: "system",
+    fontMono: "mono",
+    mutedPct: 65,
+    linePct: 10,
+    panel2Pct: 2
+  }
+};
+let lastInstanceBroadcastHash = "";
+
+function broadcastInstanceUpdated(force = false) {
+  const clean = sanitizeInstanceBranding(instanceBranding);
+  instanceBranding = clean;
+  const hash = JSON.stringify(clean);
+  if (!force && hash === lastInstanceBroadcastHash) return false;
+  lastInstanceBroadcastHash = hash;
+  sendToSockets(() => true, { type: "instanceUpdated", instance: instanceBranding });
+  return true;
+}
 let dmKey = null;
 /** @type {Map<string, any>} */
 let dmThreadsById = new Map();
@@ -443,6 +474,12 @@ function sanitizeColorHex(color) {
   return c.toLowerCase();
 }
 
+function sanitizePercentInt(value, fallback) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, n));
+}
+
 function sanitizeInstanceText(text, maxLen) {
   if (typeof text !== "string") return "";
   const value = text.replace(/\s+/g, " ").trim();
@@ -455,7 +492,21 @@ function sanitizeInstanceBranding(raw) {
   const title = sanitizeInstanceText(raw?.title || "", INSTANCE_TITLE_MAX_LEN) || "Bzl";
   const subtitle = sanitizeInstanceText(raw?.subtitle || "", INSTANCE_SUBTITLE_MAX_LEN) || "Ephemeral hives + chat";
   const allowMemberPermanentPosts = Boolean(raw?.allowMemberPermanentPosts);
-  return { title, subtitle, allowMemberPermanentPosts };
+  const appearanceRaw = raw?.appearance && typeof raw.appearance === "object" ? raw.appearance : {};
+  const bg = sanitizeColorHex(appearanceRaw.bg) || "#060611";
+  const panel = sanitizeColorHex(appearanceRaw.panel) || "#0c0c18";
+  const text = sanitizeColorHex(appearanceRaw.text) || "#f6f0ff";
+  const accent = sanitizeColorHex(appearanceRaw.accent) || "#ff3ea5";
+  const accent2 = sanitizeColorHex(appearanceRaw.accent2) || "#b84bff";
+  const good = sanitizeColorHex(appearanceRaw.good) || "#3ddc97";
+  const bad = sanitizeColorHex(appearanceRaw.bad) || "#ff4d8a";
+  const fontBody = ["system", "serif", "mono"].includes(String(appearanceRaw.fontBody || "")) ? String(appearanceRaw.fontBody) : "system";
+  const fontMono = ["mono", "system"].includes(String(appearanceRaw.fontMono || "")) ? String(appearanceRaw.fontMono) : "mono";
+  const mutedPct = sanitizePercentInt(appearanceRaw.mutedPct, 65);
+  const linePct = sanitizePercentInt(appearanceRaw.linePct, 10);
+  const panel2Pct = sanitizePercentInt(appearanceRaw.panel2Pct, 2);
+  const appearance = { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct };
+  return { title, subtitle, allowMemberPermanentPosts, appearance };
 }
 
 function sanitizeAvatar(avatar) {
@@ -822,11 +873,13 @@ function verifyPostPassword(post, password) {
 
 function serializeChatMessageForWs(message) {
   if (!message || typeof message !== "object") return null;
+  const asMod = Boolean(message.asMod) || String(message.fromUser || "").trim().toLowerCase() === "mod";
   return {
     id: typeof message.id === "string" ? message.id : "",
     postId: typeof message.postId === "string" ? message.postId : "",
     text: typeof message.text === "string" ? message.text : "",
     html: typeof message.html === "string" ? message.html : "",
+    asMod,
     mentions: Array.isArray(message.mentions) ? message.mentions : [],
     replyTo: message.replyTo || null,
     deleted: Boolean(message.deleted),
@@ -837,8 +890,8 @@ function serializeChatMessageForWs(message) {
     editedAt: Number(message.editedAt || 0) || 0,
     reactions: message.reactions || {},
     createdAt: Number(message.createdAt || 0) || 0,
-    fromClientId: typeof message.fromClientId === "string" ? message.fromClientId : "",
-    fromUser: normalizeUsername(message.fromUser || "")
+    fromClientId: !asMod && typeof message.fromClientId === "string" ? message.fromClientId : "",
+    fromUser: asMod ? "MOD" : normalizeUsername(message.fromUser || "")
   };
 }
 
@@ -1018,6 +1071,52 @@ function appendModLog(entry) {
   persistModerationLog();
   sendToSockets((ws) => ws.user?.username && hasRole(ws.user.username, ROLE_MODERATOR), { type: "modLogAppended", entry: clean });
   return clean;
+}
+
+function safeDevLogText(value, maxLen = 800) {
+  const s = typeof value === "string" ? value : value == null ? "" : String(value);
+  const trimmed = s.replace(/\s+/g, " ").trim();
+  return trimmed.length > maxLen ? `${trimmed.slice(0, maxLen)}…` : trimmed;
+}
+
+function safeDevLogJson(value, maxLen = 2400) {
+  if (value == null) return "";
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw) return "";
+    return raw.length > maxLen ? `${raw.slice(0, maxLen)}…` : raw;
+  } catch (e) {
+    return safeDevLogText(e?.message || e, maxLen);
+  }
+}
+
+function appendDevLog(entry) {
+  const clean = {
+    id: devLogSeq++,
+    createdAt: now(),
+    level: safeDevLogText(entry?.level || "info", 16).toLowerCase(),
+    scope: safeDevLogText(entry?.scope || "server", 80),
+    message: safeDevLogText(entry?.message || "", 2000),
+    data: safeDevLogJson(entry?.data, 8000)
+  };
+
+  devLog.unshift(clean);
+  if (devLog.length > 2000) devLog.splice(2000);
+
+  sendToSockets(
+    (ws) => ws.user?.username && hasRole(ws.user.username, ROLE_MODERATOR),
+    { type: "devLogAppended", entry: clean }
+  );
+  return clean;
+}
+
+function listDevLog(limit = 200) {
+  const n = Math.max(1, Math.min(1000, Math.floor(Number(limit) || 200)));
+  return devLog.slice(0, n);
+}
+
+function sendDevLogForWs(ws, limit = 200) {
+  ws.send(JSON.stringify({ type: "devLogSnapshot", log: listDevLog(limit) }));
 }
 
 function writeUserPatch(username, patchFn) {
@@ -1293,11 +1392,12 @@ function loadCollectionsFromDisk() {
   }
 }
 
-function broadcastCollections() {
+function broadcastCollections(opts = {}) {
+  const includePostsSnapshot = opts.includePostsSnapshot !== false;
   for (const ws of sockets) {
     if (ws.readyState !== ws.OPEN) continue;
     ws.send(JSON.stringify({ type: "collectionsUpdated", collections: listCollectionsForClient(ws.user?.username || "") }));
-    sendPostsSnapshot(ws);
+    if (includePostsSnapshot) sendPostsSnapshot(ws);
   }
 }
 
@@ -1663,8 +1763,8 @@ function loadPluginsFromDisk() {
     if (!manifest) continue;
     pluginManifestsById.set(id, manifest);
     if (!pluginsStateById.has(id)) pluginsStateById.set(id, { enabled: false });
-    pluginRuntimeById.set(id, { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [] });
-  }
+      pluginRuntimeById.set(id, { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [] });
+   }
 
   // Load enabled server plugins (optional).
   for (const [id, manifest] of pluginManifestsById.entries()) {
@@ -1674,10 +1774,10 @@ function loadPluginsFromDisk() {
     const dir = pluginDirForId(id);
     const entryPath = path.resolve(dir, manifest.entryServer);
     const root = dir + path.sep;
-    if (!entryPath.startsWith(root)) {
-      pluginRuntimeById.set(id, { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [], error: "Invalid server entry path." });
-      continue;
-    }
+      if (!entryPath.startsWith(root)) {
+        pluginRuntimeById.set(id, { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [], error: "Invalid server entry path." });
+        continue;
+      }
 
     try {
       try {
@@ -1689,12 +1789,7 @@ function loadPluginsFromDisk() {
       // eslint-disable-next-line global-require, import/no-dynamic-require
       const init = require(entryPath);
       if (typeof init !== "function") {
-        pluginRuntimeById.set(id, {
-          wsHandlers: new Map(),
-          httpHandlers: new Map(),
-          onCloseHandlers: [],
-          error: "Server entry must export a function."
-        });
+        pluginRuntimeById.set(id, { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [], error: "Server entry must export a function." });
         continue;
       }
       const runtime = pluginRuntimeById.get(id) || { wsHandlers: new Map(), httpHandlers: new Map(), onCloseHandlers: [] };
@@ -1844,8 +1939,15 @@ function loadInstanceFromDisk() {
   const data = readJsonFileOrNull(INSTANCE_FILE);
   if (!data || typeof data !== "object") {
     instanceBranding = sanitizeInstanceBranding(instanceBranding);
+    lastInstanceBroadcastHash = JSON.stringify(instanceBranding);
     return;
   }
+  const appearance =
+    data?.appearance && typeof data.appearance === "object"
+      ? data.appearance
+      : data?.instance?.appearance && typeof data.instance.appearance === "object"
+        ? data.instance.appearance
+        : {};
   instanceBranding = sanitizeInstanceBranding({
     title: typeof data.title === "string" ? data.title : data?.instance?.title,
     subtitle: typeof data.subtitle === "string" ? data.subtitle : data?.instance?.subtitle,
@@ -1853,8 +1955,10 @@ function loadInstanceFromDisk() {
       Object.prototype.hasOwnProperty.call(data, "allowMemberPermanentPosts")
         ? data.allowMemberPermanentPosts
         : data?.instance?.allowMemberPermanentPosts
-    )
+    ),
+    appearance
   });
+  lastInstanceBroadcastHash = JSON.stringify(instanceBranding);
 }
 
 function persistInstanceToDisk() {
@@ -2162,6 +2266,7 @@ function loadPostsFromDisk() {
         const html = htmlRaw ? sanitizeRichHtml(htmlRaw) : "";
         const createdAtMsg = Number(m.createdAt || 0) || createdAt;
         const fromUser = normalizeUsername(m.fromUser || "");
+        const asMod = Boolean(m.asMod) || String(fromUser || "").toLowerCase() === "mod";
         const mentions = Array.isArray(m.mentions)
           ? m.mentions.map((x) => normalizeUsername(x)).filter(Boolean).slice(0, 16)
           : [];
@@ -2188,8 +2293,9 @@ function loadPostsFromDisk() {
           editedAt,
           reactions: {},
           createdAt: createdAtMsg,
-          fromClientId: typeof m.fromClientId === "string" ? m.fromClientId : "",
-          fromUser: fromUser || ""
+          asMod,
+          fromClientId: !asMod && typeof m.fromClientId === "string" ? m.fromClientId : "",
+          fromUser: asMod ? "MOD" : fromUser || ""
         });
       }
       if (snapChat.length > CHAT_MAX_PER_POST) snapChat.splice(0, snapChat.length - CHAT_MAX_PER_POST);
@@ -2581,6 +2687,7 @@ function markChatDeleted(messageRef, actor, roleOverride = "") {
   const message = messageRef.message;
   if (message.deleted) return { ok: false, message: "Message is already deleted." };
   if (!message.deletedSnapshot) {
+    const asMod = Boolean(message.asMod) || String(message.fromUser || "").trim().toLowerCase() === "mod";
     message.deletedSnapshot = {
       savedAt: now(),
       message: {
@@ -2588,11 +2695,12 @@ function markChatDeleted(messageRef, actor, roleOverride = "") {
         postId: message.postId,
         text: typeof message.text === "string" ? message.text : "",
         html: typeof message.html === "string" ? message.html : "",
+        asMod,
         mentions: Array.isArray(message.mentions) ? [...message.mentions] : [],
         replyTo: message.replyTo || null,
         createdAt: Number(message.createdAt || 0) || 0,
-        fromClientId: typeof message.fromClientId === "string" ? message.fromClientId : "",
-        fromUser: normalizeUsername(message.fromUser || "")
+        fromClientId: !asMod && typeof message.fromClientId === "string" ? message.fromClientId : "",
+        fromUser: asMod ? "MOD" : normalizeUsername(message.fromUser || "")
       },
       reactions: mapSetsToObj(chatReactionsByMessageId.get(message.id))
     };
@@ -3122,7 +3230,15 @@ async function handlePluginInstall(req, res, url) {
     }
 
     // Move extracted plugin directory into place.
-    fs.renameSync(extractedRoot, destDir);
+    try {
+      fs.renameSync(extractedRoot, destDir);
+    } catch (renameErr) {
+      if (renameErr.code === "EXDEV") {
+        fs.cpSync(extractedRoot, destDir, { recursive: true });
+      } else {
+        throw renameErr;
+      }
+    }
 
     // Ensure state entry exists and defaults to disabled.
     if (!pluginsStateById.has(manifest.id)) pluginsStateById.set(manifest.id, { enabled: false });
@@ -3316,7 +3432,23 @@ function serveStatic(req, res) {
 
   if (pathname === "/api/info") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ port: PORT, registrationEnabled: registrationEnabled() }));
+    res.end(
+      JSON.stringify({
+        port: PORT,
+        host: HOST,
+        serverTime: now(),
+        registrationEnabled: registrationEnabled(),
+        config: {
+          rateLimits: {
+            mod: { windowMs: RL_MOD_WINDOW_MS, max: RL_MOD_MAX },
+            login: { windowMs: RL_LOGIN_WINDOW_MS, max: RL_LOGIN_MAX },
+            register: { windowMs: RL_REGISTER_WINDOW_MS, max: RL_REGISTER_MAX },
+            resume: { windowMs: RL_RESUME_WINDOW_MS, max: RL_RESUME_MAX },
+            report: { windowMs: RL_REPORT_WINDOW_MS, max: RL_REPORT_MAX }
+          }
+        }
+      })
+    );
     return;
   }
 
@@ -3439,6 +3571,9 @@ function sendLoginOk(ws, username, sessionToken) {
   );
   sendDmSnapshot(ws);
   sendPluginsForWs(ws);
+  if (ws?.user?.username && hasRole(ws.user.username, ROLE_MODERATOR)) {
+    sendDevLogForWs(ws, 200);
+  }
 }
 
 function modViewAllowed(ws) {
@@ -3890,9 +4025,14 @@ loadInstanceFromDisk();
 try {
   fs.mkdirSync(path.dirname(INSTANCE_FILE), { recursive: true });
   if (fs.existsSync(INSTANCE_FILE)) {
+    let instanceWatchTimer = null;
     fs.watch(INSTANCE_FILE, { persistent: false }, () => {
-      loadInstanceFromDisk();
-      sendToSockets(() => true, { type: "instanceUpdated", instance: instanceBranding });
+      if (instanceWatchTimer) clearTimeout(instanceWatchTimer);
+      instanceWatchTimer = setTimeout(() => {
+        instanceWatchTimer = null;
+        loadInstanceFromDisk();
+        broadcastInstanceUpdated(false);
+      }, 75);
     });
   }
 } catch {
@@ -3900,6 +4040,7 @@ try {
 }
 
 loadPluginsFromDisk();
+appendDevLog({ level: "info", scope: "server", message: "Server started", data: { port: PORT, host: HOST } });
 try {
   fs.mkdirSync(path.dirname(PLUGINS_FILE), { recursive: true });
   fs.mkdirSync(PLUGINS_DIR, { recursive: true });
@@ -4450,12 +4591,14 @@ wss.on("connection", (ws, req) => {
       const hasProtectedField = Object.prototype.hasOwnProperty.call(msg, "protected");
       const hasCollectionField = Object.prototype.hasOwnProperty.call(msg, "collectionId");
       const hasKeywordsField = Object.prototype.hasOwnProperty.call(msg, "keywords");
+      const hasModeField = Object.prototype.hasOwnProperty.call(msg, "mode") || Object.prototype.hasOwnProperty.call(msg, "chatMode");
 
       const beforeCollectionId = normalizeCollectionId(entry.post.collectionId || "") || DEFAULT_COLLECTION_ID;
       const beforeProtected = Boolean(entry.post.protected);
       const beforeKeywords = Array.isArray(entry.post.keywords) ? [...entry.post.keywords] : [];
       const beforeTitle = entry.post.title || "";
       const beforeContent = textPreview(entry.post.content || "");
+      const beforeMode = sanitizePostMode(entry.post.mode || entry.post.chatMode || "");
 
       if (hasCollectionField) {
         const requestedCollectionId = normalizeCollectionId(msg.collectionId || "");
@@ -4473,6 +4616,10 @@ wss.on("connection", (ws, req) => {
 
       if (hasKeywordsField) {
         entry.post.keywords = normalizeKeywords(msg.keywords);
+      }
+
+      if (hasModeField) {
+        entry.post.mode = sanitizePostMode(msg.mode || msg.chatMode || "");
       }
 
       if (hasProtectedField) {
@@ -4523,6 +4670,8 @@ wss.on("connection", (ws, req) => {
           afterProtected: Boolean(entry.post.protected),
           beforeKeywords: beforeKeywords.join(", "),
           afterKeywords: (entry.post.keywords || []).join(", "),
+          beforeMode,
+          afterMode: sanitizePostMode(entry.post.mode || ""),
           editCount: entry.post.editCount,
           editedAt: entry.post.editedAt
         }
@@ -4663,18 +4812,21 @@ wss.on("connection", (ws, req) => {
           }
         : null;
       const mentions = extractMentionUsernames(safeText);
+      const wantsMod = Boolean(msg.asMod);
+      const asMod = wantsMod && hasRole(ws.user.username, ROLE_MODERATOR);
 
       const message = {
         id: toId(),
         postId,
         text: safeText || "[media]",
         html: safeHtml,
+        asMod,
         mentions: sanitizePostMode(entry.post?.mode) === "walkie" ? [] : mentions,
         replyTo,
         reactions: {},
         createdAt: now(),
-        fromClientId: ws.clientId,
-        fromUser: ws.user.username
+        fromClientId: asMod ? "" : ws.clientId,
+        fromUser: asMod ? "MOD" : ws.user.username
       };
       appendChatMessage(postId, message);
       const t = message.createdAt;
@@ -5142,6 +5294,48 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
+    if (msg.type === "devLogList") {
+      if (!modViewAllowed(ws)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+        return;
+      }
+      sendDevLogForWs(ws, msg.limit || 200);
+      return;
+    }
+
+    if (msg.type === "devLogClear") {
+      const actor = ws?.user?.username;
+      if (!actor || !hasRole(actor, ROLE_OWNER)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Owner access required." }));
+        return;
+      }
+      devLog = [];
+      devLogSeq = 1;
+      sendToSockets(
+        (client) => client.user?.username && hasRole(client.user.username, ROLE_MODERATOR),
+        { type: "devLogSnapshot", log: [] }
+      );
+      ws.send(JSON.stringify({ type: "devLogOk", cleared: true }));
+      appendDevLog({ level: "warn", scope: "server", message: "Dev log cleared", data: { by: actor } });
+      return;
+    }
+
+    if (msg.type === "devLogClient") {
+      if (!modViewAllowed(ws)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+        return;
+      }
+      const actor = normalizeUsername(ws.user?.username || "") || "unknown";
+      appendDevLog({
+        level: msg.level || "info",
+        scope: `client:${actor}${msg.scope ? `:${safeDevLogText(msg.scope, 80)}` : ""}`,
+        message: msg.message || "",
+        data: msg.data
+      });
+      ws.send(JSON.stringify({ type: "devLogOk" }));
+      return;
+    }
+
     if (msg.type === "collectionList") {
       sendCollectionsForWs(ws);
       return;
@@ -5227,14 +5421,24 @@ wss.on("connection", (ws, req) => {
       }
       const subtitle = sanitizeInstanceText(msg.subtitle || "", INSTANCE_SUBTITLE_MAX_LEN);
       const allowMemberPermanentPosts = Boolean(msg.allowMemberPermanentPosts);
-      instanceBranding = sanitizeInstanceBranding({ title, subtitle, allowMemberPermanentPosts });
+      const appearance =
+        msg?.appearance && typeof msg.appearance === "object"
+          ? msg.appearance
+          : {
+              accent: msg.accent,
+              accent2: msg.accent2,
+              fontBody: msg.fontBody,
+              fontMono: msg.fontMono
+            };
+      instanceBranding = sanitizeInstanceBranding({ title, subtitle, allowMemberPermanentPosts, appearance });
       try {
         persistInstanceToDisk();
       } catch (e) {
         ws.send(JSON.stringify({ type: "error", message: e?.message || "Failed to save instance settings." }));
         return;
       }
-      sendToSockets(() => true, { type: "instanceUpdated", instance: instanceBranding });
+      broadcastInstanceUpdated(true);
+      ws.send(JSON.stringify({ type: "instanceOk", instance: instanceBranding }));
       appendModLog({
         actionType: "instance_branding_set",
         actor,
@@ -5244,8 +5448,52 @@ wss.on("connection", (ws, req) => {
         metadata: {
           title: instanceBranding.title,
           subtitle: instanceBranding.subtitle,
-          allowMemberPermanentPosts: Boolean(instanceBranding.allowMemberPermanentPosts)
+          allowMemberPermanentPosts: Boolean(instanceBranding.allowMemberPermanentPosts),
+          appearance: instanceBranding.appearance
         }
+      });
+      return;
+    }
+
+    if (msg.type === "instanceSetAppearance") {
+      const actor = ws?.user?.username;
+      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+        return;
+      }
+      const appearance =
+        msg?.appearance && typeof msg.appearance === "object"
+          ? msg.appearance
+          : {
+              bg: msg.bg,
+              panel: msg.panel,
+              text: msg.text,
+              accent: msg.accent,
+              accent2: msg.accent2,
+              good: msg.good,
+              bad: msg.bad,
+              fontBody: msg.fontBody,
+              fontMono: msg.fontMono,
+              mutedPct: msg.mutedPct,
+              linePct: msg.linePct,
+              panel2Pct: msg.panel2Pct
+            };
+      instanceBranding = sanitizeInstanceBranding({ ...instanceBranding, appearance });
+      try {
+        persistInstanceToDisk();
+      } catch (e) {
+        ws.send(JSON.stringify({ type: "error", message: e?.message || "Failed to save instance appearance." }));
+        return;
+      }
+      broadcastInstanceUpdated(true);
+      ws.send(JSON.stringify({ type: "instanceOk", instance: instanceBranding }));
+      appendModLog({
+        actionType: "instance_appearance_set",
+        actor,
+        targetType: "system",
+        targetId: "instance",
+        reason: "Updated instance appearance",
+        metadata: { appearance: instanceBranding.appearance }
       });
       return;
     }
@@ -5290,7 +5538,14 @@ wss.on("connection", (ws, req) => {
         allowedRoles: [],
         archived: false
       });
-      persistCollections();
+      try {
+        persistCollections();
+      } catch (e) {
+        // Roll back in-memory mutation so the UI doesn't "ghost create".
+        collections = collections.filter((c) => c && c.name !== name);
+        sendError(ws, e?.message || "Failed to save collections.");
+        return;
+      }
       appendModLog({
         actionType: "collection_create",
         actor: ws.user?.username || "unknown",
@@ -5299,7 +5554,9 @@ wss.on("connection", (ws, req) => {
         reason: "Created collection",
         metadata: { name }
       });
-      broadcastCollections();
+      // Creating an empty collection does not change post visibility; avoid expensive post snapshots.
+      ws.send(JSON.stringify({ type: "collectionOk", name }));
+      broadcastCollections({ includePostsSnapshot: false });
       return;
     }
 
@@ -5334,7 +5591,8 @@ wss.on("connection", (ws, req) => {
         reason: "Archived collection",
         metadata: { collectionId: id }
       });
-      broadcastCollections();
+      // Archiving a collection should not change post visibility; keep this lightweight.
+      broadcastCollections({ includePostsSnapshot: false });
       return;
     }
 
@@ -5406,7 +5664,13 @@ wss.on("connection", (ws, req) => {
         createdBy: ws.user?.username || "system",
         archived: false
       });
-      persistCustomRoles();
+      try {
+        persistCustomRoles();
+      } catch (e) {
+        customRoles = customRoles.filter((r) => r && r.key !== key);
+        sendError(ws, e?.message || "Failed to save roles.");
+        return;
+      }
       appendModLog({
         actionType: "custom_role_create",
         actor: ws.user?.username || "unknown",
@@ -5415,8 +5679,10 @@ wss.on("connection", (ws, req) => {
         reason: "Created custom role",
         metadata: { key, label, color }
       });
+      ws.send(JSON.stringify({ type: "roleOk", key }));
       broadcastCustomRoles();
-      broadcastCollections();
+      // Creating a role does not change post visibility; avoid expensive post snapshots.
+      broadcastCollections({ includePostsSnapshot: false });
       broadcastPeopleSnapshot();
       return;
     }

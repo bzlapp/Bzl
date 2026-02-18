@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=83" />
+    <link rel="stylesheet" href="/styles.css?v=103" />
   </head>
   <body>
-    <div class="app">
-      <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
-      <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
-      <aside class="sidebar">
+      <div class="app">
+        <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
+        <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
+        <button id="showRightRack" class="ghost smallBtn rightRackToggle hidden" type="button" title="Show right rack">Right</button>
+        <aside class="sidebar">
         <div class="sidebarScroll">
           <div class="brand">
             <div id="instanceTitle" class="logo">Bzl</div>
@@ -27,10 +28,62 @@
 
         <section class="panel">
           <div class="panelTitle">View</div>
-          <label class="checkRow">
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Rack layout (experimental)</span>
+            <input id="toggleRackLayout" type="checkbox" />
+          </label>
+          <label style="margin-top:10px;">
+            <span>Layout preset</span>
+            <select id="layoutPreset">
+              <option value="discordLike">Discord-like</option>
+              <option value="chat">Chat</option>
+              <option value="browsing">Browsing</option>
+              <option value="maps">Maps</option>
+              <option value="moderation">Moderation</option>
+              <option value="focus">Focus</option>
+              <option value="clean">Clean</option>
+              <option value="ops">Ops</option>
+            </select>
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Side panels</span>
+            <input id="toggleSideRack" type="checkbox" checked />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Right rack</span>
+            <input id="toggleRightRack" type="checkbox" checked />
+          </label>
+          <label class="checkRow" style="margin-top:8px;">
             <span>Show reactions bar</span>
             <input id="toggleReactions" type="checkbox" />
           </label>
+
+          <details style="margin-top:10px;">
+            <summary class="small muted" style="cursor:pointer;user-select:none;">Advanced display</summary>
+            <div style="margin-top:10px;">
+              <label>
+                <span>Text size</span>
+                <select id="uiScale">
+                  <option value="auto" selected>Auto</option>
+                  <option value="xs">Compact</option>
+                  <option value="sm">Small</option>
+                  <option value="md">Default</option>
+                  <option value="lg">Large</option>
+                </select>
+              </label>
+              <label style="margin-top:10px;">
+                <span>Device layout</span>
+                <select id="deviceLayout">
+                  <option value="auto" selected>Auto</option>
+                  <option value="widescreen">16:9 / 16:10</option>
+                  <option value="fourThree">4:3</option>
+                  <option value="threeTwo">3:2</option>
+                  <option value="ultrawide">Ultrawide</option>
+                  <option value="portrait">Portrait</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </section>
 
         <section class="panel">
@@ -87,35 +140,6 @@
           <div id="profileStatus" class="small muted"></div>
         </section>
 
-        <section id="instancePanel" class="panel hidden" aria-label="Instance settings">
-          <div class="panelTitle">Instance</div>
-          <div class="small muted">Owner-only. Rename the title/subtitle (Powered by Bzl stays).</div>
-          <label>
-            <span>Title</span>
-            <input id="instanceTitleInput" maxlength="32" placeholder="Your instance name" />
-          </label>
-          <label>
-            <span>Subtitle</span>
-            <input id="instanceSubtitleInput" maxlength="80" placeholder="A short tagline" />
-          </label>
-          <label class="checkRow">
-            <span>Allow members to make permanent hives</span>
-            <input id="instanceAllowPermanentPosts" type="checkbox" />
-          </label>
-          <button id="saveInstanceBranding" class="primary" type="button">Save instance</button>
-          <div id="instanceStatus" class="small muted"></div>
-
-          <div class="panelDivider"></div>
-          <div class="panelTitleSub">Plugins</div>
-          <div class="small muted">Owner-only. Install optional plugins to extend your instance.</div>
-          <div class="pluginInstallRow">
-            <input id="pluginZipInput" type="file" accept=".zip,application/zip" />
-            <button id="pluginInstallBtn" class="ghost" type="button">Install</button>
-          </div>
-          <div id="pluginsList" class="pluginsList"></div>
-          <div id="pluginStatus" class="small muted"></div>
-        </section>
-
         </div>
 
         <div class="sidebarFooter">
@@ -133,7 +157,10 @@
       <div id="sidebarResizeHandle" class="panelResizeHandle sidebarResizeHandle" title="Drag to resize sidebar" aria-hidden="true"></div>
 
       <main class="main">
-        <section class="panel panelFill">
+        <div id="mainRack" class="mainRack">
+          <button id="showSideRack" class="ghost smallBtn sideRackToggle hidden" type="button" title="Show side panels">Side</button>
+          <div id="mainWorkspaceRack" class="workspaceRack" aria-label="Workspace">
+        <section id="hivesPanel" class="panel panelFill">
           <div class="panelHeader">
             <div class="panelTitle">Hives</div>
             <div class="filters">
@@ -278,6 +305,9 @@
             </div>
           </form>
         </section>
+          </div>
+          <div id="mainSideRack" class="sideRack" aria-label="Side panels"></div>
+        </div>
       </main>
 
       <div id="chatResizeHandle" class="panelResizeHandle chatResizeHandle" title="Drag to resize chat" aria-hidden="true"></div>
@@ -306,7 +336,7 @@
             </div>
             <button id="chatReplyCancel" class="ghost smallBtn" type="button">Cancel</button>
           </div>
-          <div class="chatComposer">
+            <div class="chatComposer">
             <div class="toolbar" role="toolbar" aria-label="Chat formatting">
               <button type="button" data-chatcmd="bold"><b>B</b></button>
               <button type="button" data-chatcmd="italic"><i>I</i></button>
@@ -320,6 +350,10 @@
               <button type="button" data-chataudio="1">Audio</button>
               <button type="button" data-chatemoji="1">Emoji</button>
               <button type="button" data-chatcmd="removeFormat">Clear</button>
+              <label id="chatModToggleWrap" class="checkRow chatModToggle hidden" title="Send as moderator/system message (left rail)">
+                <span>Mod</span>
+                <input id="chatModToggle" type="checkbox" />
+              </label>
             </div>
             <div id="chatEditor" class="editor chatEditor" contenteditable="true" aria-label="Chat editor"></div>
             <div id="mentionMenu" class="mentionMenu hidden" role="listbox" aria-label="Mention suggestions"></div>
@@ -340,6 +374,7 @@
           <button type="button" class="ghost" data-modtab="reports">Reports</button>
           <button type="button" class="ghost" data-modtab="users">Users</button>
           <button type="button" class="ghost" data-modtab="hives">Hives</button>
+          <button type="button" class="ghost" data-modtab="server">Server</button>
           <button type="button" class="ghost" data-modtab="log">Log</button>
         </div>
         <div class="modFilters">
@@ -409,6 +444,10 @@
             <label class="checkRow">
               <span>Password protected</span>
               <input id="editModalProtected" type="checkbox" />
+            </label>
+            <label class="checkRow">
+              <span>Walkie-only</span>
+              <input id="editModalWalkie" type="checkbox" />
             </label>
             <label id="editModalPasswordRow" class="hidden">
               <span>Password</span>
@@ -490,6 +529,7 @@
       </div>
     </div>
 
-    <script src="/app.js?v=83"></script>
+    <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
+    <script src="/app.js?v=116"></script>
   </body>
 </html>

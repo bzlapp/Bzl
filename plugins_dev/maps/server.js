@@ -2,6 +2,11 @@ const fs = require("fs");
 const path = require("path");
 
 module.exports = function init(api) {
+  const MAP_CHAT_GLOBAL_MAX = 200;
+  const MAP_CHAT_LOCAL_RADIUS = Number.isFinite(Number(process.env.MAP_CHAT_LOCAL_RADIUS))
+    ? Math.max(0.01, Math.min(1.0, Number(process.env.MAP_CHAT_LOCAL_RADIUS)))
+    : 0.12; // positions are normalized 0..1
+
   const BUILTIN_MAPS = [
     {
       id: "studio",
@@ -31,7 +36,7 @@ module.exports = function init(api) {
   /** @type {Array<{id:string,title:string,owner:string,backgroundUrl:string,thumbUrl:string,world?:{w:number,h:number}|null,avatarSize?:number,cameraZoom?:number,collisions?:any[],masks?:any[],exits?:any[],ttrpgEnabled?:boolean,sprites?:any[],props?:any[],walkiesEnabled?:boolean}>} */
   let customMaps = [];
 
-  /** @type {Map<string, {users: Map<string, {x:number,y:number,color:string,image:string,invisible?:boolean,seq?:number}>, lastListAt:number, walkies?: Map<string, {url:string, pending:Set<string>, createdAt:number, mapId:string}>}>} */
+  /** @type {Map<string, {users: Map<string, {x:number,y:number,color:string,image:string,invisible?:boolean,seq?:number}>, lastListAt:number, walkies?: Map<string, {url:string, pending:Set<string>, createdAt:number, mapId:string}>, chatGlobal?: Array<{id:string,fromUser:string,text:string,createdAt:number}>}>} */
   const rooms = new Map();
 
   function normId(raw) {
@@ -304,8 +309,19 @@ module.exports = function init(api) {
   function roomFor(mapId) {
     const mid = normId(mapId);
     if (!mid) return null;
-    if (!rooms.has(mid)) rooms.set(mid, { users: new Map(), lastListAt: 0, walkies: new Map() });
+    if (!rooms.has(mid)) rooms.set(mid, { users: new Map(), lastListAt: 0, walkies: new Map(), chatGlobal: [] });
     return rooms.get(mid) || null;
+  }
+
+  function sanitizeMapChatText(text) {
+    const raw = typeof text === "string" ? text : "";
+    return raw.replace(/\s+/g, " ").trim().slice(0, 420);
+  }
+
+  function distance01(ax, ay, bx, by) {
+    const dx = Number(ax) - Number(bx);
+    const dy = Number(ay) - Number(by);
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function userIdentity(ws) {
@@ -978,6 +994,64 @@ module.exports = function init(api) {
     } else {
       api.sendToUsers(usersInRoom(mapId), payload);
     }
+  });
+
+  api.registerWs("chatHistoryReq", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const mapId = normId(msg?.mapId || ws.__mapsRoomId || "");
+    if (!mapId) return;
+    const room = rooms.get(mapId);
+    if (!room) return;
+    if (!room.users.has(username)) return;
+    const list = Array.isArray(room.chatGlobal) ? room.chatGlobal : [];
+    ws.send(JSON.stringify({ type: "plugin:maps:chatHistory", mapId, scope: "global", messages: list.slice(-MAP_CHAT_GLOBAL_MAX) }));
+  });
+
+  api.registerWs("chatSend", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
+    if (!mapId) return;
+    const room = rooms.get(mapId);
+    if (!room) return;
+    const u = room.users.get(username);
+    if (!u) return;
+
+    const scopeRaw = typeof msg?.scope === "string" ? msg.scope.trim().toLowerCase() : "local";
+    const scope = scopeRaw === "global" ? "global" : "local";
+    const text = sanitizeMapChatText(msg?.text);
+    if (!text) return;
+
+    const createdAt = api.now();
+    const id = `${createdAt}_${Math.random().toString(16).slice(2)}`;
+    const message = { id, fromUser: username, text, createdAt };
+    const payload = { type: "plugin:maps:chatMessage", mapId, scope, message };
+
+    // If invisible, only send to self (consistent with bubbles/movement).
+    if (u.invisible) {
+      api.sendToUsers([username], payload);
+      return;
+    }
+
+    if (scope === "global") {
+      if (!Array.isArray(room.chatGlobal)) room.chatGlobal = [];
+      room.chatGlobal.push(message);
+      if (room.chatGlobal.length > MAP_CHAT_GLOBAL_MAX * 2) room.chatGlobal = room.chatGlobal.slice(-MAP_CHAT_GLOBAL_MAX);
+      api.sendToUsers(usersInRoom(mapId), payload);
+      return;
+    }
+
+    // Local: deliver only to users within radius at send-time ("witnessing it").
+    const recipients = [];
+    const all = Array.from(room.users.entries());
+    for (const [otherName, other] of all) {
+      if (!other) continue;
+      const d = distance01(u.x, u.y, other.x, other.y);
+      if (d <= MAP_CHAT_LOCAL_RADIUS) recipients.push(otherName);
+    }
+    if (!recipients.includes(username)) recipients.push(username);
+    api.sendToUsers(recipients, payload);
   });
 
   api.registerWs("say", (ws, msg) => {

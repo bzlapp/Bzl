@@ -873,11 +873,13 @@ function verifyPostPassword(post, password) {
 
 function serializeChatMessageForWs(message) {
   if (!message || typeof message !== "object") return null;
+  const asMod = Boolean(message.asMod) || String(message.fromUser || "").trim().toLowerCase() === "mod";
   return {
     id: typeof message.id === "string" ? message.id : "",
     postId: typeof message.postId === "string" ? message.postId : "",
     text: typeof message.text === "string" ? message.text : "",
     html: typeof message.html === "string" ? message.html : "",
+    asMod,
     mentions: Array.isArray(message.mentions) ? message.mentions : [],
     replyTo: message.replyTo || null,
     deleted: Boolean(message.deleted),
@@ -888,8 +890,8 @@ function serializeChatMessageForWs(message) {
     editedAt: Number(message.editedAt || 0) || 0,
     reactions: message.reactions || {},
     createdAt: Number(message.createdAt || 0) || 0,
-    fromClientId: typeof message.fromClientId === "string" ? message.fromClientId : "",
-    fromUser: normalizeUsername(message.fromUser || "")
+    fromClientId: !asMod && typeof message.fromClientId === "string" ? message.fromClientId : "",
+    fromUser: asMod ? "MOD" : normalizeUsername(message.fromUser || "")
   };
 }
 
@@ -2264,6 +2266,7 @@ function loadPostsFromDisk() {
         const html = htmlRaw ? sanitizeRichHtml(htmlRaw) : "";
         const createdAtMsg = Number(m.createdAt || 0) || createdAt;
         const fromUser = normalizeUsername(m.fromUser || "");
+        const asMod = Boolean(m.asMod) || String(fromUser || "").toLowerCase() === "mod";
         const mentions = Array.isArray(m.mentions)
           ? m.mentions.map((x) => normalizeUsername(x)).filter(Boolean).slice(0, 16)
           : [];
@@ -2290,8 +2293,9 @@ function loadPostsFromDisk() {
           editedAt,
           reactions: {},
           createdAt: createdAtMsg,
-          fromClientId: typeof m.fromClientId === "string" ? m.fromClientId : "",
-          fromUser: fromUser || ""
+          asMod,
+          fromClientId: !asMod && typeof m.fromClientId === "string" ? m.fromClientId : "",
+          fromUser: asMod ? "MOD" : fromUser || ""
         });
       }
       if (snapChat.length > CHAT_MAX_PER_POST) snapChat.splice(0, snapChat.length - CHAT_MAX_PER_POST);
@@ -2683,6 +2687,7 @@ function markChatDeleted(messageRef, actor, roleOverride = "") {
   const message = messageRef.message;
   if (message.deleted) return { ok: false, message: "Message is already deleted." };
   if (!message.deletedSnapshot) {
+    const asMod = Boolean(message.asMod) || String(message.fromUser || "").trim().toLowerCase() === "mod";
     message.deletedSnapshot = {
       savedAt: now(),
       message: {
@@ -2690,11 +2695,12 @@ function markChatDeleted(messageRef, actor, roleOverride = "") {
         postId: message.postId,
         text: typeof message.text === "string" ? message.text : "",
         html: typeof message.html === "string" ? message.html : "",
+        asMod,
         mentions: Array.isArray(message.mentions) ? [...message.mentions] : [],
         replyTo: message.replyTo || null,
         createdAt: Number(message.createdAt || 0) || 0,
-        fromClientId: typeof message.fromClientId === "string" ? message.fromClientId : "",
-        fromUser: normalizeUsername(message.fromUser || "")
+        fromClientId: !asMod && typeof message.fromClientId === "string" ? message.fromClientId : "",
+        fromUser: asMod ? "MOD" : normalizeUsername(message.fromUser || "")
       },
       reactions: mapSetsToObj(chatReactionsByMessageId.get(message.id))
     };
@@ -4806,18 +4812,21 @@ wss.on("connection", (ws, req) => {
           }
         : null;
       const mentions = extractMentionUsernames(safeText);
+      const wantsMod = Boolean(msg.asMod);
+      const asMod = wantsMod && hasRole(ws.user.username, ROLE_MODERATOR);
 
       const message = {
         id: toId(),
         postId,
         text: safeText || "[media]",
         html: safeHtml,
+        asMod,
         mentions: sanitizePostMode(entry.post?.mode) === "walkie" ? [] : mentions,
         replyTo,
         reactions: {},
         createdAt: now(),
-        fromClientId: ws.clientId,
-        fromUser: ws.user.username
+        fromClientId: asMod ? "" : ws.clientId,
+        fromUser: asMod ? "MOD" : ws.user.username
       };
       appendChatMessage(postId, message);
       const t = message.createdAt;

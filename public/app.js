@@ -25,9 +25,13 @@ const toggleRackLayoutEl = document.getElementById("toggleRackLayout");
 const toggleSideRackEl = document.getElementById("toggleSideRack");
 const toggleRightRackEl = document.getElementById("toggleRightRack");
 const layoutPresetEl = document.getElementById("layoutPreset");
+const uiScaleEl = document.getElementById("uiScale");
+const deviceLayoutEl = document.getElementById("deviceLayout");
 const dockHotbarEl = document.getElementById("dockHotbar");
 const showSideRackBtn = document.getElementById("showSideRack");
 const showRightRackBtn = document.getElementById("showRightRack");
+const chatModToggleWrapEl = document.getElementById("chatModToggleWrap");
+const chatModToggleEl = document.getElementById("chatModToggle");
 
 const authHint = document.getElementById("authHint");
 const userLabel = document.getElementById("userLabel");
@@ -125,6 +129,10 @@ const chatEditor = document.getElementById("chatEditor");
 const mentionMenuEl = document.getElementById("mentionMenu");
 const chatImageInput = document.getElementById("chatImage");
 const chatAudioInput = document.getElementById("chatAudio");
+
+// When selecting images/audio for chat, route the insertion to the most-recently focused rich editor
+// (main chat panel or a chat instance panel).
+let chatUploadTargetEditor = chatEditor;
 const walkieBarEl = document.getElementById("walkieBar");
 const walkieRecordBtn = document.getElementById("walkieRecordBtn");
 const walkieStatusEl = document.getElementById("walkieStatus");
@@ -155,6 +163,13 @@ const editModalEditor = document.getElementById("editModalEditor");
 const editModalImageInput = document.getElementById("editModalImage");
 const editModalAudioInput = document.getElementById("editModalAudio");
 
+// Temporarily force rack mode on (hide toggle) while the feature stabilizes.
+const FORCE_RACK_MODE = true;
+
+// Display prefs (device layout + text scale)
+const UI_SCALE_KEY = "bzl_uiScale"; // "auto" | "xs" | "sm" | "md" | "lg"
+const DEVICE_LAYOUT_KEY = "bzl_deviceLayout"; // "auto" | "widescreen" | "fourThree" | "threeTwo" | "ultrawide" | "portrait"
+
 /** @type {Map<string, any>} */
 const posts = new Map();
 /** @type {Record<string, {image?: string, color?: string}>} */
@@ -179,6 +194,13 @@ let canModerate = false;
 let canRegisterFirstUser = false;
 let registrationEnabled = false;
 let activeChatPostId = null;
+let activeMapsRoomId = "";
+let activeMapsRoomTitle = "";
+let activeMapsChatScope = "local"; // "local" | "global"
+/** @type {Map<string, any[]>} */
+const mapsChatGlobalByMapId = new Map();
+/** @type {Map<string, any[]>} */
+const mapsChatLocalByMapId = new Map();
 let pendingProfileImage = "";
 let windowFocused = true;
 let typingStopTimer = null;
@@ -201,6 +223,21 @@ let peopleOpen = false;
 let peopleTab = "members";
 let peopleMembers = [];
 let openPostMenuId = "";
+
+// Multi-instance chat panels (MVP: per-hive/post chat panels).
+/** @type {Map<string, {postId:string}>} */
+const chatPanelInstances = new Map();
+
+function isChatInstancePanelId(panelId) {
+  const id = String(panelId || "");
+  return id.startsWith("chat:post:");
+}
+
+function chatInstancePanelIdForPost(postId) {
+  const pid = String(postId || "").trim();
+  if (!pid) return "";
+  return `chat:post:${pid}`;
+}
 let dmThreads = [];
 /** @type {Map<string, any>} */
 let dmThreadsById = new Map();
@@ -383,6 +420,111 @@ function readStringPref(key, fallback = "") {
   }
 }
 
+function normalizeUiScale(raw) {
+  const v = String(raw || "").trim().toLowerCase();
+  if (v === "auto") return "auto";
+  if (v === "xs" || v === "compact") return "xs";
+  if (v === "sm" || v === "small") return "sm";
+  if (v === "lg" || v === "large") return "lg";
+  return "md";
+}
+
+function normalizeDeviceLayout(raw) {
+  const v = String(raw || "").trim().toLowerCase();
+  if (v === "widescreen") return "widescreen";
+  if (v === "fourthree" || v === "fourThree".toLowerCase() || v === "4:3" || v === "4x3") return "fourThree";
+  if (v === "threetwo" || v === "threeTwo".toLowerCase() || v === "3:2" || v === "3x2") return "threeTwo";
+  if (v === "ultrawide") return "ultrawide";
+  if (v === "portrait") return "portrait";
+  return "auto";
+}
+
+function detectViewportSize() {
+  const w = Math.max(1, Number(window.innerWidth) || 1);
+  const h = Math.max(1, Number(window.innerHeight) || 1);
+  // Keep this intentionally simple: we mostly care about “can we fit columns sanely?”
+  // Consider both width and height so low-res (ex: 1280x720) can auto-compact.
+  if (w <= 1100 || h <= 720) return "xs";
+  if (w <= 1400 || h <= 820) return "sm";
+  if (w <= 1800) return "md";
+  return "lg";
+}
+
+function detectAspectLayout() {
+  const w = Math.max(1, Number(window.innerWidth) || 1);
+  const h = Math.max(1, Number(window.innerHeight) || 1);
+  const ratio = w / h;
+  // Heuristics:
+  // - Portrait: <= ~1.25
+  // - 4:3-ish: 1.25..1.38
+  // - 3:2-ish: 1.38..1.62 (covers 3:2 and nearby)
+  // - Widescreen: 1.62..1.95 (16:10..~2:1)
+  // - Ultrawide: >= 1.95
+  if (ratio <= 1.25) return "portrait";
+  if (ratio < 1.38) return "fourThree";
+  if (ratio >= 1.38 && ratio < 1.62) return "threeTwo";
+  if (ratio >= 1.95) return "ultrawide";
+  return "widescreen";
+}
+
+function applyDisplayPrefs() {
+  const root = document.documentElement;
+  if (!root) return;
+  const scalePref = normalizeUiScale(readStringPref(UI_SCALE_KEY, "auto"));
+  const layoutPref = normalizeDeviceLayout(readStringPref(DEVICE_LAYOUT_KEY, "auto"));
+  const layout = layoutPref === "auto" ? detectAspectLayout() : layoutPref;
+  const viewport = detectViewportSize();
+  const scale =
+    scalePref === "auto" ? (viewport === "xs" ? "xs" : viewport === "sm" ? "sm" : "md") : scalePref;
+
+  root.dataset.uiScale = scale;
+  root.dataset.uiScalePref = scalePref;
+  root.dataset.deviceLayout = layoutPref;
+  root.dataset.aspect = layout;
+  root.dataset.viewport = viewport;
+
+  if (uiScaleEl) uiScaleEl.value = scalePref;
+  if (deviceLayoutEl) deviceLayoutEl.value = layoutPref;
+}
+
+function initDisplayPrefsUi() {
+  applyDisplayPrefs();
+  if (uiScaleEl) {
+    uiScaleEl.value = normalizeUiScale(readStringPref(UI_SCALE_KEY, "auto"));
+    uiScaleEl.addEventListener("change", () => {
+      const next = normalizeUiScale(uiScaleEl.value);
+      try {
+        localStorage.setItem(UI_SCALE_KEY, next);
+      } catch {
+        // ignore
+      }
+      applyDisplayPrefs();
+    });
+  }
+  if (deviceLayoutEl) {
+    deviceLayoutEl.value = normalizeDeviceLayout(readStringPref(DEVICE_LAYOUT_KEY, "auto"));
+    deviceLayoutEl.addEventListener("change", () => {
+      const next = normalizeDeviceLayout(deviceLayoutEl.value);
+      try {
+        localStorage.setItem(DEVICE_LAYOUT_KEY, next);
+      } catch {
+        // ignore
+      }
+      applyDisplayPrefs();
+    });
+  }
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (resizeTimer) window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      resizeTimer = null;
+      // Always re-apply (viewport changes matter even when layout is manually pinned).
+      applyDisplayPrefs();
+    }, 90);
+  });
+}
+
 function writeStringPref(key, value) {
   try {
     localStorage.setItem(key, String(value));
@@ -475,6 +617,49 @@ function registerCorePanel(def) {
   panelRegistry.set(id, { id, title, icon, source: "core", role, defaultRack, element });
 }
 
+function togglePanelSkinny(panelId) {
+  if (!rackLayoutEnabled) return;
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!panelIsSkinnyCapable(id)) return;
+  const panelEl = getPanelElement(id);
+  if (!panelEl) return;
+
+  const left = ensureWorkspaceLeftRack();
+  const right = ensureWorkspaceRightRack();
+  const side = ensureMainSideRack();
+  if (!left || !right || !side) return;
+
+  const parentId = rackIdForPanelElement(panelEl);
+  const inSkinny = parentId === "mainSideRack" || parentId === "rightRack";
+
+  if (inSkinny) {
+    // Move to workspace (prefer an empty slot; otherwise prefer right).
+    const leftExisting = left.querySelector?.(":scope > .rackPanel:not(.hidden)");
+    const rightExisting = right.querySelector?.(":scope > .rackPanel:not(.hidden)");
+    const target = !rightExisting ? right : !leftExisting ? left : right;
+    const existing = target === left ? leftExisting : rightExisting;
+    if (existing instanceof HTMLElement && existing !== panelEl) {
+      const existingId = String(existing.dataset?.panelId || "").trim();
+      if (existingId) dockPanel(existingId);
+    }
+    target.appendChild(panelEl);
+    rememberPanelLastRack(id, target.id);
+    saveRackLayoutState();
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+    return;
+  }
+
+  // Move to side rack (skinny).
+  setSideCollapsed(false);
+  side.prepend(panelEl);
+  rememberPanelLastRack(id, side.id);
+  saveRackLayoutState();
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+}
+
 registerCorePanel({ id: "chat", title: "Chat", icon: "💬", role: "primary", defaultRack: "main", element: chatPanelEl });
 registerCorePanel({ id: "hives", title: "Hives", icon: "🐝", role: "primary", defaultRack: "main", element: hivesPanelEl });
 registerCorePanel({ id: "people", title: "People", icon: "👥", role: "aux", defaultRack: "right", element: peopleDrawerEl });
@@ -499,6 +684,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["hives"],
     workspaceRightOrder: ["chat"],
     sideOrder: ["profile", "composer"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["maps", "library"],
   },
@@ -510,6 +696,7 @@ const PRESET_DEFS = {
     workspaceRightOrder: [],
     expandedPrimary: "chat",
     sideOrder: ["profile"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["hives", "composer", "maps", "library"],
   },
@@ -521,6 +708,7 @@ const PRESET_DEFS = {
     workspaceRightOrder: [],
     expandedPrimary: "hives",
     sideOrder: ["chat"],
+    sideCollapsed: true,
     rightOrder: ["profile"],
     dockBottom: ["people", "composer", "maps", "library"],
   },
@@ -532,6 +720,7 @@ const PRESET_DEFS = {
     workspaceRightOrder: ["composer"],
     composerOpen: true,
     sideOrder: ["people"],
+    sideCollapsed: true,
     rightOrder: ["profile"],
     dockBottom: ["chat", "maps", "library"],
   },
@@ -542,6 +731,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["maps"], // if installed
     workspaceRightOrder: ["chat"],
     sideOrder: ["hives"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["profile", "composer", "library"],
   },
@@ -552,6 +742,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["hives"],
     workspaceRightOrder: ["profile"],
     sideOrder: ["composer"],
+    sideCollapsed: true,
     rightOrder: [],
     rightCollapsed: true,
     dockBottom: ["chat", "people", "maps", "library"],
@@ -564,6 +755,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["moderation"],
     workspaceRightOrder: ["chat"],
     sideOrder: ["hives"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["profile", "composer", "maps", "library"],
   },
@@ -576,6 +768,7 @@ const PRESET_DEFS = {
     workspaceRightOrder: [],
     expandedPrimary: "moderation",
     sideOrder: ["people"],
+    sideCollapsed: true,
     rightOrder: ["chat"],
     dockBottom: ["hives", "profile", "composer", "maps", "library"],
   },
@@ -587,6 +780,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["hives"],
     workspaceRightOrder: ["moderation"],
     sideOrder: ["chat"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["profile", "composer", "maps", "library"],
   },
@@ -598,6 +792,7 @@ const PRESET_DEFS = {
     workspaceLeftOrder: ["moderation"],
     workspaceRightOrder: ["hives"],
     sideOrder: ["chat"],
+    sideCollapsed: true,
     rightOrder: ["people"],
     dockBottom: ["profile", "composer", "maps", "library"],
   },
@@ -654,6 +849,7 @@ function updateLayoutPresetOptions() {
 }
 
 function readRackLayoutEnabled() {
+  if (FORCE_RACK_MODE) return true;
   try {
     return localStorage.getItem(RACK_LAYOUT_ENABLED_KEY) === "1";
   } catch {
@@ -662,6 +858,15 @@ function readRackLayoutEnabled() {
 }
 
 function writeRackLayoutEnabled(enabled) {
+  if (FORCE_RACK_MODE) {
+    rackLayoutEnabled = true;
+    try {
+      localStorage.setItem(RACK_LAYOUT_ENABLED_KEY, "1");
+    } catch {
+      // ignore
+    }
+    return;
+  }
   rackLayoutEnabled = Boolean(enabled);
   try {
     localStorage.setItem(RACK_LAYOUT_ENABLED_KEY, rackLayoutEnabled ? "1" : "0");
@@ -680,6 +885,7 @@ function loadRackLayoutState() {
         presetId: "discordLike",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+        lastRackByPanelId: {},
       };
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== 2)
@@ -688,6 +894,7 @@ function loadRackLayoutState() {
         presetId: "discordLike",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+        lastRackByPanelId: {},
       };
     const bottom = Array.isArray(parsed?.docked?.bottom) ? parsed.docked.bottom.map((x) => String(x || "")).filter(Boolean) : [];
     const presetId = typeof parsed?.presetId === "string" ? parsed.presetId : "discordLike";
@@ -695,9 +902,23 @@ function loadRackLayoutState() {
     const workspaceRight = Array.isArray(parsed?.racks?.workspaceRight) ? parsed.racks.workspaceRight.map((x) => String(x || "")).filter(Boolean) : [];
     const side = Array.isArray(parsed?.racks?.side) ? parsed.racks.side.map((x) => String(x || "")).filter(Boolean) : [];
     const right = Array.isArray(parsed?.racks?.right) ? parsed.racks.right.map((x) => String(x || "")).filter(Boolean) : [];
-    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right } };
+    const lastRackByPanelIdRaw = parsed?.lastRackByPanelId && typeof parsed.lastRackByPanelId === "object" ? parsed.lastRackByPanelId : {};
+    const lastRackByPanelId = {};
+    for (const [k, v] of Object.entries(lastRackByPanelIdRaw)) {
+      const id = String(k || "").trim();
+      const rackId = typeof v === "string" ? v.trim() : "";
+      if (!id || !rackId) continue;
+      lastRackByPanelId[id] = rackId;
+    }
+    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right }, lastRackByPanelId };
   } catch {
-    return { version: 2, presetId: "discordLike", docked: { bottom: [] }, racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] } };
+    return {
+      version: 2,
+      presetId: "discordLike",
+      docked: { bottom: [] },
+      racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+      lastRackByPanelId: {},
+    };
   }
 }
 
@@ -743,6 +964,23 @@ function panelTitle(panelId) {
   return String(panelId || "");
 }
 
+function chatRailClass({ fromUser, isModMessage }) {
+  const from = String(fromUser || "").trim();
+  const isSystem = !from || from.toLowerCase() === "system";
+  const isModMsg = Boolean(isModMessage);
+  const isYou = Boolean(loggedInUser && from && from === loggedInUser);
+  if (isSystem || isModMsg) return "railLeft";
+  if (isYou) return "railRight";
+  return "railCenter";
+}
+
+function updateChatModToggleVisibility() {
+  if (!chatModToggleWrapEl) return;
+  const canUse = Boolean(canModerate && activeChatPostId && !activeDmThreadId && !isMapChatActive());
+  chatModToggleWrapEl.classList.toggle("hidden", !canUse);
+  if (!canUse && chatModToggleEl) chatModToggleEl.checked = false;
+}
+
 function panelIcon(panelId) {
   const entry = panelRegistry.get(panelId);
   if (entry?.icon) return entry.icon;
@@ -759,9 +997,21 @@ function panelRole(panelId) {
 function panelCanExpand(panelId) {
   const id = String(panelId || "").trim();
   if (!id) return false;
+  if (id.startsWith("chat:")) return true;
   if (panelRole(id) === "primary") return true;
   // Allow a few core panels to take over the workspace even though they aren't "primary" by default.
   return id === "moderation" || id === "composer";
+}
+
+// Panels that are allowed to live in "skinny" columns (side rack / right rack).
+// These panels should be able to render in a narrow width without breaking layout.
+const SKINNY_CAPABLE_PANELS = new Set(["people", "profile", "composer", "hives", "chat"]);
+
+function panelIsSkinnyCapable(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (id.startsWith("chat:")) return true;
+  return SKINNY_CAPABLE_PANELS.has(id);
 }
 
 function isDocked(panelId) {
@@ -776,9 +1026,29 @@ function getPanelElement(panelId) {
   return el instanceof HTMLElement ? el : null;
 }
 
+function rackIdForPanelElement(panelEl) {
+  const el = panelEl instanceof HTMLElement ? panelEl : null;
+  if (!el) return "";
+  const parent = el.parentElement;
+  const id = parent && typeof parent.id === "string" ? parent.id : "";
+  if (id === "workspaceLeftSlot" || id === "workspaceRightSlot" || id === "mainSideRack" || id === "rightRack") return id;
+  return "";
+}
+
+function rememberPanelLastRack(panelId, rackId) {
+  const id = String(panelId || "").trim();
+  const rack = String(rackId || "").trim();
+  if (!id || !rack) return;
+  if (!rackLayoutState.lastRackByPanelId || typeof rackLayoutState.lastRackByPanelId !== "object") rackLayoutState.lastRackByPanelId = {};
+  rackLayoutState.lastRackByPanelId[id] = rack;
+}
+
 function dockPanel(panelId) {
   const id = String(panelId || "").trim();
   if (!id) return;
+  const el = getPanelElement(id);
+  const lastRack = rackIdForPanelElement(el);
+  if (lastRack) rememberPanelLastRack(id, lastRack);
   if (!isDocked(id)) rackLayoutState.docked.bottom.push(id);
   saveRackLayoutState();
   applyDockState();
@@ -792,6 +1062,80 @@ function undockPanel(panelId) {
   applyDockState();
 }
 
+function restorePanelFromHotbar(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!rackLayoutEnabled) return;
+
+  const panelEl = getPanelElement(id);
+  if (!panelEl) return;
+
+  // Decide where to restore the panel.
+  const lastRackId =
+    rackLayoutState?.lastRackByPanelId && typeof rackLayoutState.lastRackByPanelId === "object"
+      ? String(rackLayoutState.lastRackByPanelId[id] || "")
+      : "";
+  const lastRack = lastRackId ? document.getElementById(lastRackId) : null;
+
+  const leftSlot = ensureWorkspaceLeftRack();
+  const rightSlot = ensureWorkspaceRightRack();
+  const sideRack = ensureMainSideRack();
+  const rightRack = ensureRightRack();
+
+  const pickWorkspaceSlot = () => {
+    const leftEmpty = leftSlot ? leftSlot.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+    const rightEmpty = rightSlot ? rightSlot.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+    return leftEmpty ? leftSlot : rightEmpty ? rightSlot : leftSlot;
+  };
+
+  let targetRack = null;
+  if (lastRack instanceof HTMLElement) {
+    targetRack = lastRack;
+  } else if (panelIsSkinnyCapable(id)) {
+    // Heuristic: aux-like panels default to side rack; "right" defaults to the right rack.
+    const defRack = String(panelRegistry.get(id)?.defaultRack || "");
+    targetRack = defRack === "right" ? rightRack : sideRack;
+  } else {
+    targetRack = pickWorkspaceSlot();
+  }
+
+  // If restoring into a collapsed rack, uncollapse it (hotbar acts like a summonable launcher).
+  if (targetRack && targetRack.id === "mainSideRack") setSideCollapsed(false);
+  if (targetRack && targetRack.id === "rightRack") setRightCollapsed(false);
+
+  // If the panel already lives in a rack, keep its place and just reveal it.
+  const currentRackId = rackIdForPanelElement(panelEl);
+  const currentRack = currentRackId ? document.getElementById(currentRackId) : null;
+
+  undockPanel(id);
+
+  if (!(currentRack instanceof HTMLElement)) {
+    const rack = targetRack instanceof HTMLElement ? targetRack : null;
+    if (rack) {
+      // Right rack + workspace slots are single-slot: docking the existing occupant is the least surprising behavior.
+      const isWorkspaceSlot = rack.id === "workspaceLeftSlot" || rack.id === "workspaceRightSlot";
+      const isRightRackSlot = rack.id === "rightRack";
+      if (isWorkspaceSlot || isRightRackSlot) {
+        const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+        if (existing instanceof HTMLElement && existing !== panelEl) {
+          const existingId = String(existing.dataset.panelId || "").trim();
+          if (existingId) dockPanel(existingId);
+        }
+      }
+      rack.appendChild(panelEl);
+      rememberPanelLastRack(id, rack.id);
+      saveRackLayoutState();
+    }
+  } else {
+    // Ensure the rack is visible if we restored into it.
+    if (currentRack.id === "mainSideRack") setSideCollapsed(false);
+    if (currentRack.id === "rightRack") setRightCollapsed(false);
+  }
+
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+}
+
 function showHotbar(show) {
   if (!dockHotbarEl) return;
   if (!show && dockHotbarEl.dataset.lockVisible === "1") return;
@@ -802,13 +1146,15 @@ function showHotbar(show) {
 function renderHotbar() {
   if (!dockHotbarEl) return;
   const items = rackLayoutState.docked.bottom.slice().filter((id) => getPanelElement(id));
-  if (!items.length) {
+  const includePlus = Boolean(rackLayoutEnabled);
+  if (!items.length && !includePlus) {
     dockHotbarEl.classList.add("hidden");
     dockHotbarEl.classList.remove("show");
     dockHotbarEl.innerHTML = "";
     return;
   }
-  dockHotbarEl.innerHTML = items
+
+  const orbsHtml = items
     .map(
       (id) => `
     <button type="button" class="dockOrb" data-undock="${escapeHtml(id)}" title="Restore ${escapeHtml(panelTitle(id))}">
@@ -818,8 +1164,79 @@ function renderHotbar() {
   `
     )
     .join("");
+
+  const plusHtml = includePlus
+    ? `
+    <button type="button" class="dockOrb dockOrbPlus" data-hotbarplus="1" title="Add panel">
+      <span class="dockOrbIcon" aria-hidden="true">＋</span>
+      <span>Add</span>
+    </button>
+  `
+    : "";
+
+  dockHotbarEl.innerHTML = `${orbsHtml}${plusHtml}`;
   dockHotbarEl.classList.remove("hidden");
   requestAnimationFrame(() => showHotbar(true));
+}
+
+let hotbarPlusMenuEl = null;
+
+function closeHotbarPlusMenu() {
+  if (!hotbarPlusMenuEl) return;
+  try {
+    hotbarPlusMenuEl.remove();
+  } catch {
+    // ignore
+  }
+  hotbarPlusMenuEl = null;
+}
+
+function openHotbarPlusMenu(anchorEl) {
+  closeHotbarPlusMenu();
+  if (!dockHotbarEl) return;
+  if (!(anchorEl instanceof HTMLElement)) return;
+
+  const list = sortPosts(Array.from(posts.values())).slice(0, 8);
+  const items = list
+    .map((p) => {
+      const id = String(p?.id || "").trim();
+      if (!id) return "";
+      const title = postTitle(p);
+      return `<button type="button" class="ghost smallBtn" data-addchatpost="${escapeHtml(id)}">${escapeHtml(title)}</button>`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  const menu = document.createElement("div");
+  menu.className = "hotbarAddMenu";
+  menu.innerHTML = `
+    <div class="small muted" style="padding:6px 8px 4px;">New chat panel for…</div>
+    <div class="hotbarAddMenuList">${items || `<div class="small muted" style="padding:6px 8px;">No hives yet.</div>`}</div>
+  `;
+
+  const rect = anchorEl.getBoundingClientRect();
+  const left = Math.max(12, Math.min(window.innerWidth - 260, rect.left - 200));
+  const top = Math.max(12, rect.top - 260);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest?.("[data-addchatpost]");
+    if (!btn) return;
+    const postId = String(btn.getAttribute("data-addchatpost") || "").trim();
+    if (!postId) return;
+    ensureChatPostPanelInstance(postId, { docked: true });
+    try {
+      ws.send(JSON.stringify({ type: "getChat", postId }));
+    } catch {
+      // ignore
+    }
+    closeHotbarPlusMenu();
+    renderHotbar();
+  });
+
+  document.body.appendChild(menu);
+  hotbarPlusMenuEl = menu;
 }
 
 function applyDockState() {
@@ -905,12 +1322,24 @@ function enforceWorkspaceRules() {
 
   // Primary panels: allow up to 2 visible (one per workspace slot). Enforce max 1 per slot.
   const cleanupSlot = (slotEl) => {
-    const kids = Array.from(slotEl.querySelectorAll(":scope > .rackPanel"));
+    const kids = Array.from(slotEl.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
     if (kids.length <= 1) return;
     for (const extra of kids.slice(1)) side.appendChild(extra);
   };
   cleanupSlot(left);
   cleanupSlot(rightWorkspace);
+
+  // Side rack and right rack are "skinny columns": only allow skinny-capable panels.
+  const enforceSkinny = (rackEl) => {
+    const kids = Array.from(rackEl.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
+    for (const kid of kids) {
+      const id = String(kid?.dataset?.panelId || "").trim();
+      if (!id) continue;
+      if (!panelIsSkinnyCapable(id)) dockPanel(id);
+    }
+  };
+  enforceSkinny(side);
+  enforceSkinny(rightRack);
 
   // Right rack is single-slot: keep at most one visible panel.
   const rightKids = Array.from(rightRack.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
@@ -923,7 +1352,7 @@ function enforceWorkspaceRules() {
 
   // Panels that live in the workspace slots should be "full" by default (especially primaries).
   for (const slot of [left, rightWorkspace]) {
-    const panel = slot.querySelector?.(":scope > .rackPanel");
+    const panel = slot.querySelector?.(":scope > .rackPanel:not(.hidden)");
     if (!(panel instanceof HTMLElement)) continue;
     const id = String(panel.dataset.panelId || "").trim();
     if (!id) continue;
@@ -933,8 +1362,8 @@ function enforceWorkspaceRules() {
 
   // If only one workspace slot is occupied, allow it to expand to full width to avoid blank space.
   // (We temporarily disable this during drag so the empty slot remains a visible drop target.)
-  const leftPanel = left.querySelector?.(":scope > .rackPanel");
-  const rightPanel = rightWorkspace.querySelector?.(":scope > .rackPanel");
+  const leftPanel = left.querySelector?.(":scope > .rackPanel:not(.hidden)");
+  const rightPanel = rightWorkspace.querySelector?.(":scope > .rackPanel:not(.hidden)");
   const leftId = String(leftPanel?.dataset?.panelId || "").trim();
   const rightId = String(rightPanel?.dataset?.panelId || "").trim();
 
@@ -969,17 +1398,6 @@ function enforceWorkspaceRules() {
   } else if (appRoot) {
     appRoot.classList.remove("workspaceSingleLeft", "workspaceSingleRight");
   }
-
-  // If a primary ends up outside the workspace slots, dock it (no half-width primaries).
-  const primariesToDock = [];
-  for (const el of Array.from(appRoot.querySelectorAll(".rackPanel"))) {
-    const id = String(el?.dataset?.panelId || "").trim();
-    if (!id) continue;
-    if (panelRole(id) !== "primary") continue;
-    if (el.parentElement === left || el.parentElement === rightWorkspace) continue;
-    primariesToDock.push(id);
-  }
-  for (const id of primariesToDock) dockPanel(id);
 
   // Transient panels should live in the side column and be collapsed by default.
   for (const el of Array.from(appRoot.querySelectorAll("#mainWorkspaceRack .rackPanel, #mainSideRack .rackPanel"))) {
@@ -1286,6 +1704,17 @@ function installPanelMinimizeButtons() {
       row.appendChild(drag);
     }
 
+    if (panelIsSkinnyCapable(panelId) && !headerEl.querySelector(`[data-skinny="${panelId}"]`)) {
+      const skinny = document.createElement("button");
+      skinny.type = "button";
+      skinny.className = "ghost smallBtn";
+      skinny.textContent = "][";
+      skinny.title = "Toggle skinny/full";
+      skinny.setAttribute("data-skinny", panelId);
+      skinny.onclick = () => togglePanelSkinny(panelId);
+      row.appendChild(skinny);
+    }
+
     if (panelCanExpand(panelId) && !headerEl.querySelector(`[data-expand="${panelId}"]`)) {
       const expand = document.createElement("button");
       expand.type = "button";
@@ -1376,6 +1805,320 @@ function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
 
   rack.appendChild(shell);
   return shell;
+}
+
+function ensureChatPostPanelInstance(postId, opts) {
+  if (!rackLayoutEnabled) return "";
+  const pid = String(postId || "").trim();
+  if (!pid) return "";
+  const post = posts.get(pid) || null;
+  const panelId = chatInstancePanelIdForPost(pid);
+  if (!panelId) return "";
+
+  if (panelRegistry.has(panelId)) return panelId;
+
+  const title = post?.title ? `Chat: ${String(post.title).slice(0, 32)}` : "Chat";
+  const shell = document.createElement("section");
+  shell.className = "panel panelFill rackPanel chat chatInstance";
+  shell.dataset.panelId = panelId;
+  shell.innerHTML = `
+    <div class="panelHeader">
+      <div>
+        <div class="panelTitle">${escapeHtml(title)}</div>
+        <div class="small muted chatMeta"></div>
+      </div>
+      <div class="row">
+        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">☰</button>
+        <button type="button" class="ghost smallBtn" data-skinny="${escapeHtml(panelId)}" title="Toggle skinny/full">][</button>
+        <button type="button" class="ghost smallBtn" data-expand="${escapeHtml(panelId)}" title="Expand workspace">[]</button>
+        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">—</button>
+      </div>
+    </div>
+    <div class="chatMessages"></div>
+    <div class="typingIndicator small muted"></div>
+    <form class="chatForm">
+      <div class="chatComposer">
+        <div class="toolbar" role="toolbar" aria-label="Chat formatting">
+          <button type="button" data-chatcmd="bold"><b>B</b></button>
+          <button type="button" data-chatcmd="italic"><i>I</i></button>
+          <button type="button" data-chatcmd="underline"><u>U</u></button>
+          <button type="button" data-chatcmd="strikeThrough"><s>S</s></button>
+          <span class="sep"></span>
+          <button type="button" data-chatcmd="insertUnorderedList">List</button>
+          <button type="button" data-chatcmd="insertOrderedList">1. List</button>
+          <button type="button" data-chatlink="1">Link</button>
+          <button type="button" data-chatimg="1">GIF/Image</button>
+          <button type="button" data-chataudio="1">Audio</button>
+          <button type="button" data-chatemoji="1">Emoji</button>
+          <button type="button" data-chatcmd="removeFormat">Clear</button>
+        </div>
+        <div class="chatInstanceTools">
+          <label class="checkRow chatModToggle chatInstModToggle hidden" title="Send as moderator/system message (left rail)">
+            <span>Mod</span>
+            <input class="chatInstModToggleInput" type="checkbox" />
+          </label>
+        </div>
+        <div class="editor chatEditor" contenteditable="true" aria-label="Chat editor"></div>
+      </div>
+      <button class="primary" type="submit">Send</button>
+    </form>
+  `;
+
+  const metaEl = shell.querySelector(".chatMeta");
+  const messagesEl = shell.querySelector(".chatMessages");
+  const typingEl = shell.querySelector(".typingIndicator");
+  const formEl = shell.querySelector("form.chatForm");
+  const editorEl = shell.querySelector(".chatEditor");
+  const modToggleWrapEl = shell.querySelector(".chatInstModToggle");
+  const modToggleEl = shell.querySelector(".chatInstModToggleInput");
+
+  shell.querySelector(`[data-minimize="${cssEscape(panelId)}"]`)?.addEventListener("click", () => dockPanel(panelId));
+  shell.querySelector(`[data-expand="${cssEscape(panelId)}"]`)?.addEventListener("click", () => togglePrimaryExpand(panelId));
+  shell.querySelector(`[data-skinny="${cssEscape(panelId)}"]`)?.addEventListener("click", () => togglePanelSkinny(panelId));
+
+  if (formEl && editorEl) {
+    formEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const html = String(editorEl.innerHTML || "").trim();
+      const text = String(editorEl.innerText || "").trim();
+      const hasImg = Boolean(editorEl.querySelector("img"));
+      const hasAudio = Boolean(editorEl.querySelector("audio"));
+      if (!text && !hasImg && !hasAudio) return;
+      if (!loggedInUser) {
+        toast("Sign in required", "Sign in to chat.");
+        return;
+      }
+      const currentPost = posts.get(pid) || null;
+      if (currentPost && String(currentPost.mode || currentPost.chatMode || "").toLowerCase() === "walkie") {
+        toast("Walkie Talkie", "This hive is walkie-only. Hold ~ to talk.");
+        return;
+      }
+      if (currentPost?.readOnly && !(loggedInRole === "owner" || loggedInRole === "moderator")) {
+        toast("Read-only", "This hive is read-only.");
+        return;
+      }
+      if (currentPost?.deleted) {
+        toast("Unavailable", "This post was deleted.");
+        return;
+      }
+      const wantsMod = Boolean(canModerate && modToggleEl instanceof HTMLInputElement && modToggleEl.checked);
+      ws.send(JSON.stringify({ type: "typing", postId: pid, isTyping: false }));
+      ws.send(JSON.stringify({ type: "chatMessage", postId: pid, text, html, replyToId: "", asMod: wantsMod }));
+      editorEl.innerHTML = "";
+      // Leave global reply-to state alone; this instance panel is independent (MVP).
+    });
+
+    editorEl.addEventListener("focus", () => {
+      chatUploadTargetEditor = editorEl;
+    });
+
+    editorEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      formEl.requestSubmit();
+    });
+
+    // Allow drag/drop uploads in instance chats too.
+    try {
+      installDropUpload(editorEl, { allowImages: true, allowAudio: true });
+    } catch {
+      // ignore
+    }
+  }
+
+  if (modToggleWrapEl) modToggleWrapEl.classList.toggle("hidden", !canModerate);
+
+  // Register + insert.
+  panelRegistry.set(panelId, {
+    id: panelId,
+    title,
+    icon: "💬",
+    source: "core",
+    role: "aux",
+    defaultRack: "main",
+    element: shell,
+  });
+  chatPanelInstances.set(panelId, { postId: pid });
+
+  const options = opts && typeof opts === "object" ? opts : {};
+  const docked = Boolean(options.docked);
+  const sideRack = ensureMainSideRack();
+  if (docked) {
+    // Keep it out of layout; show as orb.
+    if (sideRack) sideRack.appendChild(shell);
+    dockPanel(panelId);
+  } else {
+    setSideCollapsed(false);
+    if (sideRack) sideRack.prepend(shell);
+    rememberPanelLastRack(panelId, "mainSideRack");
+    saveRackLayoutState();
+    applyDockState();
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+  }
+
+  renderChatPostPanelInstance(panelId, true);
+  return panelId;
+}
+
+function renderTypingIndicatorForPost(postId, targetEl) {
+  if (!(targetEl instanceof HTMLElement)) return;
+  const id = String(postId || "").trim();
+  if (!id) {
+    targetEl.textContent = "";
+    return;
+  }
+  const set = typingUsersByPostId.get(id);
+  if (!set || set.size === 0) {
+    targetEl.textContent = "";
+    return;
+  }
+  const names = Array.from(set.values()).slice(0, 3);
+  const more = set.size > names.length ? ` +${set.size - names.length}` : "";
+  targetEl.textContent = `${names.map((u) => `@${u}`).join(", ")}${more} typing…`;
+}
+
+function renderChatPostPanelInstance(panelId, forceScroll) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  const inst = chatPanelInstances.get(id);
+  if (!inst) return;
+  const postId = String(inst.postId || "").trim();
+  const post = postId ? posts.get(postId) : null;
+  const root = getPanelElement(id);
+  if (!(root instanceof HTMLElement)) return;
+  const metaEl = root.querySelector(".chatMeta");
+  const messagesEl = root.querySelector(".chatMessages");
+  const typingEl = root.querySelector(".typingIndicator");
+  const editorEl = root.querySelector(".chatEditor");
+  const sendBtn = root.querySelector("form.chatForm button[type='submit']");
+
+  if (metaEl) {
+    if (!post) metaEl.textContent = "Hive not found.";
+    else {
+      const tags = (post.keywords || []).map((k) => `#${k}`).join(" ");
+      const author = post.author ? `by @${post.author}` : "";
+      const exp = formatCountdown(post.expiresAt);
+      const ro = post.readOnly ? " | read-only" : "";
+      metaEl.textContent = `${author}${ro} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
+    }
+  }
+
+  if (!(messagesEl instanceof HTMLElement)) return;
+  const atBottomBefore = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 24;
+
+  if (!post) {
+    messagesEl.innerHTML = `<div class="small muted">Hive not found.</div>`;
+    if (typingEl) typingEl.textContent = "";
+    return;
+  }
+  if (post.deleted) {
+    messagesEl.innerHTML = `<div class="small muted">Post was deleted.</div>`;
+    if (typingEl) typingEl.textContent = "";
+    return;
+  }
+
+  const isWalkie = String(post.mode || post.chatMode || "").toLowerCase() === "walkie";
+  const canChatWrite = Boolean(loggedInRole === "owner" || loggedInRole === "moderator" || !post.readOnly);
+  if (editorEl) editorEl.contentEditable = String(Boolean(canChatWrite && !isWalkie));
+  if (sendBtn instanceof HTMLButtonElement) sendBtn.disabled = !(loggedInUser && canChatWrite && !isWalkie);
+
+  const modToggleWrapEl = root.querySelector(".chatInstModToggle");
+  const modToggleEl = root.querySelector(".chatInstModToggleInput");
+  if (modToggleWrapEl) modToggleWrapEl.classList.toggle("hidden", !canModerate);
+  if (!canModerate && modToggleEl instanceof HTMLInputElement) modToggleEl.checked = false;
+
+  const messages = chatByPost.get(post.id) || [];
+  const ignoreUserSet = new Set(
+    [...prefSet("ignoredUsers").values(), ...prefSet("blockedUsers").values()].map((u) => String(u).toLowerCase())
+  );
+  const selfLower = String(loggedInUser || "").toLowerCase();
+  const visibleMessages = messages.filter((m) => {
+    const fromLower = String(m?.fromUser || "").toLowerCase();
+    if (!fromLower || fromLower === selfLower) return true;
+    return !ignoreUserSet.has(fromLower);
+  });
+
+  messagesEl.innerHTML = visibleMessages
+    .map((m, index) => {
+      const isModMsg = Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod";
+      const from = isModMsg ? "MOD" : m.fromUser || "";
+      const isYou = loggedInUser && from && from === loggedInUser;
+      const rail = chatRailClass({ fromUser: from, isModMessage: isModMsg });
+      const prev = index > 0 ? visibleMessages[index - 1] : null;
+      const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
+      const mentions = Array.isArray(m.mentions) ? m.mentions.map((u) => String(u || "").toLowerCase()) : [];
+      const mentionMe = Boolean(loggedInUser && mentions.includes(loggedInUser));
+      const who = isModMsg ? `<span class="modPill">MOD</span>` : renderUserPill(from || "");
+      const youTag = !isModMsg && isYou ? `<span class="muted">(you)</span>` : "";
+      const time = new Date(m.createdAt).toLocaleTimeString();
+      const tint = isModMsg ? "" : tintStylesFromHex(getProfile(from).color);
+      const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
+      const content = html ? html : highlightMentionsInText(m.text || "");
+      const replyMeta = m.replyTo && typeof m.replyTo === "object" ? m.replyTo : null;
+      const replyBlock = replyMeta
+        ? `<div class="chatReplyRef"><span class="small muted">@${escapeHtml(replyMeta.fromUser || "unknown")}</span><div class="small">${escapeHtml(
+            String(replyMeta.text || "[media]").slice(0, 120)
+          )}</div></div>`
+        : "";
+      const reacts = renderReactionButtons({ kind: "chat", id: m.id, reactions: m.reactions || {}, postId: post.id });
+      const deletedLine = m.deleted
+        ? `<div class="small muted">message deleted${
+            m.deletedBy ? ` by @${escapeHtml(m.deletedBy)}` : ""
+          } at ${escapeHtml(new Date(Number(m.deletedAt || m.createdAt || Date.now())).toLocaleString())}</div>`
+        : "";
+      const editedLine =
+        !m.deleted && Number(m.editCount || 0) > 0
+          ? `<div class="small muted">edited (${Number(m.editCount || 0)}) at ${escapeHtml(
+              new Date(Number(m.editedAt || m.createdAt || Date.now())).toLocaleTimeString()
+            )}</div>`
+          : "";
+      const reportAction =
+        loggedInUser && !m.deleted
+          ? `<button type="button" class="ghost smallBtn" data-reportchat="${escapeHtml(m.id)}" data-postid="${escapeHtml(
+              post.id
+            )}">Report</button>`
+          : "";
+      const deleteAction =
+        loggedInUser && !m.deleted && (loggedInRole === "owner" || loggedInRole === "moderator" || from === loggedInUser)
+          ? `<button type="button" class="ghost smallBtn" data-delchat="${escapeHtml(m.id)}" data-postid="${escapeHtml(
+              post.id
+            )}">Delete</button>`
+          : "";
+      const actions =
+        reportAction || deleteAction
+          ? `<div class="chatTools">${reportAction}${deleteAction}</div>`
+          : "";
+      return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${mentionMe ? "mentionMe" : ""} ${rail} ${isModMsg ? "isModMsg" : ""}" data-msgid="${escapeHtml(
+        m.id
+      )}" ${tint}>
+        <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+        ${replyBlock}
+        <div class="content">${content}</div>
+        ${deletedLine}${editedLine}
+        <div class="chatActionsRow">${reacts}${actions}</div>
+      </div>`;
+    })
+    .join("");
+
+  for (const contentEl of messagesEl.querySelectorAll(".chatMsg .content")) {
+    decorateMentionNodesInElement(contentEl);
+    decorateYouTubeEmbedsInElement(contentEl);
+  }
+
+  renderTypingIndicatorForPost(post.id, typingEl);
+
+  if (forceScroll || atBottomBefore) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function renderChatInstancesForPost(postId) {
+  const pid = String(postId || "").trim();
+  if (!pid) return;
+  for (const [panelId, inst] of chatPanelInstances.entries()) {
+    if (String(inst?.postId || "") !== pid) continue;
+    renderChatPostPanelInstance(panelId);
+  }
 }
 
 function applyPluginPresetHint(panelDef) {
@@ -1501,10 +2244,13 @@ function enableRackDnD() {
       if (targetRack && placeholderEl && placeholderEl.parentElement === targetRack) {
         const isWorkspaceSlot = targetRack.id === "workspaceLeftSlot" || targetRack.id === "workspaceRightSlot";
         const isRightRackSlot = targetRack.id === "rightRack";
-        const isPrimary = panelRole(draggingPanelId) === "primary";
+        const isSideRackSlot = targetRack.id === "mainSideRack";
+        const isSkinnyRackSlot = isRightRackSlot || isSideRackSlot;
+        const skinnyOk = panelIsSkinnyCapable(draggingPanelId);
 
-        // Primaries are only allowed in the workspace slots. Dropping elsewhere snaps them back.
-        if (isPrimary && !isWorkspaceSlot) {
+        // Only skinny-capable panels may live in skinny columns (side / right racks).
+        if (isSkinnyRackSlot && !skinnyOk) {
+          toast("Can't place there", `${panelTitle(draggingPanelId)} can't be placed in a skinny rack.`);
           if (originRack) {
             if (originBefore && originBefore.parentElement === originRack) originRack.insertBefore(draggingEl, originBefore);
             else originRack.appendChild(draggingEl);
@@ -1605,11 +2351,21 @@ function initRackLayout() {
 
   if (toggleRackLayoutEl) {
     toggleRackLayoutEl.checked = rackLayoutEnabled;
-    toggleRackLayoutEl.onchange = () => {
-      writeRackLayoutEnabled(Boolean(toggleRackLayoutEl.checked));
-      // Reload is the simplest safe path while the feature is in flux.
-      location.reload();
-    };
+    // Hide/disable the toggle while rack mode is forced on.
+    if (FORCE_RACK_MODE) {
+      toggleRackLayoutEl.checked = true;
+      toggleRackLayoutEl.disabled = true;
+      const row = toggleRackLayoutEl.closest?.("label");
+      if (row) row.classList.add("hidden");
+      const toggleBtn = document.getElementById("toggleRackLayoutBtn");
+      if (toggleBtn) toggleBtn.classList.add("hidden");
+    } else {
+      toggleRackLayoutEl.onchange = () => {
+        writeRackLayoutEnabled(Boolean(toggleRackLayoutEl.checked));
+        // Reload is the simplest safe path while the feature is in flux.
+        location.reload();
+      };
+    }
   }
 
   if (layoutPresetEl) {
@@ -1677,14 +2433,25 @@ function initRackLayout() {
   if (dockHotbarEl) {
     dockHotbarEl.onmouseenter = () => showHotbar(true);
     dockHotbarEl.onmouseleave = () => showHotbar(false);
+    // Docked items must be restored via drag-and-drop (click does nothing), but the "+" orb is clickable.
     dockHotbarEl.onclick = (e) => {
       if (dockHotbarEl.dataset.dragging === "1") return;
-      const btn = e.target.closest?.("[data-undock]");
-      if (!btn) return;
-      const id = String(btn.getAttribute("data-undock") || "");
-      if (!id) return;
-      undockPanel(id);
+      const plus = e.target.closest?.("[data-hotbarplus]");
+      if (!plus) return;
+      if (hotbarPlusMenuEl) closeHotbarPlusMenu();
+      else openHotbarPlusMenu(plus);
     };
+  }
+
+  // Close the "+" menu when clicking elsewhere.
+  if (appRoot && appRoot.dataset.hotbarPlusClose !== "1") {
+    appRoot.dataset.hotbarPlusClose = "1";
+    document.addEventListener("pointerdown", (e) => {
+      if (!hotbarPlusMenuEl) return;
+      const t = e.target;
+      if (t && (hotbarPlusMenuEl.contains(t) || dockHotbarEl?.contains(t))) return;
+      closeHotbarPlusMenu();
+    });
   }
 
   // Drag orbs back into the rack to restore (MVP: restore to end of rack).
@@ -1693,6 +2460,8 @@ function initRackLayout() {
     let orbPointer = null;
     let orbStart = null;
     let orbMoved = false;
+    let orbPlaceholder = null;
+    let orbActiveRack = null;
 
     const lockHotbarVisible = (lock) => {
       dockHotbarEl.dataset.lockVisible = lock ? "1" : "0";
@@ -1713,6 +2482,15 @@ function initRackLayout() {
     const resolveOrbDropRack = (panelId, rackEl) => {
       const id = String(panelId || "").trim();
       if (!id) return rackEl;
+      // Skinny racks (side/right) only allow skinny-capable panels.
+      if (rackEl && (rackEl.id === "mainSideRack" || rackEl.id === "rightRack")) {
+        if (panelIsSkinnyCapable(id)) return rackEl;
+        const left = ensureWorkspaceLeftRack();
+        const right = ensureWorkspaceRightRack();
+        const leftEmpty = left ? left.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+        const rightEmpty = right ? right.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+        return leftEmpty ? left : rightEmpty ? right : left;
+      }
       if (panelRole(id) !== "primary") return rackEl;
       const isWorkspaceSlot = rackEl && (rackEl.id === "workspaceLeftSlot" || rackEl.id === "workspaceRightSlot");
       if (isWorkspaceSlot) return rackEl;
@@ -1723,14 +2501,49 @@ function initRackLayout() {
       return leftEmpty ? left : rightEmpty ? right : left;
     };
 
-      const dropOrbIntoRack = (panelId, targetRack) => {
+    const insertOrbPlaceholderAt = (rack, y) => {
+      if (!(rack instanceof HTMLElement) || !(orbPlaceholder instanceof HTMLElement)) return;
+      const items = Array.from(rack.querySelectorAll(":scope > .rackPanel")).filter((el) => el !== orbPlaceholder);
+      for (const el of items) {
+        const r = el.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        if (y < mid) {
+          rack.insertBefore(orbPlaceholder, el);
+          return;
+        }
+      }
+      rack.appendChild(orbPlaceholder);
+    };
+
+    const orbRacks = () => {
+      const leftRack = ensureWorkspaceLeftRack();
+      const rightWorkspaceRack = ensureWorkspaceRightRack();
+      const sideRack = ensureMainSideRack();
+      const rightRack = ensureRightRack();
+      return [leftRack, rightWorkspaceRack, sideRack, rightRack].filter((x) => x instanceof HTMLElement);
+    };
+
+    const rackAtPoint = (x, y) => {
+      for (const r of orbRacks()) {
+        const rect = r.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return r;
+      }
+      return null;
+    };
+
+      const dropOrbIntoRack = (panelId, targetRack, beforeEl) => {
         const id = String(panelId || "").trim();
         if (!id) return;
         const rack = resolveOrbDropRack(id, targetRack);
         if (!(rack instanceof HTMLElement)) return;
-        undockPanel(id);
         const panelEl = getPanelElement(id);
         if (!panelEl) return;
+
+        // Restoring into a collapsed rack should uncollapse it (hotbar is a summonable launcher).
+        if (rack.id === "mainSideRack") setSideCollapsed(false);
+        if (rack.id === "rightRack") setRightCollapsed(false);
+
+        undockPanel(id);
 
         const isWorkspaceSlot = rack.id === "workspaceLeftSlot" || rack.id === "workspaceRightSlot";
         const isRightRackSlot = rack.id === "rightRack";
@@ -1749,7 +2562,16 @@ function initRackLayout() {
           }
         }
 
-        if (panelEl.parentElement !== rack) rack.appendChild(panelEl);
+        const insertBefore =
+          beforeEl instanceof HTMLElement && beforeEl.parentElement === rack && beforeEl.classList.contains("rackPanel")
+            ? beforeEl
+            : null;
+        if (panelEl.parentElement !== rack) {
+          if (insertBefore) rack.insertBefore(panelEl, insertBefore);
+          else rack.appendChild(panelEl);
+        }
+        rememberPanelLastRack(id, rack.id);
+        saveRackLayoutState();
         syncRackStateFromDom();
         enforceWorkspaceRules();
       };
@@ -1762,10 +2584,16 @@ function initRackLayout() {
       orbPointer = e.pointerId;
       orbStart = { x: e.clientX, y: e.clientY };
       orbMoved = false;
+      orbActiveRack = null;
       orb.classList.add("dragging");
       orb.setPointerCapture?.(orbPointer);
       lockHotbarVisible(true);
       e.preventDefault();
+
+      // Placeholder shows drop position while dragging.
+      orbPlaceholder = document.createElement("div");
+      orbPlaceholder.className = "rackPlaceholder";
+      orbPlaceholder.style.height = "52px";
     });
     window.addEventListener("pointermove", (e) => {
       if (!orbDragId || e.pointerId !== orbPointer) return;
@@ -1773,29 +2601,33 @@ function initRackLayout() {
       const dx = Math.abs(e.clientX - orbStart.x);
       const dy = Math.abs(e.clientY - orbStart.y);
       if (dx + dy > 6) orbMoved = true;
+
+      if (orbMoved && orbPlaceholder) {
+        const r = rackAtPoint(e.clientX, e.clientY) || orbActiveRack;
+        if (r && orbPlaceholder.parentElement !== r) r.appendChild(orbPlaceholder);
+        if (r) {
+          orbActiveRack = r;
+          insertOrbPlaceholderAt(r, e.clientY);
+        }
+      }
     });
     dockHotbarEl.addEventListener("pointerup", (e) => {
       if (!orbDragId || e.pointerId !== orbPointer) return;
       const orb = dockHotbarEl.querySelector(`[data-undock="${CSS.escape(orbDragId)}"]`);
       if (orb) orb.classList.remove("dragging");
-      const leftRack = ensureWorkspaceLeftRack();
-      const rightWorkspaceRack = ensureWorkspaceRightRack();
-      const sideRack = ensureMainSideRack();
-      const rightRack = ensureRightRack();
-      const racks = [leftRack, rightWorkspaceRack, sideRack, rightRack].filter((x) => x instanceof HTMLElement);
-      let targetRack = null;
-      for (const r of racks) {
-        const rect = r.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          targetRack = r;
-          break;
-        }
-      }
-      if (orbMoved && targetRack) dropOrbIntoRack(orbDragId, targetRack);
+      const targetRack = orbMoved ? (rackAtPoint(e.clientX, e.clientY) || orbActiveRack) : null;
+      const beforeEl =
+        orbMoved && orbPlaceholder && targetRack instanceof HTMLElement && orbPlaceholder.parentElement === targetRack
+          ? orbPlaceholder.nextSibling
+          : null;
+      if (orbMoved && targetRack) dropOrbIntoRack(orbDragId, targetRack, beforeEl);
       orbDragId = "";
       orbPointer = null;
       orbStart = null;
       orbMoved = false;
+      orbActiveRack = null;
+      if (orbPlaceholder && orbPlaceholder.parentElement) orbPlaceholder.parentElement.removeChild(orbPlaceholder);
+      orbPlaceholder = null;
       lockHotbarVisible(false);
     });
     dockHotbarEl.addEventListener("pointercancel", () => {
@@ -1803,6 +2635,9 @@ function initRackLayout() {
       orbPointer = null;
       orbStart = null;
       orbMoved = false;
+      orbActiveRack = null;
+      if (orbPlaceholder && orbPlaceholder.parentElement) orbPlaceholder.parentElement.removeChild(orbPlaceholder);
+      orbPlaceholder = null;
       lockHotbarVisible(false);
       dockHotbarEl.querySelectorAll(".dockOrb.dragging").forEach((x) => x.classList.remove("dragging"));
     });
@@ -1812,7 +2647,6 @@ function initRackLayout() {
   window.addEventListener("mousemove", (e) => {
     if (!dockHotbarEl) return;
     if (!rackLayoutEnabled) return;
-    if (!rackLayoutState.docked.bottom.length) return;
     const nearBottom = e.clientY > window.innerHeight - 80;
     showHotbar(Boolean(nearBottom));
   });
@@ -5016,7 +5850,38 @@ function renderModPanel() {
     .join("");
 }
 
+function isMapChatActive() {
+  return Boolean(!activeDmThreadId && !activeChatPostId && activeMapsRoomId);
+}
+
+function normalizeMapChatScope(scope) {
+  const s = String(scope || "").trim().toLowerCase();
+  return s === "global" ? "global" : "local";
+}
+
+function mapChatListFor(mapId, scope) {
+  const mid = String(mapId || "").trim().toLowerCase();
+  if (!mid) return [];
+  const sc = normalizeMapChatScope(scope);
+  const store = sc === "global" ? mapsChatGlobalByMapId : mapsChatLocalByMapId;
+  const arr = store.get(mid);
+  return Array.isArray(arr) ? arr : [];
+}
+
+function pushMapChatMessage(mapId, scope, message) {
+  const mid = String(mapId || "").trim().toLowerCase();
+  if (!mid) return;
+  const sc = normalizeMapChatScope(scope);
+  const store = sc === "global" ? mapsChatGlobalByMapId : mapsChatLocalByMapId;
+  const prev = store.get(mid);
+  const arr = Array.isArray(prev) ? prev.slice() : [];
+  arr.push(message);
+  if (arr.length > 240) arr.splice(0, arr.length - 240);
+  store.set(mid, arr);
+}
+
 function renderChatPanel(forceScroll = false) {
+  updateChatModToggleVisibility();
   const mediaState = captureMediaState(chatMessagesEl);
   if (activeDmThreadId) {
     const thread = dmThreadsById.get(activeDmThreadId) || null;
@@ -5058,15 +5923,20 @@ function renderChatPanel(forceScroll = false) {
         .map((m, index) => {
           const from = m.fromUser || "";
           const isYou = loggedInUser && from && from === loggedInUser;
+          const rail = chatRailClass({
+            fromUser: from,
+            isModMessage: Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod"
+          });
           const prev = index > 0 ? messages[index - 1] : null;
           const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
-          const who = isYou ? `<span>you</span>` : renderUserPill(from || "");
+          const who = renderUserPill(from || "");
+          const youTag = isYou ? `<span class="muted">(you)</span>` : "";
           const time = new Date(m.createdAt).toLocaleTimeString();
           const tint = tintStylesFromHex(getProfile(from).color);
           const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
           const content = html ? html : highlightMentionsInText(m.text || "");
-          return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""}" data-msgid="${escapeHtml(m.id)}" ${tint}>
-            <div class="meta"><span class="chatHeaderInline">${who}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+          return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${rail}" data-msgid="${escapeHtml(m.id)}" ${tint}>
+            <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
             <div class="content">${content}</div>
           </div>`;
         })
@@ -5083,6 +5953,68 @@ function renderChatPanel(forceScroll = false) {
 
   const post = activeChatPostId ? posts.get(activeChatPostId) : null;
   if (!post) {
+    if (isMapChatActive()) {
+      const mapId = String(activeMapsRoomId || "").trim().toLowerCase();
+      const scope = normalizeMapChatScope(activeMapsChatScope);
+      const atBottomBefore =
+        chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight < 24;
+
+      const title = activeMapsRoomTitle ? `Map: ${activeMapsRoomTitle}` : `Map: ${mapId}`;
+      chatTitle.textContent = "Chat";
+      chatMeta.innerHTML = `
+        <span class="muted">${escapeHtml(title)}</span>
+        <span class="muted">|</span>
+        <span class="mapChatToggle">
+          <button type="button" class="${scope === "local" ? "primary" : "ghost"} smallBtn" data-mapchatscope="local" title="Local chat (nearby)">Local</button>
+          <button type="button" class="${scope === "global" ? "primary" : "ghost"} smallBtn" data-mapchatscope="global" title="Global chat (entire map)">Global</button>
+        </span>
+      `;
+
+      if (chatPanelEl) chatPanelEl.classList.remove("walkie");
+      if (walkieBarEl) walkieBarEl.classList.add("hidden");
+      if (chatForm) chatForm.classList.remove("hidden");
+
+      const messages = mapChatListFor(mapId, scope);
+      if (!messages.length) {
+        chatMessagesEl.innerHTML = `<div class="small muted">${
+          scope === "local" ? "Local chat is proximity-based. Say something nearby." : "No messages yet. Say hello!"
+        }</div>`;
+        restoreMediaState(chatMessagesEl, mediaState);
+        setReplyToMessage(null);
+        return;
+      }
+
+      chatMessagesEl.innerHTML = messages
+        .map((m, index) => {
+          const from = String(m.fromUser || "");
+          const isYou = loggedInUser && from && from === loggedInUser;
+          const rail = chatRailClass({
+            fromUser: from,
+            isModMessage: Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod"
+          });
+          const prev = index > 0 ? messages[index - 1] : null;
+          const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
+          const who = renderUserPill(from || "");
+          const youTag = isYou ? `<span class="muted">(you)</span>` : "";
+          const time = new Date(Number(m.createdAt || 0) || Date.now()).toLocaleTimeString();
+          const tint = tintStylesFromHex(getProfile(from).color);
+          const content = highlightMentionsInText(String(m.text || ""));
+          return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${rail}" data-msgid="${escapeHtml(String(m.id || ""))}" ${tint}>
+            <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+            <div class="content">${content}</div>
+          </div>`;
+        })
+        .join("");
+      for (const contentEl of chatMessagesEl.querySelectorAll(".chatMsg .content")) {
+        decorateMentionNodesInElement(contentEl);
+        decorateYouTubeEmbedsInElement(contentEl);
+      }
+      restoreMediaState(chatMessagesEl, mediaState);
+      if (forceScroll || atBottomBefore) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      setReplyToMessage(null);
+      return;
+    }
+
     chatTitle.textContent = "Chat";
     chatMeta.textContent = "Select a post to chat.";
     if (chatPanelEl) chatPanelEl.classList.remove("walkie");
@@ -5094,6 +6026,7 @@ function renderChatPanel(forceScroll = false) {
     return;
   }
 
+  updateChatModToggleVisibility();
   const isWalkie = String(post.mode || post.chatMode || "").toLowerCase() === "walkie";
   if (chatPanelEl) chatPanelEl.classList.toggle("walkie", isWalkie);
   if (walkieBarEl) walkieBarEl.classList.toggle("hidden", !isWalkie);
@@ -5134,15 +6067,17 @@ function renderChatPanel(forceScroll = false) {
 
   chatMessagesEl.innerHTML = visibleMessages
     .map((m, index) => {
-      const from = m.fromUser || "";
-      const isYou = loggedInUser && from && from === loggedInUser;
+      const isModMsg = Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod";
+      const from = isModMsg ? "MOD" : m.fromUser || "";
+      const rail = chatRailClass({ fromUser: from, isModMessage: isModMsg });
       const prev = index > 0 ? visibleMessages[index - 1] : null;
       const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
       const mentions = Array.isArray(m.mentions) ? m.mentions.map((u) => String(u || "").toLowerCase()) : [];
       const mentionMe = Boolean(loggedInUser && mentions.includes(loggedInUser));
-      const who = isYou ? `<span>you</span>` : renderUserPill(from || "");
+      const who = isModMsg ? `<span class="modPill">MOD</span>` : renderUserPill(from || "");
+      const youTag = !isModMsg && loggedInUser && from && from === loggedInUser ? `<span class="muted">(you)</span>` : "";
       const time = new Date(m.createdAt).toLocaleTimeString();
-      const tint = tintStylesFromHex(getProfile(from).color);
+      const tint = isModMsg ? "" : tintStylesFromHex(getProfile(from).color);
       const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
       const content = html ? html : highlightMentionsInText(m.text || "");
       const replyMeta = m.replyTo && typeof m.replyTo === "object" ? m.replyTo : null;
@@ -5178,8 +6113,8 @@ function renderChatPanel(forceScroll = false) {
       const ownDeleteAction = canManageOwnMessage
         ? `<button type="button" class="ghost smallBtn" data-deletemsg="${escapeHtml(m.id)}" data-postid="${escapeHtml(post.id)}">Delete</button>`
         : "";
-      return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${mentionMe ? "mentionMe" : ""}" data-msgid="${escapeHtml(m.id)}" ${tint}>
-        <div class="meta"><span class="chatHeaderInline">${who}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+      return `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${mentionMe ? "mentionMe" : ""} ${rail} ${isModMsg ? "isModMsg" : ""}" data-msgid="${escapeHtml(m.id)}" ${tint}>
+        <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
         ${replyBlock}
         ${deletedLine}
         ${editedLine}
@@ -5282,14 +6217,17 @@ function appendPostChatMessageToDom(postId, message) {
   }
 
   const m = message;
-  const from = m?.fromUser || "";
+  const isModMsg = Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod";
+  const from = isModMsg ? "MOD" : m?.fromUser || "";
   const isYou = loggedInUser && from && from === loggedInUser;
+  const rail = chatRailClass({ fromUser: from, isModMessage: isModMsg });
   const sameAuthorAsPrev = Boolean(prevVisible && String(prevVisible.fromUser || "") === from);
   const mentions = Array.isArray(m?.mentions) ? m.mentions.map((u) => String(u || "").toLowerCase()) : [];
   const mentionMe = Boolean(loggedInUser && mentions.includes(loggedInUser));
-  const who = isYou ? `<span>you</span>` : renderUserPill(from || "");
+  const who = isModMsg ? `<span class="modPill">MOD</span>` : renderUserPill(from || "");
+  const youTag = !isModMsg && isYou ? `<span class="muted">(you)</span>` : "";
   const time = new Date(m.createdAt).toLocaleTimeString();
-  const tint = tintStylesFromHex(getProfile(from).color);
+  const tint = isModMsg ? "" : tintStylesFromHex(getProfile(from).color);
   const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
   const content = html ? html : highlightMentionsInText(m.text || "");
   const replyMeta = m.replyTo && typeof m.replyTo === "object" ? m.replyTo : null;
@@ -5326,10 +6264,10 @@ function appendPostChatMessageToDom(postId, message) {
     ? `<button type="button" class="ghost smallBtn" data-deletemsg="${escapeHtml(m.id)}" data-postid="${escapeHtml(postId)}">Delete</button>`
     : "";
 
-  const msgHtml = `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${mentionMe ? "mentionMe" : ""}" data-msgid="${escapeHtml(
+  const msgHtml = `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${mentionMe ? "mentionMe" : ""} ${rail} ${isModMsg ? "isModMsg" : ""}" data-msgid="${escapeHtml(
     m.id
   )}" ${tint}>
-        <div class="meta"><span class="chatHeaderInline">${who}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+        <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
         ${replyBlock}
         ${deletedLine}
         ${editedLine}
@@ -5360,17 +6298,19 @@ function appendDmMessageToDom(threadId, message) {
   const m = message;
   const from = m.fromUser || "";
   const isYou = loggedInUser && from && from === loggedInUser;
+  const rail = chatRailClass({ fromUser: from, isModMessage: false });
   const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
-  const who = isYou ? `<span>you</span>` : renderUserPill(from || "");
+  const who = renderUserPill(from || "");
+  const youTag = isYou ? `<span class="muted">(you)</span>` : "";
   const time = new Date(m.createdAt).toLocaleTimeString();
   const tint = tintStylesFromHex(getProfile(from).color);
   const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
   const content = html ? html : highlightMentionsInText(m.text || "");
 
-  const msgHtml = `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""}" data-msgid="${escapeHtml(m.id)}" ${tint}>
-            <div class="meta"><span class="chatHeaderInline">${who}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
-            <div class="content">${content}</div>
-          </div>`;
+  const msgHtml = `<div class="chatMsg ${sameAuthorAsPrev ? "isStacked" : ""} ${rail}" data-msgid="${escapeHtml(m.id)}" ${tint}>
+             <div class="meta"><span class="chatHeaderInline">${who}${youTag}<span class="muted">|</span><span>${escapeHtml(time)}</span></span></div>
+             <div class="content">${content}</div>
+           </div>`;
 
   appendChatHtmlAndDecorate(msgHtml, atBottomBefore);
   return true;
@@ -5429,6 +6369,15 @@ function openChat(postId) {
     unlockPostFlow(postId, true);
     return;
   }
+
+  // Rack mode: hive chats live in dedicated chat panels (instances). Don't also open the legacy main chat panel.
+  if (rackLayoutEnabled) {
+    markRead(postId);
+    renderFeed();
+    ws.send(JSON.stringify({ type: "getChat", postId }));
+    ensureChatPostPanelInstance(postId, { docked: false });
+    return;
+  }
   if (activeChatPostId && activeChatPostId !== postId) {
     ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
     setReplyToMessage(null);
@@ -5441,6 +6390,7 @@ function openChat(postId) {
   renderTypingIndicator();
   if (isMobileSwipeMode()) setMobilePanel("chat");
   chatEditor.focus();
+
 }
 
 let pendingOpenChatAfterUnlock = null;
@@ -5938,27 +6888,35 @@ document.querySelector(".editorShell .toolbar")?.addEventListener("click", (e) =
   if (btn.getAttribute("data-postemoji")) runEmoji(editor);
 });
 
-document.querySelector(".chatComposer .toolbar")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("button");
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.("button");
   if (!btn) return;
+  const toolbar = btn.closest?.(".chatComposer .toolbar");
+  if (!toolbar) return;
+  const composer = toolbar.closest?.(".chatComposer");
+  if (!composer) return;
+  const targetEditor = composer.querySelector?.(".chatEditor") || chatEditor;
+  if (!(targetEditor instanceof HTMLElement)) return;
+  chatUploadTargetEditor = targetEditor;
+
   const cmd = btn.getAttribute("data-chatcmd");
   if (cmd) {
-    runCmd(chatEditor, cmd);
+    runCmd(targetEditor, cmd);
     return;
   }
   if (btn.getAttribute("data-chatlink")) {
-    runLink(chatEditor);
+    runLink(targetEditor);
     return;
   }
   if (btn.getAttribute("data-chatimg")) {
-    chatImageInput.click();
+    chatImageInput?.click();
     return;
   }
   if (btn.getAttribute("data-chataudio")) {
     chatAudioInput?.click();
     return;
   }
-  if (btn.getAttribute("data-chatemoji")) runEmoji(chatEditor);
+  if (btn.getAttribute("data-chatemoji")) runEmoji(targetEditor);
 });
 
 profileBioToolbar?.addEventListener("click", (e) => {
@@ -6286,6 +7244,34 @@ function submitChat() {
     return;
   }
 
+  if (isMapChatActive()) {
+    if (!text && !hasImg && !hasAudio) return;
+    if (hasImg || hasAudio) {
+      toast("Maps chat", "Maps chat is text-only for now.");
+      return;
+    }
+    if (!loggedInUser) {
+      toast("Sign in required", "Sign in to chat in maps.");
+      return;
+    }
+    try {
+      ws.send(JSON.stringify({ type: "plugin:maps:chatSend", mapId: activeMapsRoomId, scope: normalizeMapChatScope(activeMapsChatScope), text }));
+      // Optimistic add so it feels instant (server will also echo back).
+      pushMapChatMessage(activeMapsRoomId, activeMapsChatScope, {
+        id: `local_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        fromUser: loggedInUser,
+        text,
+        createdAt: Date.now(),
+      });
+    } catch {
+      // ignore
+    }
+    chatEditor.innerHTML = "";
+    setReplyToMessage(null);
+    renderChatPanel(true);
+    return;
+  }
+
   if (!activeChatPostId || (!text && !hasImg && !hasAudio)) return;
   const post = posts.get(activeChatPostId);
   if (post && String(post.mode || post.chatMode || "").toLowerCase() === "walkie") {
@@ -6301,8 +7287,9 @@ function submitChat() {
     return;
   }
   const replyToId = replyToMessage?.id ? String(replyToMessage.id) : "";
+  const wantsMod = Boolean(canModerate && chatModToggleEl instanceof HTMLInputElement && chatModToggleEl.checked);
   ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
-  ws.send(JSON.stringify({ type: "chatMessage", postId: activeChatPostId, text, html, replyToId }));
+  ws.send(JSON.stringify({ type: "chatMessage", postId: activeChatPostId, text, html, replyToId, asMod: wantsMod }));
   chatEditor.innerHTML = "";
   setReplyToMessage(null);
 }
@@ -7105,6 +8092,25 @@ chatForm.addEventListener("submit", (e) => {
   submitChat();
 });
 
+chatMeta?.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.("button[data-mapchatscope]");
+  if (!btn) return;
+  const scope = normalizeMapChatScope(btn.getAttribute("data-mapchatscope") || "local");
+  activeMapsChatScope = scope;
+  // Fetch global history on-demand when switching to global.
+  if (scope === "global" && activeMapsRoomId) {
+    try {
+      const wsRef = window.__bzlWs;
+      if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+        wsRef.send(JSON.stringify({ type: "plugin:maps:chatHistoryReq", mapId: activeMapsRoomId }));
+      }
+    } catch {
+      // ignore
+    }
+  }
+  renderChatPanel(true);
+});
+
 chatEditor.addEventListener("keydown", (e) => {
   if (mentionState.open) {
     if (e.key === "ArrowDown") {
@@ -7166,6 +8172,10 @@ chatEditor.addEventListener("input", () => {
   }, 1800);
 });
 
+chatEditor.addEventListener("focus", () => {
+  chatUploadTargetEditor = chatEditor;
+});
+
 chatEditor.addEventListener("blur", () => {
   if (!activeChatPostId || !loggedInUser) return;
   ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
@@ -7186,7 +8196,8 @@ chatImageInput.addEventListener("change", async () => {
   try {
     const url = await uploadMediaFile(file, "image");
     if (!url) return;
-    chatEditor.focus();
+    const target = chatUploadTargetEditor instanceof HTMLElement ? chatUploadTargetEditor : chatEditor;
+    target.focus();
     document.execCommand("insertImage", false, url);
   } catch {
     // ignore
@@ -7214,7 +8225,8 @@ chatAudioInput?.addEventListener("change", async () => {
   try {
     const url = await uploadMediaFile(file, "audio");
     if (!url) return;
-    insertAudioTag(chatEditor, url);
+    const target = chatUploadTargetEditor instanceof HTMLElement ? chatUploadTargetEditor : chatEditor;
+    insertAudioTag(target, url);
   } catch {
     // ignore
   }
@@ -7327,6 +8339,72 @@ ws.addEventListener("message", (evt) => {
     renderLanHint();
     renderPeoplePanel();
     renderCenterPanels();
+    return;
+  }
+
+  if (msg.type === "plugin:maps:joinOk") {
+    const map = msg.map && typeof msg.map === "object" ? msg.map : null;
+    const mapId = map && typeof map.id === "string" ? map.id.trim().toLowerCase() : "";
+    if (mapId) {
+      activeMapsRoomId = mapId;
+      activeMapsRoomTitle = map && typeof map.title === "string" ? map.title.trim().slice(0, 64) : mapId;
+      activeMapsChatScope = "local";
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "plugin:maps:chatHistoryReq", mapId }));
+        }
+      } catch {
+        // ignore
+      }
+      if (isMapChatActive()) renderChatPanel(true);
+    }
+    return;
+  }
+
+  if (msg.type === "plugin:maps:left") {
+    const wasActive = Boolean(activeMapsRoomId);
+    activeMapsRoomId = "";
+    activeMapsRoomTitle = "";
+    activeMapsChatScope = "local";
+    if (wasActive && !activeDmThreadId && !activeChatPostId) renderChatPanel(true);
+    return;
+  }
+
+  if (msg.type === "plugin:maps:chatHistory") {
+    const mapId = typeof msg.mapId === "string" ? msg.mapId.trim().toLowerCase() : "";
+    const scope = normalizeMapChatScope(msg.scope || "global");
+    const messages = Array.isArray(msg.messages) ? msg.messages : [];
+    if (mapId && scope === "global") {
+      mapsChatGlobalByMapId.set(
+        mapId,
+        messages
+          .map((m) => ({
+            id: String(m?.id || ""),
+            fromUser: String(m?.fromUser || m?.username || ""),
+            text: String(m?.text || ""),
+            createdAt: Number(m?.createdAt || 0) || Date.now(),
+          }))
+          .filter((m) => m.id && m.fromUser && m.text)
+          .slice(-240)
+      );
+      if (isMapChatActive()) renderChatPanel(false);
+    }
+    return;
+  }
+
+  if (msg.type === "plugin:maps:chatMessage") {
+    const mapId = typeof msg.mapId === "string" ? msg.mapId.trim().toLowerCase() : "";
+    const scope = normalizeMapChatScope(msg.scope || "local");
+    const m = msg.message && typeof msg.message === "object" ? msg.message : null;
+    if (mapId && m) {
+      pushMapChatMessage(mapId, scope, {
+        id: String(m.id || ""),
+        fromUser: String(m.fromUser || m.username || ""),
+        text: String(m.text || ""),
+        createdAt: Number(m.createdAt || 0) || Date.now(),
+      });
+      if (isMapChatActive()) renderChatPanel(false);
+    }
     return;
   }
 
@@ -7752,6 +8830,7 @@ ws.addEventListener("message", (evt) => {
     markRead(msg.postId);
     renderChatPanel(true);
     renderTypingIndicator();
+    renderChatInstancesForPost(msg.postId);
     return;
   }
 
@@ -7829,6 +8908,7 @@ ws.addEventListener("message", (evt) => {
     const m = arr.find((x) => x && x.id === messageId);
     if (m) m.reactions = reactions;
     if (activeChatPostId === postId) renderChatPanel();
+    renderChatInstancesForPost(postId);
     return;
   }
 
@@ -7850,6 +8930,7 @@ ws.addEventListener("message", (evt) => {
     if (set.size === 0) typingUsersByPostId.delete(postId);
     else typingUsersByPostId.set(postId, set);
     if (activeChatPostId === postId) renderTypingIndicator();
+    renderChatInstancesForPost(postId);
     return;
   }
 
@@ -7874,6 +8955,7 @@ ws.addEventListener("message", (evt) => {
     );
     if (!isFromYou && senderLower && senderLower !== selfLower && ignoreUserSet.has(senderLower)) {
       if (activeChatPostId === msg.postId) renderChatPanel();
+      renderChatInstancesForPost(msg.postId);
       return;
     }
     const mentions = Array.isArray(msg.message?.mentions) ? msg.message.mentions.map((u) => String(u || "").toLowerCase()) : [];
@@ -7916,10 +8998,12 @@ ws.addEventListener("message", (evt) => {
         }
       }
     }
+    renderChatInstancesForPost(msg.postId);
   }
 });
 
 renderLanHint();
+initDisplayPrefsUi();
 renderPeoplePanel();
 setPeopleOpen(getPeopleOpen());
 composerOpen = getComposerOpen();

@@ -10,14 +10,20 @@
   --panel2: color-mix(in srgb, var(--text) calc(var(--panel2-pct) * 1%), transparent);
   --accent: #ff3ea5;
   --accent2: #b84bff;
+  --warn: #ffb84d;
+  --warn2: #ff7a18;
   --font-body: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --good: #3ddc97;
   --bad: #ff4d8a;
   --sidebar-width: 320px;
+  --sidebar-min: 240px;
   --chat-width: 640px;
+  --chat-min: 380px;
   --mod-width: 360px;
+  --mod-min: 280px;
   --people-width: 360px;
+  --people-min: 320px;
   --dur-fast: 110ms;
   --dur-med: 180ms;
   --dur-slow: 260ms;
@@ -25,6 +31,158 @@
   --ease-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
   --shadow-panel: 0 20px 70px rgba(0, 0, 0, 0.45);
   --shadow-soft: 0 12px 34px rgba(0, 0, 0, 0.35);
+  --font-size-base: 15px;
+  --font-size-small: 11px;
+  --app-gap: 12px;
+  --app-pad: 12px;
+  --panel-pad: 14px;
+  --panel-header-pad-y: 10px;
+  --panel-header-pad-x: 12px;
+  --label-font-size: 12px;
+  --label-gap: 6px;
+  --control-pad-y: 10px;
+  --control-pad-x: 10px;
+  --btn-pad-y: 10px;
+  --btn-pad-x: 12px;
+  --chat-rail-inset: 12px;
+  --chat-rail-side-max: 66%;
+  --chat-rail-center-max: 70%;
+}
+
+:root[data-ui-scale="xs"] {
+  --font-size-base: 12px;
+  --font-size-small: 9px;
+  --app-gap: 7px;
+  --app-pad: 7px;
+  --panel-pad: 10px;
+  --panel-header-pad-y: 8px;
+  --panel-header-pad-x: 10px;
+  --label-font-size: 11px;
+  --label-gap: 5px;
+  --control-pad-y: 8px;
+  --control-pad-x: 9px;
+  --btn-pad-y: 8px;
+  --btn-pad-x: 10px;
+}
+
+:root[data-ui-scale="sm"] {
+  --font-size-base: 13px;
+  --font-size-small: 10px;
+  --app-gap: 9px;
+  --app-pad: 9px;
+  --panel-pad: 12px;
+  --panel-header-pad-y: 9px;
+  --panel-header-pad-x: 11px;
+  --label-font-size: 12px;
+  --label-gap: 6px;
+  --control-pad-y: 9px;
+  --control-pad-x: 10px;
+  --btn-pad-y: 9px;
+  --btn-pad-x: 11px;
+}
+
+:root[data-ui-scale="md"] {
+  --font-size-base: 15px;
+  --font-size-small: 11px;
+  --app-gap: 12px;
+  --app-pad: 12px;
+}
+
+:root[data-ui-scale="lg"] {
+  --font-size-base: 16px;
+  --font-size-small: 12px;
+  --app-gap: 14px;
+  --app-pad: 14px;
+}
+
+:root[data-aspect="threeTwo"] {
+  --sidebar-width: 300px;
+  --sidebar-min: 230px;
+  --chat-width: 600px;
+  --chat-min: 360px;
+  --people-width: 340px;
+  --people-min: 300px;
+  --mod-width: 340px;
+  --mod-min: 280px;
+  --app-gap: 10px;
+  --app-pad: 10px;
+  --chat-rail-side-max: 70%;
+  --chat-rail-center-max: 74%;
+}
+
+:root[data-aspect="fourThree"] {
+  --sidebar-width: 280px;
+  --sidebar-min: 220px;
+  --chat-width: 560px;
+  --chat-min: 340px;
+  --people-width: 320px;
+  --people-min: 280px;
+  --mod-width: 320px;
+  --mod-min: 260px;
+  --app-gap: 10px;
+  --app-pad: 10px;
+  --chat-rail-side-max: 74%;
+  --chat-rail-center-max: 78%;
+}
+
+:root[data-aspect="portrait"] {
+  --sidebar-width: 300px;
+  --sidebar-min: 230px;
+  --chat-width: 520px;
+  --chat-min: 320px;
+  --people-width: 320px;
+  --people-min: 260px;
+  --mod-width: 320px;
+  --mod-min: 260px;
+  --app-gap: 10px;
+  --app-pad: 10px;
+  --chat-rail-inset: 10px;
+  --chat-rail-side-max: 88%;
+  --chat-rail-center-max: 88%;
+}
+
+:root[data-aspect="ultrawide"] {
+  --sidebar-width: 340px;
+  --sidebar-min: 260px;
+  --chat-width: 720px;
+  --chat-min: 420px;
+  --people-width: 400px;
+  --people-min: 340px;
+  --mod-width: 400px;
+  --mod-min: 320px;
+  --chat-rail-side-max: 62%;
+  --chat-rail-center-max: 66%;
+}
+
+:root[data-viewport="xs"] {
+  --sidebar-width: 230px;
+  --sidebar-min: 210px;
+  --chat-width: 480px;
+  --chat-min: 300px;
+  --people-width: 260px;
+  --people-min: 250px;
+  --mod-width: 260px;
+  --mod-min: 250px;
+  --app-gap: 8px;
+  --app-pad: 8px;
+  --chat-rail-inset: 10px;
+  --chat-rail-side-max: 92%;
+  --chat-rail-center-max: 92%;
+}
+
+:root[data-viewport="sm"] {
+  --sidebar-width: 290px;
+  --sidebar-min: 220px;
+  --chat-width: 600px;
+  --chat-min: 340px;
+  --people-width: 320px;
+  --people-min: 280px;
+  --mod-width: 320px;
+  --mod-min: 260px;
+  --app-gap: 11px;
+  --app-pad: 11px;
+  --chat-rail-side-max: 78%;
+  --chat-rail-center-max: 82%;
 }
 
 * {
@@ -35,6 +193,7 @@ body {
   margin: 0;
   height: 100vh;
   font-family: var(--font-body);
+  font-size: var(--font-size-base);
   background: radial-gradient(1200px 800px at 10% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
     radial-gradient(900px 700px at 90% 10%, color-mix(in srgb, var(--accent2) 14%, transparent), transparent 50%), var(--bg);
   color: var(--text);
@@ -113,7 +272,7 @@ body {
 }
 
 .small {
-  font-size: 12px;
+  font-size: var(--font-size-small);
 }
 
 .muted {
@@ -122,17 +281,17 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px minmax(380px, var(--chat-width)) 10px 1fr;
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px minmax(var(--chat-min), var(--chat-width)) 10px 1fr;
   grid-template-areas: "sidebar sidebarResize chat chatResize main";
-  gap: 12px;
-  padding: 12px;
+  gap: 0;
+  padding: var(--app-pad);
   height: 100vh;
   overflow: hidden;
   position: relative;
 }
 
 .app.rackMode {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--people-min), var(--people-width));
   grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
 }
 
@@ -142,7 +301,7 @@ body {
 
 .app.rackMode.rightCollapsed,
 .app.rackMode.hasMod.rightCollapsed {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr;
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr;
   grid-template-areas: "sidebar sidebarResize main";
 }
 
@@ -204,28 +363,28 @@ body {
 
 .app.rackMode.hasMod {
   /* In rack mode, mod is just another panel inside the right rack. */
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--people-min), var(--people-width));
   grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
 }
 
 .app.hasMod {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px minmax(380px, var(--chat-width)) 10px 1fr 10px minmax(280px, var(--mod-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px minmax(var(--chat-min), var(--chat-width)) 10px 1fr 10px minmax(var(--mod-min), var(--mod-width));
   grid-template-areas: "sidebar sidebarResize chat chatResize main mainResize moderation";
 }
 
 .app.chatRight {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(380px, var(--chat-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--chat-min), var(--chat-width));
   grid-template-areas: "sidebar sidebarResize main chatResize chat";
 }
 
 .app.hasMod.chatRight {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(380px, var(--chat-width)) 10px minmax(280px, var(--mod-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--chat-min), var(--chat-width)) 10px minmax(var(--mod-min), var(--mod-width));
   grid-template-areas: "sidebar sidebarResize main chatResize chat mainResize moderation";
 }
 
 .app.rackMode.chatRight,
 .app.rackMode.hasMod.chatRight {
-  grid-template-columns: minmax(240px, var(--sidebar-width)) 10px 1fr 10px minmax(320px, var(--people-width));
+  grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--people-min), var(--people-width));
   grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
 }
 
@@ -236,6 +395,7 @@ body {
     grid-template-areas:
       "sidebar main"
       "chat chat";
+    gap: var(--app-gap);
   }
   .app.hasMod {
     grid-template-columns: 300px 1fr;
@@ -298,11 +458,31 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
 .rightRack .rackPanel {
+  flex: 1;
+  min-height: 0;
+}
+
+.sideRack .rackPanel {
+  flex: 1;
+  min-height: 0;
+}
+
+.rightRack .rackPanel.panelCollapsed,
+.sideRack .rackPanel.panelCollapsed {
+  flex: 0 0 auto;
+}
+
+.rightRack .rackPanel > .panelBody,
+.rightRack .rackPanel > .panelFill,
+.rightRack .rackPanel .panelBody,
+.sideRack .rackPanel > .panelBody,
+.sideRack .rackPanel > .panelFill,
+.sideRack .rackPanel .panelBody {
   min-height: 0;
 }
 
@@ -374,6 +554,9 @@ body {
   display: flex;
   gap: 10px;
   padding: 8px 10px;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  overscroll-behavior: contain;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
@@ -400,6 +583,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
   max-width: 220px;
   padding: 7px 12px;
   border-radius: 999px;
@@ -425,6 +609,32 @@ body {
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.hotbarAddMenu {
+  position: fixed;
+  z-index: 90;
+  width: 260px;
+  max-height: min(320px, 70vh);
+  overflow: hidden;
+  border: 1px solid rgba(246, 240, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(8, 8, 16, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.45);
+  animation: popFloat var(--dur-med) var(--ease-out) both;
+}
+
+.hotbarAddMenuList {
+  overflow: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dockOrbPlus .dockOrbIcon {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .sidebarScroll {
@@ -495,7 +705,7 @@ body {
   grid-area: main;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
@@ -504,7 +714,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: row;
-  gap: 12px;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
@@ -514,7 +724,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
@@ -523,7 +733,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-gap);
 }
 
 .workspaceSlot {
@@ -592,7 +802,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
@@ -699,6 +909,13 @@ body {
   border-radius: 999px;
 }
 
+.mapChatToggle {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .sidebarToggle {
   position: absolute;
   top: 12px;
@@ -714,12 +931,12 @@ body {
 }
 
 .app.sidebarHidden {
-  grid-template-columns: minmax(380px, var(--chat-width)) 10px 1fr;
+  grid-template-columns: minmax(var(--chat-min), var(--chat-width)) 10px 1fr;
   grid-template-areas: "chat chatResize main";
 }
 
 .app.sidebarHidden.hasMod {
-  grid-template-columns: minmax(380px, var(--chat-width)) 10px 1fr 10px minmax(280px, var(--mod-width));
+  grid-template-columns: minmax(var(--chat-min), var(--chat-width)) 10px 1fr 10px minmax(var(--mod-min), var(--mod-width));
   grid-template-areas: "chat chatResize main mainResize moderation";
 }
 
@@ -1208,7 +1425,7 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 60%), var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 14px;
+  padding: var(--panel-pad);
   box-shadow: var(--shadow-soft);
 }
 
@@ -1224,7 +1441,7 @@ body {
   justify-content: space-between;
   gap: 10px;
   align-items: center;
-  padding: 10px 12px 8px;
+  padding: var(--panel-header-pad-y) var(--panel-header-pad-x) calc(var(--panel-header-pad-y) - 2px);
   border-bottom: 1px solid var(--line);
 }
 
@@ -1322,8 +1539,8 @@ body {
 label span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: var(--label-font-size);
+  margin-bottom: var(--label-gap);
 }
 
 input,
@@ -1334,7 +1551,7 @@ select {
   background: color-mix(in srgb, var(--text) 3%, transparent);
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 12px;
-  padding: 10px 10px;
+  padding: var(--control-pad-y) var(--control-pad-x);
   outline: none;
 }
 
@@ -1351,7 +1568,7 @@ button {
   background: color-mix(in srgb, var(--text) 4%, transparent);
   color: var(--text);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: var(--btn-pad-y) var(--btn-pad-x);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-soft), border-color var(--dur-fast) var(--ease-soft),
     background var(--dur-fast) var(--ease-soft), box-shadow var(--dur-fast) var(--ease-soft), filter var(--dur-fast) var(--ease-soft);
@@ -2108,6 +2325,7 @@ button:disabled {
   gap: 0;
   flex: 1;
   min-height: 0;
+  container-type: inline-size;
 }
 
 .typingIndicator {
@@ -2150,8 +2368,32 @@ button:disabled {
   border-radius: 14px;
   padding: 8px 9px;
   margin-top: 8px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: min(var(--chat-rail-center-max, 70%), calc(100% - (var(--chat-rail-inset, 12px) * 2)));
   transition: border-color var(--dur-med) var(--ease-out), background var(--dur-med) var(--ease-out),
     box-shadow var(--dur-med) var(--ease-out), transform var(--dur-med) var(--ease-out);
+}
+
+.chatMsg.railLeft {
+  margin-left: var(--chat-rail-inset, 12px);
+  margin-right: auto;
+  max-width: min(var(--chat-rail-side-max, 66%), calc(100% - (var(--chat-rail-inset, 12px) * 2)));
+}
+
+.chatMsg.railCenter {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: min(var(--chat-rail-center-max, 70%), calc(100% - (var(--chat-rail-inset, 12px) * 2)));
+}
+
+.chatMsg.railRight {
+  margin-left: auto;
+  margin-right: var(--chat-rail-inset, 12px);
+  max-width: min(var(--chat-rail-side-max, 66%), calc(100% - (var(--chat-rail-inset, 12px) * 2)));
+  background: color-mix(in srgb, var(--accent) 10%, rgba(255, 255, 255, 0.02));
+  border-color: color-mix(in srgb, var(--accent) 30%, rgba(246, 240, 255, 0.12));
 }
 
 .chatMsg:first-child {
@@ -2162,13 +2404,67 @@ button:disabled {
   margin-top: 4px;
 }
 
+.chatMsg.railRight .meta {
+  justify-content: flex-end;
+}
+
 .chatMsg.mentionMe {
   border-color: rgba(255, 62, 165, 0.45);
   box-shadow: 0 0 0 2px rgba(255, 62, 165, 0.14);
 }
 
+.chatMsg.isModMsg {
+  background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--warn) 22%, transparent),
+      rgba(255, 255, 255, 0.02)
+    ),
+    rgba(255, 255, 255, 0.02);
+  border-color: color-mix(in srgb, var(--warn2) 38%, rgba(246, 240, 255, 0.12));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn2) 10%, transparent);
+}
+
+.chatMsg.isModMsg .meta {
+  color: color-mix(in srgb, var(--warn) 60%, var(--muted));
+}
+
+.modPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: color-mix(in srgb, var(--warn) 88%, var(--text));
+  border: 1px solid color-mix(in srgb, var(--warn2) 42%, transparent);
+  background: color-mix(in srgb, var(--warn2) 10%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
 .chatMsg.isNewMsg {
   animation: msgIn 520ms var(--ease-out) both;
+}
+
+/* When the chat container gets narrow, collapse center-lane messages to the left lane.
+   Self stays right-aligned; mod/system keep their visual treatment. */
+@container (max-width: 520px) {
+  .chatMessages {
+    --chat-rail-side-max: 92%;
+    --chat-rail-center-max: 92%;
+  }
+
+  .chatMsg.railCenter {
+    margin-left: var(--chat-rail-inset, 12px);
+    margin-right: auto;
+  }
+
+  .chatMsg.railCenter .meta {
+    justify-content: flex-start;
+  }
+
+  .chatMsg.isModMsg {
+    margin-left: calc(var(--chat-rail-inset, 12px) + 8px);
+  }
 }
 
 .chatMsg:hover {
