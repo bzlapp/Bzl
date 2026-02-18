@@ -1,0 +1,10 @@
+{
+  "id": "dice",
+  "name": "Dice",
+  "version": "0.1.0",
+  "description": "Shared dice roller (XdY+Z) that broadcasts results to everyone.",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["ui", "ws"]
+}
+

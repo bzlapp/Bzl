@@ -24,6 +24,12 @@ This repo includes starter plugins and zip builders:
 - Library: `plugins_dev/library/`
   - Build: `node scripts/build-library-plugin.js`
   - Upload: `dist/plugins/library.zip`
+- Radio: `plugins_dev/radio/`
+  - Build: `node scripts/build-radio-plugin.js`
+  - Upload: `dist/plugins/radio.zip`
+- Dice: `plugins_dev/dice/`
+  - Build: `node scripts/build-dice-plugin.js`
+  - Upload: `dist/plugins/dice.zip`
 - Directory Server (draft): `plugins_dev/directory-server/`
   - Build: `node scripts/build-directory-server-plugin.js`
   - Upload: `dist/plugins/directory-server.zip`

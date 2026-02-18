@@ -361,6 +361,35 @@ body {
   min-height: 0;
 }
 
+.pluginRackPanel .pluginRackBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pluginRackToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.pluginRackWidgets {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-gap);
+  padding: 10px;
+}
+
+.pluginRackWidgets > .rackPanel {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
 .app.rackMode.hasMod {
   /* In rack mode, mod is just another panel inside the right rack. */
   grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 10px 1fr 10px minmax(var(--people-min), var(--people-width));

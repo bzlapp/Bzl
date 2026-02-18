@@ -4128,6 +4128,15 @@ wss.on("connection", (ws, req) => {
 
     if (!msg || typeof msg !== "object") return;
 
+    if (msg.type === "ping") {
+      try {
+        ws.send(JSON.stringify({ type: "pong", serverTime: now() }));
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
     const msgType = typeof msg.type === "string" ? msg.type : "";
     const pluginMatch = msgType.match(/^plugin:([a-z0-9_.-]{1,32}):([a-zA-Z0-9_.-]{1,64})$/);
     if (pluginMatch) {

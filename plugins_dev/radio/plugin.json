@@ -1,0 +1,9 @@
+{
+  "id": "radio",
+  "name": "Radio",
+  "version": "0.1.6",
+  "description": "A playful community radio: create stations, upload MP3 tracks, and tune in.",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["ui", "ws", "uploads"]
+}

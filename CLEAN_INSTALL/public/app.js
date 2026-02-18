@@ -27,6 +27,7 @@ const toggleRightRackEl = document.getElementById("toggleRightRack");
 const layoutPresetEl = document.getElementById("layoutPreset");
 const uiScaleEl = document.getElementById("uiScale");
 const deviceLayoutEl = document.getElementById("deviceLayout");
+const stayConnectedEl = document.getElementById("stayConnected");
 const dockHotbarEl = document.getElementById("dockHotbar");
 const showSideRackBtn = document.getElementById("showSideRack");
 const showRightRackBtn = document.getElementById("showRightRack");
@@ -667,6 +668,173 @@ registerCorePanel({ id: "moderation", title: "Moderation", icon: "🛡️", role
 registerCorePanel({ id: "profile", title: "Profile", icon: "👤", role: "transient", defaultRack: "main", element: profileViewPanel });
 registerCorePanel({ id: "composer", title: "New Hive", icon: "✍️", role: "aux", defaultRack: "main", element: pollinatePanel });
 
+let pluginRackPanelEl = null;
+let pluginRackWidgetsRackEl = null;
+let pluginRackAddMenuEl = null;
+
+function closePluginRackAddMenu() {
+  if (!pluginRackAddMenuEl) return;
+  try {
+    pluginRackAddMenuEl.remove();
+  } catch {
+    // ignore
+  }
+  pluginRackAddMenuEl = null;
+}
+
+function panelIsPluginOwned(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (id.startsWith("chat:")) return false;
+  const entry = panelRegistry.get(id);
+  const src = typeof entry?.source === "string" ? entry.source : "";
+  return src.startsWith("plugin:");
+}
+
+function panelIsHostableInPluginRack(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (id === "pluginRack") return false;
+  if (!panelIsPluginOwned(id)) return false;
+  // Widgets should be small, stackable tools (not full workspace surfaces like Maps).
+  if (panelRole(id) === "primary") return false;
+  return true;
+}
+
+function ensurePluginRackPanel() {
+  if (pluginRackPanelEl instanceof HTMLElement && pluginRackPanelEl.isConnected) return pluginRackPanelEl;
+
+  if (!(pluginRackPanelEl instanceof HTMLElement)) {
+    const shell = document.createElement("section");
+    shell.className = "panel panelFill pluginRackPanel rackPanel";
+    shell.dataset.panelId = "pluginRack";
+    shell.innerHTML = `
+      <div class="panelHeader">
+        <div class="panelTitle">${escapeHtml("Plugin Rack")}</div>
+        <div class="row"></div>
+      </div>
+      <div class="panelBody pluginRackBody">
+        <div class="pluginRackToolbar">
+          <button type="button" class="ghost smallBtn" data-pluginrackadd="1">+ Add widget</button>
+          <div class="small muted pluginRackHint">Drop plugin panels here to stack them.</div>
+        </div>
+        <div id="pluginRackWidgetsRack" class="pluginRackWidgets" aria-label="Plugin widgets"></div>
+      </div>
+    `;
+    pluginRackPanelEl = shell;
+    pluginRackWidgetsRackEl = shell.querySelector("#pluginRackWidgetsRack");
+
+    shell.querySelector("[data-pluginrackadd]")?.addEventListener("click", (e) => {
+      const anchor = e.currentTarget;
+      if (pluginRackAddMenuEl) closePluginRackAddMenu();
+      else openPluginRackAddMenu(anchor);
+    });
+  }
+
+  // Ensure it's registered as a core panel for docking + layout state.
+  registerCorePanel({ id: "pluginRack", title: "Plugin Rack", icon: "ðŸ§°", role: "aux", defaultRack: "main", element: pluginRackPanelEl });
+
+  // Append into the DOM so it can be docked/restored. (It will typically live in the hotbar.)
+  const side = ensureMainSideRack();
+  if (side && pluginRackPanelEl.parentElement !== side) side.appendChild(pluginRackPanelEl);
+
+  return pluginRackPanelEl;
+}
+
+function ensurePluginRackWidgetsRack() {
+  ensurePluginRackPanel();
+  return pluginRackWidgetsRackEl instanceof HTMLElement ? pluginRackWidgetsRackEl : null;
+}
+
+function readPluginRackWidgetsOrder() {
+  const rack = ensurePluginRackWidgetsRack();
+  return rack ? readRackOrder(rack) : [];
+}
+
+function removePanelFromPluginRack(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  rackLayoutState.pluginRackWidgets = Array.isArray(rackLayoutState.pluginRackWidgets)
+    ? rackLayoutState.pluginRackWidgets.filter((x) => x !== id)
+    : [];
+  const el = getPanelElement(id);
+  if (el) el.classList.remove("pluginRackWidget");
+  const rack = ensurePluginRackWidgetsRack();
+  if (rack && el && el.parentElement === rack) rack.removeChild(el);
+  const side = ensureMainSideRack();
+  if (side && el && !el.parentElement) side.appendChild(el);
+}
+
+function hostPanelInPluginRack(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!rackLayoutEnabled) return;
+  if (!panelIsHostableInPluginRack(id)) {
+    toast("Can't add widget", `${panelTitle(id)} can't be hosted in Plugin Rack.`);
+    return;
+  }
+
+  const rack = ensurePluginRackWidgetsRack();
+  const el = getPanelElement(id);
+  if (!rack || !el) return;
+
+  // Hosting implies it should be visible in the rack, not docked.
+  if (isDocked(id)) undockPanel(id);
+
+  const lastRack = rackIdForPanelElement(el);
+  if (lastRack) rememberPanelLastRack(id, lastRack);
+
+  el.classList.add("pluginRackWidget");
+  if (el.parentElement !== rack) rack.appendChild(el);
+
+  const next = new Set(Array.isArray(rackLayoutState.pluginRackWidgets) ? rackLayoutState.pluginRackWidgets : []);
+  next.add(id);
+  rackLayoutState.pluginRackWidgets = Array.from(next);
+  saveRackLayoutState();
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+}
+
+function openPluginRackAddMenu(anchorEl) {
+  closePluginRackAddMenu();
+  if (!(anchorEl instanceof HTMLElement)) return;
+  if (!rackLayoutEnabled) return;
+
+  const hosted = new Set(Array.isArray(rackLayoutState.pluginRackWidgets) ? rackLayoutState.pluginRackWidgets : []);
+  const candidates = Array.from(panelRegistry.keys())
+    .filter((id) => panelIsHostableInPluginRack(id) && !hosted.has(id))
+    .sort((a, b) => panelTitle(a).localeCompare(panelTitle(b)));
+
+  const items = candidates
+    .map((id) => `<button type="button" class="ghost smallBtn" data-pluginrackhost="${escapeHtml(id)}">${escapeHtml(panelTitle(id))}</button>`)
+    .join("");
+
+  const menu = document.createElement("div");
+  menu.className = "hotbarAddMenu pluginRackAddMenu";
+  menu.innerHTML = `
+    <div class="small muted" style="padding:6px 8px 4px;">Add widget</div>
+    <div class="hotbarAddMenuList">${items || `<div class="small muted" style="padding:6px 8px;">No plugin widgets available.</div>`}</div>
+  `;
+
+  const rect = anchorEl.getBoundingClientRect();
+  const left = Math.max(12, Math.min(window.innerWidth - 260, rect.left));
+  const top = Math.max(12, Math.min(window.innerHeight - 320, rect.bottom + 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest?.("[data-pluginrackhost]");
+    if (!btn) return;
+    const id = String(btn.getAttribute("data-pluginrackhost") || "").trim();
+    if (!id) return;
+    hostPanelInPluginRack(id);
+    closePluginRackAddMenu();
+  });
+
+  document.body.appendChild(menu);
+  pluginRackAddMenuEl = menu;
+}
+
 // Rack mode: Profile should behave like a normal dockable panel (not a flow that replaces Hives).
 // Override the role after the initial core registration (Map#set will replace the previous entry).
 panelRegistry.set("profile", { ...(panelRegistry.get("profile") || { id: "profile", source: "core" }), role: "aux" });
@@ -686,7 +854,7 @@ const PRESET_DEFS = {
     sideOrder: ["profile", "composer"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["maps", "library"],
+    dockBottom: ["pluginRack", "maps", "library"],
   },
   chatFocus: {
     presetId: "chatFocus",
@@ -698,7 +866,7 @@ const PRESET_DEFS = {
     sideOrder: ["profile"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["hives", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "hives", "composer", "maps", "library"],
   },
   browse: {
     presetId: "browse",
@@ -710,7 +878,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["profile"],
-    dockBottom: ["people", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "people", "composer", "maps", "library"],
   },
   creator: {
     presetId: "creator",
@@ -722,7 +890,7 @@ const PRESET_DEFS = {
     sideOrder: ["people"],
     sideCollapsed: true,
     rightOrder: ["profile"],
-    dockBottom: ["chat", "maps", "library"],
+    dockBottom: ["pluginRack", "chat", "maps", "library"],
   },
   mapsSession: {
     presetId: "mapsSession",
@@ -733,7 +901,7 @@ const PRESET_DEFS = {
     sideOrder: ["hives"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["profile", "composer", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "library"],
   },
   quiet: {
     presetId: "quiet",
@@ -745,7 +913,7 @@ const PRESET_DEFS = {
     sideCollapsed: true,
     rightOrder: [],
     rightCollapsed: true,
-    dockBottom: ["chat", "people", "maps", "library"],
+    dockBottom: ["pluginRack", "chat", "people", "maps", "library"],
   },
   ops: {
     presetId: "ops",
@@ -757,7 +925,7 @@ const PRESET_DEFS = {
     sideOrder: ["hives"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
   },
   reportsFocus: {
     presetId: "reportsFocus",
@@ -770,7 +938,7 @@ const PRESET_DEFS = {
     sideOrder: ["people"],
     sideCollapsed: true,
     rightOrder: ["chat"],
-    dockBottom: ["hives", "profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "hives", "profile", "composer", "maps", "library"],
   },
   communityWatch: {
     presetId: "communityWatch",
@@ -782,7 +950,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
   },
   serverAdmin: {
     presetId: "serverAdmin",
@@ -794,7 +962,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
   },
 };
 
@@ -885,6 +1053,7 @@ function loadRackLayoutState() {
         presetId: "discordLike",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+        pluginRackWidgets: [],
         lastRackByPanelId: {},
       };
     const parsed = JSON.parse(raw);
@@ -894,9 +1063,13 @@ function loadRackLayoutState() {
         presetId: "discordLike",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+        pluginRackWidgets: [],
         lastRackByPanelId: {},
       };
     const bottom = Array.isArray(parsed?.docked?.bottom) ? parsed.docked.bottom.map((x) => String(x || "")).filter(Boolean) : [];
+    const pluginRackWidgets = Array.isArray(parsed?.pluginRackWidgets)
+      ? parsed.pluginRackWidgets.map((x) => String(x || "")).filter(Boolean)
+      : [];
     const presetId = typeof parsed?.presetId === "string" ? parsed.presetId : "discordLike";
     const workspaceLeft = Array.isArray(parsed?.racks?.workspaceLeft) ? parsed.racks.workspaceLeft.map((x) => String(x || "")).filter(Boolean) : [];
     const workspaceRight = Array.isArray(parsed?.racks?.workspaceRight) ? parsed.racks.workspaceRight.map((x) => String(x || "")).filter(Boolean) : [];
@@ -910,13 +1083,14 @@ function loadRackLayoutState() {
       if (!id || !rackId) continue;
       lastRackByPanelId[id] = rackId;
     }
-    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right }, lastRackByPanelId };
+    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right }, pluginRackWidgets, lastRackByPanelId };
   } catch {
     return {
       version: 2,
       presetId: "discordLike",
       docked: { bottom: [] },
       racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+      pluginRackWidgets: [],
       lastRackByPanelId: {},
     };
   }
@@ -1000,12 +1174,12 @@ function panelCanExpand(panelId) {
   if (id.startsWith("chat:")) return true;
   if (panelRole(id) === "primary") return true;
   // Allow a few core panels to take over the workspace even though they aren't "primary" by default.
-  return id === "moderation" || id === "composer";
+  return id === "moderation" || id === "composer" || id === "pluginRack";
 }
 
 // Panels that are allowed to live in "skinny" columns (side rack / right rack).
 // These panels should be able to render in a narrow width without breaking layout.
-const SKINNY_CAPABLE_PANELS = new Set(["people", "profile", "composer", "hives", "chat"]);
+const SKINNY_CAPABLE_PANELS = new Set(["people", "profile", "composer", "hives", "chat", "dice"]);
 
 function panelIsSkinnyCapable(panelId) {
   const id = String(panelId || "").trim();
@@ -1046,6 +1220,8 @@ function rememberPanelLastRack(panelId, rackId) {
 function dockPanel(panelId) {
   const id = String(panelId || "").trim();
   if (!id) return;
+  // Docking a hosted widget should implicitly un-host it.
+  removePanelFromPluginRack(id);
   const el = getPanelElement(id);
   const lastRack = rackIdForPanelElement(el);
   if (lastRack) rememberPanelLastRack(id, lastRack);
@@ -1265,6 +1441,8 @@ function readRackOrder(rackEl) {
 
 function applyRackStateToDom() {
   if (!rackLayoutEnabled) return;
+  // Ensure core "virtual" panels exist before we try to place them.
+  ensurePluginRackPanel();
   const left = ensureWorkspaceLeftRack();
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
@@ -1290,6 +1468,18 @@ function applyRackStateToDom() {
   for (const panelId of rightOrder) {
     const el = getPanelElement(panelId);
     if (el) right.appendChild(el);
+  }
+
+  // Hosted plugin widgets live inside Plugin Rack, not a top-level rack.
+  const widgetsOrder = Array.isArray(rackLayoutState?.pluginRackWidgets) ? rackLayoutState.pluginRackWidgets : [];
+  const widgetsRack = ensurePluginRackWidgetsRack();
+  if (widgetsRack) {
+    for (const panelId of widgetsOrder) {
+      const el = getPanelElement(panelId);
+      if (!el) continue;
+      el.classList.add("pluginRackWidget");
+      widgetsRack.appendChild(el);
+    }
   }
 }
 
@@ -1448,6 +1638,14 @@ function syncRackStateFromDom() {
     side: readRackOrder(side),
     right: readRackOrder(right),
   };
+  rackLayoutState.pluginRackWidgets = readPluginRackWidgetsOrder();
+  const hosted = new Set(Array.isArray(rackLayoutState.pluginRackWidgets) ? rackLayoutState.pluginRackWidgets : []);
+  for (const [id, entry] of panelRegistry.entries()) {
+    const el = entry?.element;
+    if (!(el instanceof HTMLElement)) continue;
+    if (!el.classList.contains("pluginRackWidget") && hosted.has(id)) el.classList.add("pluginRackWidget");
+    if (el.classList.contains("pluginRackWidget") && !hosted.has(id)) el.classList.remove("pluginRackWidget");
+  }
   saveRackLayoutState();
 }
 
@@ -1598,6 +1796,11 @@ function applyPreset(presetId) {
     return;
   }
 
+  // Presets are hard-applied: clear any hosted widgets so placement remains deterministic.
+  closePluginRackAddMenu();
+  for (const id of readPluginRackWidgetsOrder()) removePanelFromPluginRack(id);
+  rackLayoutState.pluginRackWidgets = [];
+
   rackLayoutState.presetId = def.presetId || key;
 
   const workspaceLeftOrder = Array.isArray(def.workspaceLeftOrder) ? def.workspaceLeftOrder.map((x) => String(x || "")).filter(Boolean) : [];
@@ -1744,6 +1947,8 @@ function installPanelMinimizeButtons() {
   addMinBtn(hivesPanelEl?.querySelector(".panelHeader"), "hives");
   addMinBtn(profileViewPanel?.querySelector(".panelHeader"), "profile");
   addMinBtn(pollinatePanel?.querySelector(".panelHeader"), "composer");
+  ensurePluginRackPanel();
+  addMinBtn(pluginRackPanelEl?.querySelector(".panelHeader"), "pluginRack");
 }
 
 function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
@@ -2147,7 +2352,8 @@ function enableRackDnD() {
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
   if (!right || !left || !rightWorkspace || !side) return;
-  const racks = [left, rightWorkspace, side, right];
+  const pluginWidgets = ensurePluginRackWidgetsRack();
+  const racks = [left, rightWorkspace, side, right, pluginWidgets].filter((x) => x instanceof HTMLElement);
 
   // Guard against double-install if initRackLayout is called more than once.
   if (appRoot?.dataset?.rackDnd === "1") return;
@@ -2245,8 +2451,21 @@ function enableRackDnD() {
         const isWorkspaceSlot = targetRack.id === "workspaceLeftSlot" || targetRack.id === "workspaceRightSlot";
         const isRightRackSlot = targetRack.id === "rightRack";
         const isSideRackSlot = targetRack.id === "mainSideRack";
+        const isPluginRackWidgets = targetRack.id === "pluginRackWidgetsRack";
         const isSkinnyRackSlot = isRightRackSlot || isSideRackSlot;
         const skinnyOk = panelIsSkinnyCapable(draggingPanelId);
+
+        if (isPluginRackWidgets && !panelIsHostableInPluginRack(draggingPanelId)) {
+          toast("Can't place there", `${panelTitle(draggingPanelId)} can't be hosted in Plugin Rack.`);
+          if (originRack) {
+            if (originBefore && originBefore.parentElement === originRack) originRack.insertBefore(draggingEl, originBefore);
+            else originRack.appendChild(draggingEl);
+          }
+          cleanup();
+          syncRackStateFromDom();
+          enforceWorkspaceRules();
+          return;
+        }
 
         // Only skinny-capable panels may live in skinny columns (side / right racks).
         if (isSkinnyRackSlot && !skinnyOk) {
@@ -2272,6 +2491,7 @@ function enableRackDnD() {
         } else {
           targetRack.insertBefore(draggingEl, placeholderEl);
         }
+        if (isPluginRackWidgets) draggingEl.classList.add("pluginRackWidget");
       }
     const shouldDock = Boolean(dockHotbarEl && e.clientY > window.innerHeight - 90);
     const dockId = draggingPanelId;
@@ -2393,6 +2613,17 @@ function initRackLayout() {
 
   enableRackLayoutDom();
 
+  // Ensure Plugin Rack exists and is accessible (defaults to hotbar unless explicitly placed).
+  ensurePluginRackPanel();
+  const pluginRackPlaced =
+    isDocked("pluginRack") ||
+    ["workspaceLeft", "workspaceRight", "side", "right"].some((k) => Array.isArray(rackLayoutState?.racks?.[k]) && rackLayoutState.racks[k].includes("pluginRack"));
+  if (!pluginRackPlaced) {
+    rackLayoutState.docked.bottom = Array.isArray(rackLayoutState?.docked?.bottom) ? rackLayoutState.docked.bottom : [];
+    if (!rackLayoutState.docked.bottom.includes("pluginRack")) rackLayoutState.docked.bottom.push("pluginRack");
+    saveRackLayoutState();
+  }
+
   // Side racks behave like summonable hotbars: hide/show without changing panel layout state.
   toggleSideRackEl && (toggleSideRackEl.disabled = false);
   toggleRightRackEl && (toggleRightRackEl.disabled = false);
@@ -2447,10 +2678,15 @@ function initRackLayout() {
   if (appRoot && appRoot.dataset.hotbarPlusClose !== "1") {
     appRoot.dataset.hotbarPlusClose = "1";
     document.addEventListener("pointerdown", (e) => {
-      if (!hotbarPlusMenuEl) return;
+      if (!hotbarPlusMenuEl && !pluginRackAddMenuEl) return;
       const t = e.target;
-      if (t && (hotbarPlusMenuEl.contains(t) || dockHotbarEl?.contains(t))) return;
+      if (t) {
+        if (hotbarPlusMenuEl && hotbarPlusMenuEl.contains(t)) return;
+        if (pluginRackAddMenuEl && pluginRackAddMenuEl.contains(t)) return;
+        if (dockHotbarEl && dockHotbarEl.contains(t)) return;
+      }
       closeHotbarPlusMenu();
+      closePluginRackAddMenu();
     });
   }
 
@@ -2482,6 +2718,14 @@ function initRackLayout() {
     const resolveOrbDropRack = (panelId, rackEl) => {
       const id = String(panelId || "").trim();
       if (!id) return rackEl;
+      if (rackEl && rackEl.id === "pluginRackWidgetsRack") {
+        if (panelIsHostableInPluginRack(id)) return rackEl;
+        const left = ensureWorkspaceLeftRack();
+        const right = ensureWorkspaceRightRack();
+        const leftEmpty = left ? left.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+        const rightEmpty = right ? right.querySelectorAll(":scope > .rackPanel:not(.hidden)").length === 0 : false;
+        return leftEmpty ? left : rightEmpty ? right : left;
+      }
       // Skinny racks (side/right) only allow skinny-capable panels.
       if (rackEl && (rackEl.id === "mainSideRack" || rackEl.id === "rightRack")) {
         if (panelIsSkinnyCapable(id)) return rackEl;
@@ -2520,7 +2764,8 @@ function initRackLayout() {
       const rightWorkspaceRack = ensureWorkspaceRightRack();
       const sideRack = ensureMainSideRack();
       const rightRack = ensureRightRack();
-      return [leftRack, rightWorkspaceRack, sideRack, rightRack].filter((x) => x instanceof HTMLElement);
+      const pluginWidgetsRack = ensurePluginRackWidgetsRack();
+      return [leftRack, rightWorkspaceRack, sideRack, rightRack, pluginWidgetsRack].filter((x) => x instanceof HTMLElement);
     };
 
     const rackAtPoint = (x, y) => {
@@ -2570,6 +2815,7 @@ function initRackLayout() {
           if (insertBefore) rack.insertBefore(panelEl, insertBefore);
           else rack.appendChild(panelEl);
         }
+        if (rack.id === "pluginRackWidgetsRack") panelEl.classList.add("pluginRackWidget");
         rememberPanelLastRack(id, rack.id);
         saveRackLayoutState();
         syncRackStateFromDom();
@@ -2687,6 +2933,14 @@ const PEOPLE_WIDTH_KEY = "bzl_peopleWidth";
 const PEOPLE_WIDTH_DEFAULT = 360;
 let editContext = null;
 let mentionState = { open: false, query: "", selected: 0, items: [], anchorRect: null };
+
+const STAY_CONNECTED_KEY = "bzl_stayConnected";
+function readStayConnectedPref() {
+  return readBoolPref(STAY_CONNECTED_KEY, false);
+}
+function writeStayConnectedPref(on) {
+  writeBoolPref(STAY_CONNECTED_KEY, Boolean(on));
+}
 
 let instanceBranding = { title: "Bzl", subtitle: "Ephemeral hives + chat", allowMemberPermanentPosts: false, appearance: {} };
 let serverInfo = null;
@@ -6372,6 +6626,26 @@ function openChat(postId) {
 
   // Rack mode: hive chats live in dedicated chat panels (instances). Don't also open the legacy main chat panel.
   if (rackLayoutEnabled) {
+    const mainChatPanelIsIdle = Boolean(
+      chatPanelEl &&
+        typeof isDocked === "function" &&
+        !isDocked("chat") &&
+        !activeDmThreadId &&
+        !activeChatPostId &&
+        !isMapChatActive()
+    );
+    if (mainChatPanelIsIdle) {
+      activeChatPostId = postId;
+      markRead(postId);
+      renderFeed();
+      ws.send(JSON.stringify({ type: "getChat", postId }));
+      renderChatPanel(true);
+      renderTypingIndicator();
+      if (isMobileSwipeMode()) setMobilePanel("chat");
+      chatEditor.focus();
+      return;
+    }
+
     markRead(postId);
     renderFeed();
     ws.send(JSON.stringify({ type: "getChat", postId }));
@@ -8280,18 +8554,100 @@ playSfx("open", { volume: 0.34 }).then((ok) => {
   if (ok) pendingOpenSfx = false;
 });
 
-setConn("connecting");
-const ws = new WebSocket(wsUrl());
-window.__bzlWs = ws;
-ws.addEventListener("open", () => {
-  setConn("open");
-  const token = getSessionToken();
-  if (token) ws.send(JSON.stringify({ type: "resumeSession", token }));
-});
-ws.addEventListener("close", () => setConn("closed"));
-ws.addEventListener("error", () => setConn("closed"));
+let ws = null;
+let wsKeepaliveTimer = null;
+let wsReconnectTimer = null;
+let wsReconnectAttempt = 0;
 
-ws.addEventListener("message", (evt) => {
+function clearWsKeepalive() {
+  if (!wsKeepaliveTimer) return;
+  try {
+    clearInterval(wsKeepaliveTimer);
+  } catch {
+    // ignore
+  }
+  wsKeepaliveTimer = null;
+}
+
+function clearWsReconnect() {
+  if (!wsReconnectTimer) return;
+  try {
+    clearTimeout(wsReconnectTimer);
+  } catch {
+    // ignore
+  }
+  wsReconnectTimer = null;
+}
+
+function startWsKeepalive(sock) {
+  clearWsKeepalive();
+  if (!readStayConnectedPref()) return;
+  wsKeepaliveTimer = setInterval(() => {
+    if (!sock || sock !== ws) return;
+    if (sock.readyState !== WebSocket.OPEN) return;
+    try {
+      sock.send(JSON.stringify({ type: "ping" }));
+    } catch {
+      // ignore
+    }
+  }, 25_000);
+}
+
+function scheduleWsReconnect() {
+  clearWsReconnect();
+  if (!readStayConnectedPref()) return;
+  const attempt = Math.min(6, Math.max(0, wsReconnectAttempt));
+  const base = 1000 * Math.pow(2, attempt);
+  const jitter = Math.floor(Math.random() * 250);
+  const delay = Math.min(15_000, base) + jitter;
+  wsReconnectAttempt += 1;
+  setConn("connecting");
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    connectWs();
+  }, delay);
+}
+
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  clearWsKeepalive();
+  setConn("connecting");
+  const sock = new WebSocket(wsUrl());
+  ws = sock;
+  window.__bzlWs = sock;
+
+  sock.addEventListener("open", () => {
+    if (sock !== ws) return;
+    setConn("open");
+    wsReconnectAttempt = 0;
+    clearWsReconnect();
+    startWsKeepalive(sock);
+    const token = getSessionToken();
+    if (token) {
+      try {
+        sock.send(JSON.stringify({ type: "resumeSession", token }));
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  sock.addEventListener("close", () => {
+    if (sock !== ws) return;
+    setConn("closed");
+    clearWsKeepalive();
+    scheduleWsReconnect();
+  });
+
+  sock.addEventListener("error", () => {
+    if (sock !== ws) return;
+    setConn("closed");
+  });
+
+  sock.addEventListener("message", onWsMessage);
+}
+
+function onWsMessage(evt) {
   let msg;
   try {
     msg = JSON.parse(evt.data);
@@ -9000,10 +9356,27 @@ ws.addEventListener("message", (evt) => {
     }
     renderChatInstancesForPost(msg.postId);
   }
-});
+}
+
+setConn("connecting");
+connectWs();
 
 renderLanHint();
 initDisplayPrefsUi();
+if (stayConnectedEl) {
+  stayConnectedEl.checked = readStayConnectedPref();
+  stayConnectedEl.addEventListener("change", () => {
+    const on = Boolean(stayConnectedEl.checked);
+    writeStayConnectedPref(on);
+    if (on) {
+      if (!ws || ws.readyState === WebSocket.CLOSED) connectWs();
+      startWsKeepalive(ws);
+    } else {
+      clearWsReconnect();
+      clearWsKeepalive();
+    }
+  });
+}
 renderPeoplePanel();
 setPeopleOpen(getPeopleOpen());
 composerOpen = getComposerOpen();
