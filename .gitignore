@@ -24,6 +24,7 @@ tmp_server_err.log
 tmp_server_*.log
 launcher-ui.crash.log
 Hives
+stream_pack/
 
 # Keep the data folder in git, but never commit runtime contents
 data/*

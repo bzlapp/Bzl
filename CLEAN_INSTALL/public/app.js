@@ -4163,12 +4163,17 @@ function sendDevLog(level, scope, message, data) {
 
 window.bzlDevLog = sendDevLog;
 
+// Plugin event handlers: pluginId -> eventName -> Set<fn(msg)>
+const pluginClientHandlers = new Map();
+// Moderation plugin tabs: fullTabId -> { title, ownerOnly, render(mount, api), pluginId }
+const modPluginTabs = new Map();
+
 // Minimal plugin host (client-side). Plugins are trusted by the owner who installs them.
 // Plugin scripts can call `window.BzlPluginHost.register("pluginId", (ctx) => { ... })`.
 if (!window.BzlPluginHost) {
   const pluginInits = new Map();
   window.BzlPluginHost = {
-    apiVersion: 2,
+    apiVersion: 3,
     register(pluginId, initFn) {
       const id = String(pluginId || "").trim().toLowerCase();
       if (!/^[a-z0-9][a-z0-9_.-]{0,31}$/.test(id)) throw new Error("Invalid plugin id");
@@ -4181,7 +4186,59 @@ if (!window.BzlPluginHost) {
           toast,
           getUser: () => loggedInUser,
           getRole: () => loggedInRole,
+          on(eventName, handler) {
+            const ev = String(eventName || "").trim();
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ev)) throw new Error("Invalid event name");
+            if (typeof handler !== "function") throw new Error("handler must be a function");
+            let byEvent = pluginClientHandlers.get(id);
+            if (!byEvent) {
+              byEvent = new Map();
+              pluginClientHandlers.set(id, byEvent);
+            }
+            let set = byEvent.get(ev);
+            if (!set) {
+              set = new Set();
+              byEvent.set(ev, set);
+            }
+            set.add(handler);
+            return () => {
+              try {
+                set.delete(handler);
+              } catch {
+                // ignore
+              }
+            };
+          },
           ui: {
+            registerModTab(tabDef) {
+              const tabId = String(tabDef?.id || id).trim().toLowerCase();
+              if (!/^[a-z0-9][a-z0-9_.-]{0,31}$/.test(tabId)) throw new Error("Invalid tab id");
+              const title = typeof tabDef?.title === "string" ? tabDef.title.trim().slice(0, 22) : tabId;
+              const ownerOnly = Boolean(tabDef?.ownerOnly);
+              const render = tabDef?.render;
+              if (typeof render !== "function") throw new Error("render must be a function");
+
+              const fullId = `plugin:${id}:${tabId}`;
+              modPluginTabs.set(fullId, { title, ownerOnly, render, pluginId: id });
+
+              const tabsEl = modPanelEl?.querySelector?.(".modTabs");
+              if (tabsEl && !tabsEl.querySelector(`[data-modtab="${CSS.escape(fullId)}"]`)) {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "ghost";
+                btn.textContent = title;
+                btn.setAttribute("data-modtab", fullId);
+                btn.dataset.ownerOnly = ownerOnly ? "1" : "0";
+                tabsEl.appendChild(btn);
+              }
+
+              // If the tab isn't visible for this user, don't allow it to become active.
+              if (ownerOnly && loggedInRole !== "owner" && modTab === fullId) {
+                modTab = "server";
+                renderModPanel();
+              }
+              return true;
+            },
             registerPanel(panelDef) {
               const panelId = String(panelDef?.id || id).trim().toLowerCase();
               if (!/^[a-z0-9][a-z0-9_.-]{0,31}$/.test(panelId)) throw new Error("Invalid panel id");
@@ -5546,6 +5603,49 @@ function renderModPanel() {
     const on = btn.getAttribute("data-modtab") === modTab;
     btn.classList.toggle("primary", on);
     btn.classList.toggle("ghost", !on);
+    // Owner-only plugin tabs should not show for non-owners.
+    const ownerOnly = btn.dataset.ownerOnly === "1";
+    btn.classList.toggle("hidden", Boolean(ownerOnly && loggedInRole !== "owner"));
+  }
+
+  // Plugin-provided moderation tabs (render into modBody).
+  if (modPluginTabs.has(modTab)) {
+    const def = modPluginTabs.get(modTab);
+    if (def?.ownerOnly && loggedInRole !== "owner") {
+      modTab = "server";
+      renderModPanel();
+      return;
+    }
+    modBodyEl.innerHTML = `
+      <div class="modCard">
+        <div class="modRowTop"><div><b>${escapeHtml(def?.title || "Plugin")}</b></div></div>
+        <div id="modPluginMount" class="modActions"></div>
+      </div>
+    `;
+    const mount = modBodyEl.querySelector("#modPluginMount");
+    if (mount) {
+      const api = {
+        toast,
+        send: (eventName, payload) => {
+          const ev = String(eventName || "").trim();
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ev)) return false;
+          const wsRef = window.__bzlWs;
+          if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return false;
+          const msg = payload && typeof payload === "object" ? payload : {};
+          wsRef.send(JSON.stringify({ ...msg, type: `plugin:${def.pluginId}:${ev}` }));
+          return true;
+        },
+        getUser: () => loggedInUser,
+        getRole: () => loggedInRole,
+      };
+      try {
+        def.render(mount, api);
+      } catch (e) {
+        mount.textContent = "Failed to render plugin tab.";
+        console.warn(`Plugin tab render failed (${modTab}):`, e?.message || e);
+      }
+    }
+    return;
   }
 
   if (modTab === "server") {
@@ -8696,6 +8796,28 @@ function onWsMessage(evt) {
     renderPeoplePanel();
     renderCenterPanels();
     return;
+  }
+
+  // Generic plugin event dispatch: `plugin:<pluginId>:<eventName>`
+  // (Maps has some core-handled messages below; for other plugins, dispatch + stop.)
+  if (typeof msg.type === "string") {
+    const m = msg.type.match(/^plugin:([a-z0-9][a-z0-9_.-]{0,31}):([a-zA-Z0-9][a-zA-Z0-9_.-]{0,63})$/);
+    if (m) {
+      const pluginId = String(m[1] || "").toLowerCase();
+      const ev = String(m[2] || "");
+      const byEvent = pluginClientHandlers.get(pluginId);
+      const set = byEvent ? byEvent.get(ev) : null;
+      if (set && set.size) {
+        for (const fn of Array.from(set)) {
+          try {
+            fn(msg);
+          } catch (e) {
+            console.warn(`Plugin handler failed (${pluginId}:${ev}):`, e?.message || e);
+          }
+        }
+      }
+      if (pluginId !== "maps") return;
+    }
   }
 
   if (msg.type === "plugin:maps:joinOk") {

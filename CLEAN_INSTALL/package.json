@@ -17,7 +17,11 @@
     "backup-data": "node scripts/backup-data.js",
     "restore-data": "node scripts/restore-data.js",
     "build:plugin:directory-server": "node scripts/build-directory-server-plugin.js",
-    "build:plugin:directory-publisher": "node scripts/build-directory-publisher-plugin.js"
+    "build:plugin:directory-publisher": "node scripts/build-directory-publisher-plugin.js",
+    "stream:init": "node scripts/stream-pack-init.js",
+    "stream:up": "node scripts/stream-pack-up.js",
+    "stream:down": "node scripts/stream-pack-down.js",
+    "stream:status": "node scripts/stream-pack-status.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

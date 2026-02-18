@@ -381,3 +381,9 @@ When the rack layout exists:
 - Should panel layout persist per-device or per-user (server-side)?
 - How do we expose keyboard shortcuts for focusing panels?
 - What is the best “default” panel set for first-time users?
+
+## Mobile (separate model)
+
+Rack layout is desktop-first. On mobile, we should treat panels as **screens + tools** (single active surface with a bottom nav + “More” sheet), while keeping the same panel registration model underneath.
+
+See `docs/MOBILE_UX.md`.

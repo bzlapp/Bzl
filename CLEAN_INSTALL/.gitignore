@@ -10,3 +10,4 @@ data/reports.json
 data/sessions.json
 data/uploads/
 .env
+stream_pack/

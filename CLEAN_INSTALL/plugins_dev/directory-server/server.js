@@ -65,9 +65,22 @@ function sanitizePublicHives(payload) {
 }
 
 module.exports = function init(api) {
-  const config = readJson(CONFIG_PATH, { token: "" });
+  const config = readJson(CONFIG_PATH, { token: "", hiddenIds: [], blockedHosts: [] });
   const state = readJson(STATE_PATH, { version: 1, entries: {} });
   const entries = new Map(Object.entries(state.entries || {}));
+
+  const normalizeId = (s) => String(s || "").trim().toLowerCase();
+  const normalizeHost = (rawUrl) => {
+    try {
+      const u = new URL(String(rawUrl || ""));
+      return String(u.hostname || "").trim().toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+
+  config.hiddenIds = Array.isArray(config.hiddenIds) ? config.hiddenIds.map(normalizeId).filter(Boolean) : [];
+  config.blockedHosts = Array.isArray(config.blockedHosts) ? config.blockedHosts.map((h) => String(h || "").trim().toLowerCase()).filter(Boolean) : [];
 
   const persist = () => {
     const out = { version: 1, entries: Object.fromEntries(entries) };
@@ -76,7 +89,13 @@ module.exports = function init(api) {
 
   api.registerWs("getConfig", (ws) => {
     if (ws?.user?.role !== "owner") return;
-    api.sendToUsers([ws.user.username], { type: "plugin:directory-server:config", tokenSet: Boolean(config.token) });
+    api.sendToUsers([ws.user.username], {
+      type: "plugin:directory-server:config",
+      tokenSet: Boolean(config.token),
+      hiddenIds: config.hiddenIds.slice(0, 500),
+      blockedHosts: config.blockedHosts.slice(0, 500),
+      entryCount: entries.size
+    });
   });
 
   api.registerWs("setToken", (ws, msg) => {
@@ -87,9 +106,70 @@ module.exports = function init(api) {
     api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
   });
 
+  api.registerWs("getEntries", (ws) => {
+    if (ws?.user?.role !== "owner") return;
+    const list = Array.from(entries.values())
+      .map((e) => {
+        const host = normalizeHost(e?.instance?.url);
+        const id = normalizeId(e?.instance?.id);
+        return {
+          ...e,
+          host,
+          hidden: Boolean(id && config.hiddenIds.includes(id)),
+          blocked: Boolean(host && config.blockedHosts.includes(host))
+        };
+      })
+      .sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
+    api.sendToUsers([ws.user.username], { type: "plugin:directory-server:entries", entries: list });
+  });
+
+  api.registerWs("setHidden", (ws, msg) => {
+    if (ws?.user?.role !== "owner") return;
+    const id = normalizeId(msg?.id);
+    const hidden = Boolean(msg?.hidden);
+    if (!id) return;
+    const set = new Set(config.hiddenIds);
+    if (hidden) set.add(id);
+    else set.delete(id);
+    config.hiddenIds = Array.from(set.values()).sort();
+    writeJson(CONFIG_PATH, config);
+    api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
+  });
+
+  api.registerWs("setBlockedHost", (ws, msg) => {
+    if (ws?.user?.role !== "owner") return;
+    const host = String(msg?.host || "").trim().toLowerCase();
+    const blocked = Boolean(msg?.blocked);
+    if (!host) return;
+    const set = new Set(config.blockedHosts);
+    if (blocked) set.add(host);
+    else set.delete(host);
+    config.blockedHosts = Array.from(set.values()).sort();
+    writeJson(CONFIG_PATH, config);
+    api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
+  });
+
+  api.registerWs("deleteEntry", (ws, msg) => {
+    if (ws?.user?.role !== "owner") return;
+    const id = normalizeId(msg?.id);
+    if (!id) return;
+    entries.delete(id);
+    persist();
+    api.broadcast({ type: "plugin:directory-server:updated", id, deleted: true });
+  });
+
   api.registerHttp("GET", "/list", (_req, res, ctx) => {
+    const hidden = new Set(config.hiddenIds);
+    const blocked = new Set(config.blockedHosts);
     const list = Array.from(entries.values())
       .map((e) => e)
+      .filter((e) => {
+        const id = normalizeId(e?.instance?.id);
+        if (id && hidden.has(id)) return false;
+        const host = normalizeHost(e?.instance?.url);
+        if (host && blocked.has(host)) return false;
+        return true;
+      })
       .sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
     ctx.sendJson(200, { ok: true, entries: list });
     res.end();
@@ -120,4 +200,3 @@ module.exports = function init(api) {
 
   api.log("info", "directory-server loaded", { http: ["/announce", "/list"] });
 };
-

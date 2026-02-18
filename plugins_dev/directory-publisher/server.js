@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 const https = require("https");
 
 const CONFIG_PATH = path.join(__dirname, "config.json");
@@ -39,12 +40,14 @@ function postJson(targetUrl, token, payload) {
       return;
     }
 
+    const transport = u.protocol === "http:" ? http : https;
+    const port = u.port ? Number(u.port) : u.protocol === "http:" ? 80 : 443;
     const body = Buffer.from(JSON.stringify(payload), "utf8");
-    const req = https.request(
+    const req = transport.request(
       {
         method: "POST",
         hostname: u.hostname,
-        port: u.port || 443,
+        port,
         path: u.pathname + u.search,
         headers: {
           "Content-Type": "application/json",
@@ -105,4 +108,3 @@ module.exports = function init(api) {
 
   api.log("info", "directory-publisher loaded");
 };
-

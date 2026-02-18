@@ -18,7 +18,12 @@
     "restore-data": "node scripts/restore-data.js",
     "build:clean-install-zip": "node scripts/build-clean-install-zip.js",
     "build:plugin:directory-server": "node scripts/build-directory-server-plugin.js",
-    "build:plugin:directory-publisher": "node scripts/build-directory-publisher-plugin.js"
+    "build:plugin:directory-publisher": "node scripts/build-directory-publisher-plugin.js",
+    "stream:init": "node scripts/stream-pack-init.js",
+    "stream:detect-ip": "node scripts/stream-pack-detect-ip.js",
+    "stream:up": "node scripts/stream-pack-up.js",
+    "stream:down": "node scripts/stream-pack-down.js",
+    "stream:status": "node scripts/stream-pack-status.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
