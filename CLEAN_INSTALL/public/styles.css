@@ -969,6 +969,18 @@ body {
   grid-template-areas: "chat chatResize main mainResize moderation";
 }
 
+.app.rackMode.sidebarHidden,
+.app.rackMode.hasMod.sidebarHidden {
+  grid-template-columns: 1fr 10px minmax(var(--people-min), var(--people-width));
+  grid-template-areas: "main mainResize rightRack";
+}
+
+.app.rackMode.sidebarHidden.rightCollapsed,
+.app.rackMode.hasMod.sidebarHidden.rightCollapsed {
+  grid-template-columns: 1fr;
+  grid-template-areas: "main";
+}
+
 .peopleDrawer {
   position: fixed;
   top: 12px;
