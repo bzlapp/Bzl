@@ -259,6 +259,7 @@ let dmThreadsById = new Map();
 /** @type {Map<string, any[]>} */
 const dmMessagesByThreadId = new Map();
 let activeDmThreadId = null;
+let pendingOpenDmThreadId = "";
 let walkieRecording = false;
 let walkieStartAt = 0;
 let walkieRecorder = null;
@@ -3263,6 +3264,12 @@ function dmActivityAt(thread) {
 function setDmThreads(list) {
   dmThreads = Array.isArray(list) ? list.map(normalizeDmThread).filter(Boolean) : [];
   dmThreadsById = new Map(dmThreads.map((t) => [t.id, t]));
+  if (pendingOpenDmThreadId) {
+    const pending = dmThreadsById.get(pendingOpenDmThreadId) || null;
+    if (pending && String(pending.status || "") === "active") {
+      openDmThread(pending.id);
+    }
+  }
   if (activeDmThreadId && !dmThreadsById.has(activeDmThreadId)) {
     activeDmThreadId = null;
   }
@@ -7145,17 +7152,29 @@ function openDmThread(threadId) {
   if (!id) return;
   const thread = dmThreadsById.get(id) || null;
   if (!thread) {
-    toast("DMs", "Thread not found.");
+    pendingOpenDmThreadId = id;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "dmList" }));
+    toast("DMs", "Thread not found yet. Refreshing DM list.");
     return;
   }
+  if (String(thread.status || "") !== "active") {
+    pendingOpenDmThreadId = id;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "dmList" }));
+    toast("DMs", "DM is not active yet.");
+    return;
+  }
+  pendingOpenDmThreadId = "";
   if (activeChatPostId) ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
   activeChatPostId = null;
   activeDmThreadId = id;
   setReplyToMessage(null);
   ws.send(JSON.stringify({ type: "dmHistory", threadId: id }));
   renderChatPanel(true);
-  if (isMobileSwipeMode()) setMobilePanel("chat");
-  chatEditor.focus();
+  if (isMobileSwipeMode()) {
+    setMobileScreen("chat");
+    renderMobileNav();
+  }
+  chatEditor?.focus();
 }
 
 function openChat(postId) {
@@ -8353,7 +8372,10 @@ chatMessagesEl.addEventListener("click", (e) => {
   const dmAcceptBtn = e.target.closest("button[data-dmaccept]");
   if (dmAcceptBtn) {
     const threadId = dmAcceptBtn.getAttribute("data-dmaccept") || "";
-    if (threadId) ws.send(JSON.stringify({ type: "dmRequestRespond", threadId, accept: true }));
+    if (threadId) {
+      pendingOpenDmThreadId = threadId;
+      ws.send(JSON.stringify({ type: "dmRequestRespond", threadId, accept: true }));
+    }
     return;
   }
   const dmDeclineBtn = e.target.closest("button[data-dmdecline]");
@@ -9282,6 +9304,7 @@ function onWsMessage(evt) {
     dmThreadsById = new Map();
     dmMessagesByThreadId.clear();
     activeDmThreadId = null;
+    pendingOpenDmThreadId = "";
     lanUrls = [];
     modReports = [];
     modUsers = [];
@@ -9604,6 +9627,7 @@ function onWsMessage(evt) {
     dmThreadsById = new Map();
     dmMessagesByThreadId.clear();
     activeDmThreadId = null;
+    pendingOpenDmThreadId = "";
     stopWalkieRecording();
     lanUrls = [];
     modReports = [];
@@ -9643,6 +9667,7 @@ function onWsMessage(evt) {
     dmThreadsById = new Map();
     dmMessagesByThreadId.clear();
     activeDmThreadId = null;
+    pendingOpenDmThreadId = "";
     return;
   }
 
@@ -9664,7 +9689,12 @@ function onWsMessage(evt) {
   }
 
   if (msg.type === "dmThreadOk" && msg.thread) {
-    upsertDmThread(msg.thread);
+    const t = normalizeDmThread(msg.thread);
+    if (!t) return;
+    upsertDmThread(t);
+    if (pendingOpenDmThreadId && pendingOpenDmThreadId === t.id && String(t.status || "") === "active") {
+      openDmThread(t.id);
+    }
     return;
   }
 
@@ -9675,6 +9705,9 @@ function onWsMessage(evt) {
     const mine = me ? [a, b].find((t) => t && String(t.other || "").toLowerCase() !== me) : a || b;
     if (mine) {
       upsertDmThread(mine);
+      if (pendingOpenDmThreadId && pendingOpenDmThreadId === mine.id && String(mine.status || "") === "active") {
+        openDmThread(mine.id);
+      }
       if (activeDmThreadId && mine.id === activeDmThreadId) {
         const current = dmMessagesByThreadId.get(activeDmThreadId) || null;
         if (!current || current.length === 0) ws.send(JSON.stringify({ type: "dmHistory", threadId: activeDmThreadId }));
@@ -10181,6 +10214,7 @@ peopleDmsViewEl?.addEventListener("click", (e) => {
   if (acceptBtn) {
     const threadId = acceptBtn.getAttribute("data-dmaccept") || "";
     if (!threadId) return;
+    pendingOpenDmThreadId = threadId;
     ws.send(JSON.stringify({ type: "dmRequestRespond", threadId, accept: true }));
     return;
   }
