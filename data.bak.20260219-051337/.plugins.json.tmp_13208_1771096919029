@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "maps",
+      "enabled": true
+    }
+  ]
+}

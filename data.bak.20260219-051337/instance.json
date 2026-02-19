@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "title": "Temple of the Unfolding",
+  "subtitle": "Iihn Aash Zulok",
+  "allowMemberPermanentPosts": true,
+  "appearance": {
+    "bg": "#060611",
+    "panel": "#0c0c18",
+    "text": "#f6f0ff",
+    "accent": "#ff3ea5",
+    "accent2": "#b84bff",
+    "good": "#3ddc97",
+    "bad": "#ff4d8a",
+    "fontBody": "system",
+    "fontMono": "mono",
+    "mutedPct": 65,
+    "linePct": 10,
+    "panel2Pct": 2
+  }
+}

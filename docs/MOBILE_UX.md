@@ -115,6 +115,11 @@ Mobile containers should:
 - Avoid fixed widths; rely on `%`, `clamp()`, and container constraints
 - Prefer vertical stacking and bottom sheets
 
+### Implementation notes (current)
+
+- Mobile screen mode currently activates on **narrow viewports** (`max-width: 760px`) and on **touch-first devices** (coarse pointer) up to a wider threshold (including landscape phones).
+- Bottom navigation is a fixed bar that is constrained to the viewport width; buttons flex and will ellipsize labels on very small screens.
+
 ## State model (MVP)
 
 Persist as JSON in `localStorage` (per user/device) under something like `bzl_mobile_layout_v1`:
@@ -215,4 +220,3 @@ Acceptance:
 - Should plugin widgets be allowed as pinned screens, or restricted to tools by default?
 - Do we want a “focus mode” (hide nav bar while scrolling, reveal on tap)?
 - How do we handle Maps + associated chat (global/local) on small screens (tab within chat vs inline on map)?
-

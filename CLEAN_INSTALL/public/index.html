@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=104" />
+    <link rel="stylesheet" href="/styles.css?v=118" />
   </head>
   <body>
       <div class="app">
@@ -26,7 +26,7 @@
           <div id="notifStatus" class="small muted"></div>
         </div>
 
-        <section class="panel">
+        <section id="viewPanel" class="panel">
           <div class="panelTitle">View</div>
           <label class="checkRow" style="margin-top:8px;">
             <span>Rack layout (experimental)</span>
@@ -90,7 +90,7 @@
           </details>
         </section>
 
-        <section class="panel">
+        <section id="accountPanel" class="panel">
           <div class="panelTitle">Account</div>
           <div class="small muted" id="authHint">Sign in to post, chat, and boost.</div>
 
@@ -121,7 +121,7 @@
           </form>
         </section>
 
-        <section class="panel">
+        <section id="profilePanel" class="panel">
           <div class="panelTitle">Profile</div>
           <div class="small muted">Set how your name appears.</div>
           <label>
@@ -175,6 +175,8 @@
                 <option value="popular">Most popular</option>
                 <option value="expiring">About to expire</option>
               </select>
+              <button id="mobileHiveSearch" class="ghost smallBtn mobileOnlyHiveControl" type="button" title="Search hives">🔎</button>
+              <button id="mobileSortCycle" class="ghost smallBtn mobileOnlyHiveControl" type="button" title="Cycle sort">Recent</button>
               <button id="clearFilter" type="button">Clear</button>
               <button id="toggleComposer" class="mobileComposerToggle" type="button">New Hive</button>
             </div>
@@ -322,6 +324,9 @@
             <div class="panelTitle" id="chatTitle">Chat</div>
             <div id="chatMeta" class="small muted">Select a post to chat.</div>
           </div>
+          <div class="row chatHeaderActions">
+            <button id="chatBackToList" class="ghost smallBtn hidden" type="button">Back</button>
+          </div>
         </div>
         <div id="chatMessages" class="chatMessages"></div>
         <div id="typingIndicator" class="typingIndicator small muted"></div>
@@ -392,6 +397,8 @@
         </div>
         <div id="modBody" class="modBody small"></div>
       </aside>
+
+      <div id="mobileScreenHost" class="mobileScreenHost" aria-label="Mobile screen host"></div>
     </div>
     <aside id="peopleDrawer" class="peopleDrawer hidden">
       <div id="peopleResizeHandle" class="peopleResizeHandle" title="Drag to resize people panel" aria-hidden="true"></div>
@@ -413,12 +420,29 @@
         DMs coming soon.
       </div>
     </aside>
-    <div id="mobilePager" class="mobilePager hidden" aria-label="Mobile panels">
-      <button type="button" data-mobilepanel="sidebar">Account</button>
-      <button type="button" data-mobilepanel="main">Hives</button>
-      <button type="button" data-mobilepanel="chat">Chat</button>
-      <button type="button" data-mobilepanel="people">People</button>
-      <button id="mobileModBtn" class="hidden" type="button" data-mobilepanel="moderation">Mod</button>
+    <div id="mobileNav" class="mobileNav hidden" aria-label="Mobile navigation">
+      <button type="button" data-mobilescreen="account">Account</button>
+      <button type="button" data-mobilescreen="hives">Hives</button>
+      <button type="button" data-mobilescreen="chat">Chat</button>
+      <button id="mobileFourthBtn" type="button" data-mobilescreen="people">People</button>
+      <button type="button" data-mobilescreen="profile">Profile</button>
+      <button type="button" data-mobilescreen="more">More</button>
+    </div>
+
+    <div id="mobileMoreSheet" class="mobileMoreSheet hidden" role="dialog" aria-modal="true" aria-label="More">
+      <div class="mobileMoreBackdrop" data-mobilemoreclose="1"></div>
+      <div class="mobileMoreCard panel">
+        <div class="panelHeader">
+          <div class="panelTitle">More</div>
+          <div class="row">
+            <button id="mobileMoreClose" class="ghost smallBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div class="mobileMoreBody">
+          <input id="mobileMoreSearch" placeholder="Search…" />
+          <div id="mobileMoreList" class="mobileMoreList"></div>
+        </div>
+      </div>
     </div>
 
     <div id="editModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Edit content">
@@ -534,6 +558,6 @@
     </div>
 
     <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
-    <script src="/app.js?v=121"></script>
+    <script src="/app.js?v=133"></script>
   </body>
 </html>

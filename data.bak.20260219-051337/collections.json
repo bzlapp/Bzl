@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "collections": [
+    {
+      "id": "general",
+      "name": "General",
+      "slug": "general",
+      "description": "",
+      "createdBy": "system",
+      "createdAt": 1770962715037,
+      "order": 0,
+      "visibility": "public",
+      "allowedRoles": [],
+      "archived": false
+    },
+    {
+      "id": "8425a482-6efe-47c5-9afc-c6ec7a1e4bda",
+      "name": "music",
+      "slug": "music",
+      "description": "",
+      "createdBy": "azakaela",
+      "createdAt": 1770944001241,
+      "order": 1,
+      "visibility": "public",
+      "allowedRoles": [],
+      "archived": true
+    },
+    {
+      "id": "ea98ea71-1ad5-4280-a531-d3563f4579a3",
+      "name": "zomboid",
+      "slug": "zomboid",
+      "description": "",
+      "createdBy": "azakaela",
+      "createdAt": 1770963222513,
+      "order": 2,
+      "visibility": "gated",
+      "allowedRoles": [
+        "moderator"
+      ],
+      "archived": true
+    },
+    {
+      "id": "f6f40eb9-deb2-4e8f-a724-ac06e015347b",
+      "name": "RULES",
+      "slug": "rules",
+      "description": "",
+      "createdBy": "azakaela",
+      "createdAt": 1771107891479,
+      "order": 3,
+      "visibility": "public",
+      "allowedRoles": [],
+      "archived": true
+    },
+    {
+      "id": "a946af97-c5be-4ab4-927a-799da9796a04",
+      "name": "Books",
+      "slug": "books",
+      "description": "",
+      "createdBy": "brookemmmz",
+      "createdAt": 1771113548304,
+      "order": 4,
+      "visibility": "public",
+      "allowedRoles": [],
+      "archived": true
+    }
+  ]
+}

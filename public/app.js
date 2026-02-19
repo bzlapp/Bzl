@@ -15,8 +15,13 @@ const peopleMembersViewEl = document.getElementById("peopleMembersView");
 const peopleDmsViewEl = document.getElementById("peopleDmsView");
 const peopleSearchEl = document.getElementById("peopleSearch");
 const peopleListEl = document.getElementById("peopleList");
-const mobilePagerEl = document.getElementById("mobilePager");
-const mobileModBtn = document.getElementById("mobileModBtn");
+const mobileNavEl = document.getElementById("mobileNav");
+const mobileFourthBtn = document.getElementById("mobileFourthBtn");
+const mobileMoreSheetEl = document.getElementById("mobileMoreSheet");
+const mobileMoreCloseBtn = document.getElementById("mobileMoreClose");
+const mobileMoreSearchEl = document.getElementById("mobileMoreSearch");
+const mobileMoreListEl = document.getElementById("mobileMoreList");
+const mobileScreenHostEl = document.getElementById("mobileScreenHost");
 const enableNotifsBtn = document.getElementById("enableNotifs");
 const notifStatus = document.getElementById("notifStatus");
 const toggleReactionsEl = document.getElementById("toggleReactions");
@@ -92,6 +97,8 @@ const postPasswordEl = document.getElementById("postPassword");
 const filterKeywordsEl = document.getElementById("filterKeywords");
 const filterAuthorEl = document.getElementById("filterAuthor");
 const sortByEl = document.getElementById("sortBy");
+const mobileHiveSearchBtn = document.getElementById("mobileHiveSearch");
+const mobileSortCycleBtn = document.getElementById("mobileSortCycle");
 const clearFilterBtn = document.getElementById("clearFilter");
 const feedEl = document.getElementById("feed");
 const hiveTabsEl = document.getElementById("hiveTabs");
@@ -119,6 +126,7 @@ const profileCancelBtn = document.getElementById("profileCancelBtn");
 
 const chatTitle = document.getElementById("chatTitle");
 const chatMeta = document.getElementById("chatMeta");
+const chatBackToListBtn = document.getElementById("chatBackToList");
 const chatMessagesEl = document.getElementById("chatMessages");
 const typingIndicator = document.getElementById("typingIndicator");
 const chatForm = document.getElementById("chatForm");
@@ -215,7 +223,13 @@ let modLogView = localStorage.getItem("bzl_modLogView") || "dev"; // "dev" | "mo
 let devLogAutoScroll = localStorage.getItem("bzl_devLogAutoScroll") !== "0";
 let modModalContext = null;
 let lanUrls = [];
-let mobilePanel = "workspace";
+const MOBILE_LAYOUT_KEY = "bzl_mobile_layout_v1";
+let mobilePanel = "hives"; // Back-compat: used by older call sites (maps to mobile "screen" now).
+let mobileMoreOpen = false;
+let mobileHostPanelId = "";
+const mobileHostRestoreParentByPanelId = new Map();
+const mobileHostedPanelIds = new Set();
+const mobileHostEphemeralPanelIds = new Set();
 let composerOpen = false;
 let touchStartX = 0;
 let touchStartY = 0;
@@ -4089,136 +4103,434 @@ function openUserProfile(username) {
   activeProfile = normalizeProfileData({ username: normalized, image: basic.image || "", color: basic.color || "" });
   setCenterView("profile", normalized);
   ws.send(JSON.stringify({ type: "getUserProfile", username: normalized }));
-  if (isMobileSwipeMode()) setMobilePanel("main");
+  if (isMobileSwipeMode()) setMobileScreen("profile");
 }
 
 function isMobileSwipeMode() {
-  return window.matchMedia("(max-width: 760px)").matches;
+  // Mobile UX should kick in for touch-first devices, including landscape phones.
+  // (Many phones exceed 760px in landscape, so max-width alone is not sufficient.)
+  const mqNarrow = "(max-width: 760px)";
+  const mqPortrait = "(hover: none) and (pointer: coarse) and (max-width: 900px)";
+  const mqLandscape = "(hover: none) and (pointer: coarse) and (max-height: 520px)";
+  return window.matchMedia(mqNarrow).matches || window.matchMedia(mqPortrait).matches || window.matchMedia(mqLandscape).matches;
 }
 
-function normalizeMobileRackPanel(next) {
+function isMobileScreenMode() {
+  // Keep this consistent with CSS mobile screen media queries.
+  const mqNarrow = "(max-width: 760px)";
+  const mqPortrait = "(hover: none) and (pointer: coarse) and (max-width: 900px)";
+  const mqLandscape = "(hover: none) and (pointer: coarse) and (max-height: 520px)";
+  return window.matchMedia(mqNarrow).matches || window.matchMedia(mqPortrait).matches || window.matchMedia(mqLandscape).matches;
+}
+
+function loadMobileLayout() {
+  const defaults = () => {
+    const pinned = ["account", "hives", "chat", "people", "profile"];
+    return { version: 1, pinned, active: pinned[0] || "account", history: [], tools: { composerOpen: false, profileOpen: false, pluginRackOpen: false } };
+  };
+  const sanitizeId = (id) => {
+    const raw = String(id || "")
+      .trim()
+      .toLowerCase();
+    if (!raw) return "";
+    if (raw === "maps" || raw === "library") return "";
+    if (raw === "mod") return canModerate ? "moderation" : "";
+    if (raw === "sidebar") return "account";
+    if (raw === "main" || raw === "workspace") return "hives";
+    if (raw === "account" || raw === "hives" || raw === "chat" || raw === "people" || raw === "profile") return raw;
+    if (raw === "moderation") return canModerate ? "moderation" : "";
+    if (panelRegistry.has(raw)) return raw;
+    return "";
+  };
+  try {
+    const raw = localStorage.getItem(MOBILE_LAYOUT_KEY);
+    if (!raw) return defaults();
+    const parsed = JSON.parse(raw);
+    const pinned = Array.isArray(parsed?.pinned) ? parsed.pinned.map((x) => sanitizeId(x)).filter(Boolean) : null;
+    const active = sanitizeId(parsed?.active);
+    const history = Array.isArray(parsed?.history) ? parsed.history.map((x) => sanitizeId(x)).filter(Boolean) : [];
+    const base = defaults();
+    if (pinned && pinned.length) base.pinned = pinned.slice(0, 5);
+    if (active) base.active = active;
+    base.history = history.slice(0, 12);
+    return base;
+  } catch {
+    return defaults();
+  }
+}
+
+function saveMobileLayout(layout) {
+  try {
+    localStorage.setItem(MOBILE_LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    // ignore
+  }
+}
+
+function availableMobileScreens() {
+  const out = [];
+  out.push({ id: "account", title: "Account", core: true });
+  out.push({ id: "hives", title: "Hives", core: true });
+  out.push({ id: "chat", title: "Chat", core: true });
+  out.push({ id: "people", title: "People", core: true });
+  out.push({ id: "profile", title: "Profile", core: true });
+  if (canModerate) out.push({ id: "moderation", title: "Moderation", core: true });
+
+  // Plugin screens: include primary-ish panels that exist.
+  for (const [id, entry] of panelRegistry.entries()) {
+    if (!id || typeof id !== "string") continue;
+    if (id === "maps" || id === "library") continue;
+    if (id === "hives" || id === "chat" || id === "people" || id === "moderation" || id === "profile" || id === "composer" || id === "pluginRack") continue;
+    const role = typeof entry?.role === "string" ? entry.role : "";
+    if (role && role !== "primary") continue;
+    const hasElement = entry?.element instanceof HTMLElement;
+    const canRender = typeof pluginPanelDefsByPanelId.get(id)?.render === "function";
+    if (!hasElement && !canRender) continue;
+    out.push({ id, title: panelTitle(id), core: false });
+  }
+
+  // Prefer stable ordering.
+  const byTitle = (a, b) => String(a.title || "").localeCompare(String(b.title || ""));
+  const core = out.filter((x) => x.core).sort(byTitle);
+  const plugins = out.filter((x) => !x.core).sort(byTitle);
+  return { core, plugins };
+}
+
+function mobileScreenFromLegacyPanel(next) {
   const raw = String(next || "").trim();
-  if (!raw) return "workspace";
-  // Back-compat: older values / callers.
+  if (!raw) return "hives";
+  if (raw === "maps" || raw === "library") return "hives";
   if (raw === "sidebar") return "account";
-  if (raw === "main") return "workspace";
-  if (raw === "chat") return "workspace";
-  if (raw === "people") return "right";
-  if (raw === "moderation") return canModerate ? "mod" : "right";
-
-  if (raw === "account" || raw === "workspace" || raw === "side" || raw === "right" || raw === "hotbar" || raw === "mod") {
-    if (raw === "mod" && !canModerate) return "right";
-    return raw;
-  }
-  return "workspace";
+  if (raw === "main" || raw === "workspace") return "hives";
+  if (raw === "chat") return "chat";
+  if (raw === "people") return "people";
+  if (raw === "profile") return "profile";
+  if (raw === "moderation" || raw === "mod") return canModerate ? "moderation" : "hives";
+  if (raw === "hives" || raw === "account" || raw === "people" || raw === "profile" || raw === "moderation") return raw;
+  // Plugin panel id can be treated as a screen.
+  if (panelRegistry.has(raw)) return raw;
+  return "hives";
 }
 
-function focusModerationInRightRack() {
-  if (!rackLayoutEnabled) return;
-  if (!canModerate) return;
-  const rightRack = ensureRightRack();
-  const panelEl = getPanelElement("moderation");
-  if (!rightRack || !panelEl) return;
-
-  // Make sure it's not docked.
-  if (isDocked("moderation")) undockPanel("moderation");
-
-  const existing = rightRack.querySelector?.(":scope > .rackPanel:not(.hidden)");
-  if (existing instanceof HTMLElement && existing !== panelEl) {
-    const existingId = String(existing.dataset.panelId || "").trim();
-    if (existingId) dockPanel(existingId);
+function setMobileMoreOpen(open) {
+  mobileMoreOpen = Boolean(open);
+  if (mobileMoreSheetEl) mobileMoreSheetEl.classList.toggle("hidden", !mobileMoreOpen);
+  if (mobileNavEl) {
+    const moreBtn = mobileNavEl.querySelector?.('[data-mobilescreen="more"]');
+    if (moreBtn instanceof HTMLElement) {
+      moreBtn.classList.toggle("primary", mobileMoreOpen);
+      moreBtn.classList.toggle("ghost", !mobileMoreOpen);
+    }
   }
-  rightRack.appendChild(panelEl);
-  rememberPanelLastRack("moderation", "rightRack");
-  saveRackLayoutState();
-  syncRackStateFromDom();
+}
+
+function restoreHostedPanelIfAny() {
+  const ids = Array.from(mobileHostedPanelIds);
+  if (mobileHostPanelId && !ids.includes(mobileHostPanelId)) ids.push(mobileHostPanelId);
+  if (!ids.length) return;
+  mobileHostedPanelIds.clear();
+  mobileHostPanelId = "";
+  for (const id of ids) {
+    const el = getPanelElement(id);
+    const parent = mobileHostRestoreParentByPanelId.get(id) || null;
+    mobileHostRestoreParentByPanelId.delete(id);
+    if (!(el instanceof HTMLElement)) continue;
+    if (!parent && mobileHostEphemeralPanelIds.has(id)) {
+      mobileHostEphemeralPanelIds.delete(id);
+      try {
+        el.remove();
+      } catch {
+        // ignore
+      }
+      const prev = panelRegistry.get(id);
+      if (prev) panelRegistry.set(id, { ...prev, element: null });
+      continue;
+    }
+    if (parent instanceof HTMLElement && parent.isConnected) {
+      parent.appendChild(el);
+      continue;
+    }
+    const def = panelRegistry.get(id);
+    const wantsMain = String(def?.defaultRack || "").toLowerCase() === "main";
+    const rack = wantsMain ? ensureMainSideRack() : ensureRightRack();
+    if (rack) rack.appendChild(el);
+  }
+}
+
+function ensureMobileHostedPluginPanel(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return null;
+  const existing = getPanelElement(id);
+  if (existing instanceof HTMLElement) return existing;
+  const entry = panelRegistry.get(id);
+  const src = typeof entry?.source === "string" ? entry.source : "";
+  if (!src.startsWith("plugin:")) return null;
+  const def = pluginPanelDefsByPanelId.get(id);
+  const render = def?.render;
+  if (typeof render !== "function") return null;
+
+  const shell = document.createElement("section");
+  shell.className = "panel panelFill pluginPanel mobileHostedPluginPanel";
+  shell.dataset.panelId = id;
+  shell.innerHTML = `
+    <div class="panelHeader">
+      <div class="panelTitle">${escapeHtml(def?.title || id)}</div>
+      <div class="row"></div>
+    </div>
+    <div class="panelBody" data-pluginmount="1"></div>
+  `;
+
+  const mount = shell.querySelector("[data-pluginmount]");
+  if (mount instanceof HTMLElement) {
+    const pluginId = String(def?.pluginId || "").trim();
+    const api = {
+      toast,
+      send: (eventName, payload) => {
+        const ev = String(eventName || "").trim();
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(ev)) return false;
+        const wsRef = window.__bzlWs;
+        if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return false;
+        const msg = payload && typeof payload === "object" ? payload : {};
+        wsRef.send(JSON.stringify({ ...msg, type: `plugin:${pluginId}:${ev}` }));
+        return true;
+      },
+      getUser: () => loggedInUser,
+      getRole: () => loggedInRole,
+      storage: {
+        get(key) {
+          try {
+            return localStorage.getItem(`bzl_panel_${id}_${String(key || "")}`);
+          } catch {
+            return null;
+          }
+        },
+        set(key, value) {
+          try {
+            localStorage.setItem(`bzl_panel_${id}_${String(key || "")}`, String(value ?? ""));
+            return true;
+          } catch {
+            return false;
+          }
+        }
+      }
+    };
+    try {
+      const cleanup = render(mount, api);
+      if (typeof cleanup === "function") shell.__panelCleanup = cleanup;
+    } catch (e) {
+      console.warn(`Plugin ${pluginId} panel render failed:`, e?.message || e);
+      mount.textContent = `Failed to render panel "${id}".`;
+    }
+  }
+
+  panelRegistry.set(id, {
+    ...(entry || { id, title: def?.title || id, icon: def?.icon || "", source: `plugin:${def?.pluginId || ""}`, role: def?.role || "aux", defaultRack: def?.defaultRack || "right" }),
+    title: def?.title || (entry?.title || id),
+    icon: def?.icon || (entry?.icon || ""),
+    role: def?.role || (entry?.role || "aux"),
+    defaultRack: def?.defaultRack || (entry?.defaultRack || "right"),
+    element: shell
+  });
+  mobileHostEphemeralPanelIds.add(id);
+  return shell;
+}
+
+function hostPanelInMobileScreen(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (!(mobileScreenHostEl instanceof HTMLElement)) return false;
+  if (rackLayoutEnabled && isDocked(id)) {
+    undockPanel(id);
+    applyDockState();
+  }
+  let el = getPanelElement(id);
+  if (!(el instanceof HTMLElement)) el = ensureMobileHostedPluginPanel(id);
+  if (!(el instanceof HTMLElement)) return false;
+  el.classList.remove("hidden");
+
+  restoreHostedPanelIfAny();
+  const parent = el.parentElement;
+  if (parent instanceof HTMLElement) mobileHostRestoreParentByPanelId.set(id, parent);
+  mobileHostPanelId = id;
+  mobileHostedPanelIds.clear();
+  mobileHostedPanelIds.add(id);
+  mobileScreenHostEl.innerHTML = "";
+  mobileScreenHostEl.appendChild(el);
+  return true;
+}
+
+function hostHivesInMobileScreen() {
+  if (!(mobileScreenHostEl instanceof HTMLElement)) return false;
+  if (rackLayoutEnabled) {
+    if (isDocked("hives")) undockPanel("hives");
+    applyDockState();
+  }
+  const hivesEl = getPanelElement("hives");
+  if (!(hivesEl instanceof HTMLElement)) return false;
+
+  restoreHostedPanelIfAny();
+
+  const hivesParent = hivesEl.parentElement;
+  if (hivesParent instanceof HTMLElement) mobileHostRestoreParentByPanelId.set("hives", hivesParent);
+
+  mobileScreenHostEl.innerHTML = "";
+  hivesEl.classList.remove("hidden");
+  mobileScreenHostEl.appendChild(hivesEl);
+
+  mobileHostedPanelIds.clear();
+  mobileHostedPanelIds.add("hives");
+  mobileHostPanelId = "hives";
+
+  return true;
+}
+
+function setMobileScreen(screenId, { pushHistory = true } = {}) {
+  if (!appRoot) return;
+  const screen = mobileScreenFromLegacyPanel(screenId);
+  const nextIsMore = screen === "more";
+  if (nextIsMore) {
+    setMobileMoreOpen(true);
+    return;
+  }
+
+  if (pushHistory) {
+    const current = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
+    if (current && current !== "more" && current !== screen) {
+      const layout = loadMobileLayout();
+      layout.history = [current, ...(layout.history || [])].filter((x, idx, arr) => x && arr.indexOf(x) === idx).slice(0, 12);
+      saveMobileLayout(layout);
+    }
+  }
+
+  setMobileMoreOpen(false);
+
+  // Core screens map directly.
+  if (screen === "people") {
+    setPeopleOpen(true);
+    peopleDrawerEl?.classList.remove("hidden");
+    renderPeoplePanel();
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "peopleList" }));
+  } else {
+    setPeopleOpen(false);
+  }
+
+  if (screen === "moderation" && !canModerate) {
+    appRoot.setAttribute("data-mobile-screen", "hives");
+    return;
+  }
+
+  if (screen === "account") {
+    restoreHostedPanelIfAny();
+    appRoot.setAttribute("data-mobile-screen", screen);
+    return;
+  }
+
+  if (screen === "people") {
+    const hosted = hostPanelInMobileScreen("people");
+    appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "people");
+    return;
+  }
+
+  if (screen === "profile") {
+    const target = String(activeProfileUsername || loggedInUser || "").trim().toLowerCase();
+    if (target) setCenterView("profile", target);
+    else renderProfilePanel();
+    const hosted = hostPanelInMobileScreen("profile");
+    appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
+    return;
+  }
+
+  if (screen === "hives") {
+    const hosted = hostHivesInMobileScreen();
+    appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
+    return;
+  }
+
+  const hostableCorePanelId = screen === "chat" ? "chat" : screen === "moderation" ? "moderation" : "";
+  if (hostableCorePanelId) {
+    const hosted = hostPanelInMobileScreen(hostableCorePanelId);
+    appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
+    return;
+  }
+
+  // Plugin screen: host it.
+  const hosted = hostPanelInMobileScreen(screen);
+  appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
 }
 
 function setMobilePanel(next) {
   if (!appRoot) return;
-  if (rackLayoutEnabled) {
-    const panel = normalizeMobileRackPanel(next);
-    mobilePanel = panel;
-    appRoot.setAttribute("data-mobile-panel", panel);
-    const buttons = mobilePagerEl ? Array.from(mobilePagerEl.querySelectorAll("[data-mobilepanel]")) : [];
-    for (const btn of buttons) {
-      const on = btn.getAttribute("data-mobilepanel") === panel;
-      btn.classList.toggle("primary", on);
-      btn.classList.toggle("ghost", !on);
-    }
-
-    if (dockHotbarEl) {
-      if (panel === "hotbar") {
-        dockHotbarEl.dataset.lockVisible = "1";
-        showHotbar(true);
-      } else {
-        dockHotbarEl.dataset.lockVisible = "0";
-      }
-    }
-
-    if (panel === "mod") focusModerationInRightRack();
-    return;
-  }
-
-  const allowMod = canModerate;
-  const panel =
-    next === "sidebar" || next === "chat" || next === "people" || (allowMod && next === "moderation") ? next : "main";
-  mobilePanel = panel;
-  appRoot.setAttribute("data-mobile-panel", panel);
-  const buttons = mobilePagerEl ? Array.from(mobilePagerEl.querySelectorAll("[data-mobilepanel]")) : [];
-  for (const btn of buttons) {
-    const on = btn.getAttribute("data-mobilepanel") === panel;
-    btn.classList.toggle("primary", on);
-    btn.classList.toggle("ghost", !on);
-  }
-
-  if (isMobileSwipeMode()) {
-    if (panel === "people") setPeopleOpen(true);
-    else setPeopleOpen(false);
-  }
+  // Back-compat shim: old callers still call setMobilePanel("chat"/"main"/etc).
+  if (!isMobileScreenMode()) return;
+  mobilePanel = mobileScreenFromLegacyPanel(next);
+  setMobileScreen(mobilePanel, { pushHistory: true });
 }
 
 function applyMobileMode() {
   if (!appRoot) return;
-  const mobile = isMobileSwipeMode();
-  const rackMobile = Boolean(mobile && rackLayoutEnabled);
-  appRoot.classList.toggle("mobileRack", rackMobile);
-  appRoot.classList.toggle("mobileSwipe", Boolean(mobile && !rackLayoutEnabled));
-
-  if (mobilePagerEl) mobilePagerEl.classList.toggle("hidden", !mobile);
-  if (mobileModBtn) mobileModBtn.classList.toggle("hidden", !(canModerate && rackLayoutEnabled));
-
-  // Keep mobilePanel valid across modes.
-  if (rackLayoutEnabled) mobilePanel = normalizeMobileRackPanel(mobilePanel);
-  if (!rackLayoutEnabled && !canModerate && mobilePanel === "moderation") mobilePanel = "main";
-
+  const wasMobile = appRoot.classList.contains("mobileScreens");
+  const mobile = isMobileScreenMode();
+  appRoot.classList.toggle("mobileScreens", mobile);
+  if (mobileNavEl) mobileNavEl.classList.toggle("hidden", !mobile);
   if (mobile) stopAnyPanelResize();
-  if (mobile) setMobilePanel(mobilePanel);
 
-  if (canResizeSidebarNow()) applySidebarWidth(readStoredSidebarWidth(), false);
-  if (canResizeChatNow()) applyChatWidth(readStoredChatWidth(), false);
-  if (canResizeModNow()) applyModWidth(readStoredModWidth(), false);
-  if (canResizePeopleNow()) applyPeopleWidth(readStoredPeopleWidth(), false);
-  setComposerOpen(composerOpen);
-}
-
-function shiftMobilePanel(delta) {
-  if (!isMobileSwipeMode()) return;
-  if (rackLayoutEnabled) {
-    const order = canModerate ? ["account", "workspace", "side", "right", "hotbar", "mod"] : ["account", "workspace", "side", "right", "hotbar"];
-    const normalized = normalizeMobileRackPanel(mobilePanel);
-    const idx = order.indexOf(normalized);
-    const current = idx >= 0 ? idx : 1;
-    const nextIdx = Math.max(0, Math.min(order.length - 1, current + delta));
-    setMobilePanel(order[nextIdx]);
+  if (!mobile) {
+    setMobileMoreOpen(false);
+    restoreHostedPanelIfAny();
     return;
   }
 
-  const order = canModerate ? ["sidebar", "main", "chat", "people", "moderation"] : ["sidebar", "main", "chat", "people"];
-  const idx = order.indexOf(mobilePanel);
-  const current = idx >= 0 ? idx : 1;
-  const nextIdx = Math.max(0, Math.min(order.length - 1, current + delta));
-  setMobilePanel(order[nextIdx]);
+  if (mobileFourthBtn instanceof HTMLElement) {
+    mobileFourthBtn.textContent = "People";
+    mobileFourthBtn.setAttribute("data-mobilescreen", "people");
+  }
+
+  // Apply persisted layout only when entering mobile mode (avoid resetting state on keyboard/URL-bar resizes).
+  const current = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
+  if (!wasMobile || !current) {
+    const layout = loadMobileLayout();
+    const desired = mobileScreenFromLegacyPanel(layout.active || "hives");
+    setMobileScreen(desired, { pushHistory: false });
+  }
+  renderMobileNav();
+  if (mobileMoreOpen) renderMobileMoreList();
+
+  if (!wasMobile) {
+    if (canResizeSidebarNow()) applySidebarWidth(readStoredSidebarWidth(), false);
+    if (canResizeChatNow()) applyChatWidth(readStoredChatWidth(), false);
+    if (canResizeModNow()) applyModWidth(readStoredModWidth(), false);
+    if (canResizePeopleNow()) applyPeopleWidth(readStoredPeopleWidth(), false);
+    setComposerOpen(composerOpen);
+  }
+}
+
+function shiftMobilePanel(delta) {
+  if (!isMobileScreenMode()) return;
+  const order = canModerate
+    ? ["account", "hives", "chat", "people", "profile", "moderation"]
+    : ["account", "hives", "chat", "people", "profile"];
+  const current = mobileScreenFromLegacyPanel(appRoot?.getAttribute("data-mobile-screen") || "hives");
+  const idx = order.indexOf(current);
+  const at = idx >= 0 ? idx : 0;
+  const nextIdx = Math.max(0, Math.min(order.length - 1, at + delta));
+  setMobileScreen(order[nextIdx]);
+  const layout = loadMobileLayout();
+  layout.active = order[nextIdx];
+  saveMobileLayout(layout);
+  renderMobileNav();
+}
+
+function renderMobileNav() {
+  if (!(mobileNavEl instanceof HTMLElement)) return;
+  if (!appRoot) return;
+  const active = String(appRoot.getAttribute("data-mobile-screen") || "hives").trim();
+  const buttons = Array.from(mobileNavEl.querySelectorAll("[data-mobilescreen]"));
+  for (const btn of buttons) {
+    const id = String(btn.getAttribute("data-mobilescreen") || "").trim();
+    const on = id !== "more" && (active === id || (active === "host" && id === mobileHostPanelId));
+    btn.classList.toggle("primary", on);
+    btn.classList.toggle("ghost", !on);
+  }
 }
 
 function toast(title, body, timeoutMs = 2800) {
@@ -4247,6 +4559,8 @@ window.bzlDevLog = sendDevLog;
 const pluginClientHandlers = new Map();
 // Moderation plugin tabs: fullTabId -> { title, ownerOnly, render(mount, api), pluginId }
 const modPluginTabs = new Map();
+// Plugin panels by panelId (so mobile can render plugin screens even when rack layout is off).
+const pluginPanelDefsByPanelId = new Map();
 
 // Minimal plugin host (client-side). Plugins are trusted by the owner who installs them.
 // Plugin scripts can call `window.BzlPluginHost.register("pluginId", (ctx) => { ... })`.
@@ -4333,6 +4647,9 @@ if (!window.BzlPluginHost) {
                   ? panelDef.role.toLowerCase()
                   : "aux";
               const source = `plugin:${id}`;
+              const render = typeof panelDef?.render === "function" ? panelDef.render : null;
+
+              pluginPanelDefsByPanelId.set(panelId, { pluginId: id, panelId, title, icon, defaultRack, role, render });
 
               // Create a visible shell only when rack layout is enabled (for now).
               // Otherwise, plugins should continue using their existing DOM hooks.
@@ -4375,7 +4692,7 @@ if (!window.BzlPluginHost) {
                     },
                   };
                   try {
-                    const cleanup = typeof panelDef?.render === "function" ? panelDef.render(mount, api) : null;
+                    const cleanup = render ? render(mount, api) : null;
                     if (typeof cleanup === "function") {
                       // Store cleanup on the shell so future hot-reload / uninstall can call it.
                       shell.__panelCleanup = cleanup;
@@ -5042,6 +5359,17 @@ function sortPosts(list) {
   return list.sort((a, b) => rankTime(b) - rankTime(a) || b.createdAt - a.createdAt);
 }
 
+function currentSortMode() {
+  return String(sortByEl?.value || "activity");
+}
+
+function updateMobileSortCycleLabel() {
+  if (!(mobileSortCycleBtn instanceof HTMLElement)) return;
+  const mode = currentSortMode();
+  const label = mode === "popular" ? "Popular" : mode === "expiring" ? "Ending" : "Recent";
+  mobileSortCycleBtn.textContent = label;
+}
+
 function getProfile(username) {
   if (!username) return { image: "", color: "" };
   const p = profiles[username] || {};
@@ -5460,6 +5788,33 @@ function renderFeed() {
   }
 }
 
+function isMobileChatScreenActive() {
+  if (!isMobileScreenMode() || !appRoot) return false;
+  const screen = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
+  return screen === "chat" || (screen === "host" && mobileHostPanelId === "chat");
+}
+
+function renderMobileChatListHtml() {
+  const list = sortPosts(Array.from(posts.values()))
+    .filter((p) => p && !p.deleted)
+    .slice(0, 60);
+  if (!list.length) {
+    return `<div class="small muted">No active hives available for chat.</div>`;
+  }
+  return `<div class="mobileChatList">${list
+    .map((p) => {
+      const title = escapeHtml(postTitle(p));
+      const author = p.author ? `@${escapeHtml(String(p.author || ""))}` : "anon";
+      const exp = formatCountdown(p.expiresAt);
+      const lock = p.locked ? " · locked" : "";
+      return `<button type="button" class="ghost mobileChatListItem" data-mobilechatopen="${escapeHtml(p.id)}">
+        <span class="mobileChatListTop">${title}</span>
+        <span class="mobileChatListMeta">${author} · ${escapeHtml(exp)}${lock}</span>
+      </button>`;
+    })
+    .join("")}</div>`;
+}
+
 function setAuthUi() {
   if (loggedInUser) {
     userLabel.innerHTML = renderUserPill(loggedInUser);
@@ -5670,10 +6025,9 @@ function renderModPanel() {
   if (!modPanelEl || !modBodyEl) return;
   modPanelEl.classList.toggle("hidden", !canModerate);
   if (appRoot) appRoot.classList.toggle("hasMod", canModerate);
-  if (mobileModBtn) mobileModBtn.classList.toggle("hidden", !canModerate);
   if (!canModerate) {
     modBodyEl.innerHTML = "";
-    if (mobilePanel === "moderation") setMobilePanel("main");
+    if (isMobileScreenMode() && appRoot?.getAttribute("data-mobile-screen") === "moderation") setMobileScreen("hives", { pushHistory: false });
     return;
   }
   if (modReportStatusEl) modReportStatusEl.classList.toggle("hidden", modTab !== "reports");
@@ -6316,6 +6670,7 @@ function pushMapChatMessage(mapId, scope, message) {
 
 function renderChatPanel(forceScroll = false) {
   updateChatModToggleVisibility();
+  const mobileChatScreen = isMobileChatScreenActive();
   const mediaState = captureMediaState(chatMessagesEl);
   if (activeDmThreadId) {
     const thread = dmThreadsById.get(activeDmThreadId) || null;
@@ -6324,7 +6679,8 @@ function renderChatPanel(forceScroll = false) {
     } else {
       const atBottomBefore =
         chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight < 24;
-      chatTitle.textContent = "DM";
+      chatTitle.textContent = `@${thread.other}`;
+      if (chatBackToListBtn) chatBackToListBtn.classList.toggle("hidden", !mobileChatScreen);
       const status = String(thread.status || "unknown");
       const statusTxt =
         status === "incoming"
@@ -6394,7 +6750,8 @@ function renderChatPanel(forceScroll = false) {
         chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight < 24;
 
       const title = activeMapsRoomTitle ? `Map: ${activeMapsRoomTitle}` : `Map: ${mapId}`;
-      chatTitle.textContent = "Chat";
+      chatTitle.textContent = activeMapsRoomTitle ? `Map: ${activeMapsRoomTitle}` : "Map chat";
+      if (chatBackToListBtn) chatBackToListBtn.classList.toggle("hidden", !mobileChatScreen);
       chatMeta.innerHTML = `
         <span class="muted">${escapeHtml(title)}</span>
         <span class="muted">|</span>
@@ -6449,6 +6806,18 @@ function renderChatPanel(forceScroll = false) {
       return;
     }
 
+    if (chatBackToListBtn) chatBackToListBtn.classList.add("hidden");
+    if (mobileChatScreen) {
+      chatTitle.textContent = "Chats";
+      chatMeta.textContent = "Select a hive chat.";
+      if (chatPanelEl) chatPanelEl.classList.remove("walkie");
+      if (walkieBarEl) walkieBarEl.classList.add("hidden");
+      if (chatForm) chatForm.classList.add("hidden");
+      chatMessagesEl.innerHTML = renderMobileChatListHtml();
+      restoreMediaState(chatMessagesEl, mediaState);
+      setReplyToMessage(null);
+      return;
+    }
     chatTitle.textContent = "Chat";
     chatMeta.textContent = "Select a post to chat.";
     if (chatPanelEl) chatPanelEl.classList.remove("walkie");
@@ -6471,7 +6840,8 @@ function renderChatPanel(forceScroll = false) {
 
   const atBottomBefore =
     chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight < 24;
-  chatTitle.textContent = "Chat";
+  chatTitle.textContent = postTitle(post);
+  if (chatBackToListBtn) chatBackToListBtn.classList.toggle("hidden", !mobileChatScreen);
   const tags = (post.keywords || []).map((k) => `#${k}`).join(" ");
   const author = post.author ? `by @${post.author}` : "";
   const exp = formatCountdown(post.expiresAt);
@@ -7668,6 +8038,16 @@ newPostForm.addEventListener("submit", (e) => {
 });
 
 toggleComposerBtn?.addEventListener("click", () => {
+  if (isMobileScreenMode()) {
+    setComposerOpen(true);
+    const layout = loadMobileLayout();
+    layout.active = "composer";
+    saveMobileLayout(layout);
+    setMobileScreen("composer");
+    renderMobileNav();
+    if (composerOpen) (postTitleInput || editor)?.focus();
+    return;
+  }
   setComposerOpen(!composerOpen);
   if (composerOpen) (postTitleInput || editor)?.focus();
 });
@@ -7750,7 +8130,10 @@ function submitChat() {
 
 filterKeywordsEl.addEventListener("input", () => renderFeed());
 filterAuthorEl?.addEventListener("input", () => renderFeed());
-sortByEl?.addEventListener("change", () => renderFeed());
+sortByEl?.addEventListener("change", () => {
+  updateMobileSortCycleLabel();
+  renderFeed();
+});
 hiveTabsEl?.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-hiveview]");
   if (!btn) return;
@@ -7766,7 +8149,41 @@ clearFilterBtn.addEventListener("click", () => {
   filterKeywordsEl.value = "";
   if (filterAuthorEl) filterAuthorEl.value = "";
   if (sortByEl) sortByEl.value = "activity";
+  updateMobileSortCycleLabel();
   activeHiveView = "all";
+  renderFeed();
+});
+
+mobileHiveSearchBtn?.addEventListener("click", () => {
+  const initial = String(filterAuthorEl?.value || "").trim()
+    ? `@${String(filterAuthorEl?.value || "").trim()}`
+    : String(filterKeywordsEl?.value || "").trim();
+  const raw = prompt("Search hives by @author or keywords:", initial);
+  if (raw === null) return;
+  const q = String(raw || "").trim();
+  if (!q) {
+    if (filterAuthorEl) filterAuthorEl.value = "";
+    if (filterKeywordsEl) filterKeywordsEl.value = "";
+    renderFeed();
+    return;
+  }
+  const parts = q.split(/\s+/).filter(Boolean);
+  const authorPart = parts.find((part) => part.startsWith("@")) || (q.startsWith("@") ? q : "");
+  const author = authorPart.replace(/^@+/, "").trim();
+  const keywordParts = authorPart ? parts.filter((part) => part !== authorPart) : parts;
+  if (filterAuthorEl) filterAuthorEl.value = author || "";
+  if (filterKeywordsEl) filterKeywordsEl.value = keywordParts.join(", ");
+  renderFeed();
+});
+
+mobileSortCycleBtn?.addEventListener("click", () => {
+  if (!sortByEl) return;
+  const order = ["activity", "popular", "expiring"];
+  const current = String(sortByEl.value || "activity");
+  const at = Math.max(0, order.indexOf(current));
+  const next = order[(at + 1) % order.length];
+  sortByEl.value = next;
+  updateMobileSortCycleLabel();
   renderFeed();
 });
 
@@ -7926,6 +8343,13 @@ window.addEventListener("click", (e) => {
 });
 
 chatMessagesEl.addEventListener("click", (e) => {
+  const mobileChatOpenBtn = e.target.closest("button[data-mobilechatopen]");
+  if (mobileChatOpenBtn) {
+    const postId = mobileChatOpenBtn.getAttribute("data-mobilechatopen") || "";
+    if (postId) openChat(postId);
+    return;
+  }
+
   const dmAcceptBtn = e.target.closest("button[data-dmaccept]");
   if (dmAcceptBtn) {
     const threadId = dmAcceptBtn.getAttribute("data-dmaccept") || "";
@@ -8031,6 +8455,18 @@ chatMessagesEl.addEventListener("click", (e) => {
 });
 
 chatReplyCancelBtn?.addEventListener("click", () => setReplyToMessage(null));
+
+chatBackToListBtn?.addEventListener("click", () => {
+  if (activeChatPostId && ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
+  }
+  activeChatPostId = null;
+  activeDmThreadId = null;
+  activeMapsRoomId = "";
+  activeMapsRoomTitle = "";
+  setReplyToMessage(null);
+  renderChatPanel(true);
+});
 
 modPanelEl?.addEventListener("click", (e) => {
   const tabBtn = e.target.closest("[data-modtab]");
@@ -9610,6 +10046,7 @@ if (hivesViewModeEl) {
 }
 installHivesAutoViewMode();
 applyHivesViewMode();
+updateMobileSortCycleLabel();
 
 if (chatHeaderEl && appRoot) {
   chatHeaderEl.setAttribute("draggable", "true");
@@ -9870,10 +10307,78 @@ peopleDrawerEl?.addEventListener("mousedown", (e) => {
   e.preventDefault();
   startPeopleResize(e.clientX);
 });
-mobilePagerEl?.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-mobilepanel]");
+mobileNavEl?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-mobilescreen]");
   if (!btn) return;
-  setMobilePanel(btn.getAttribute("data-mobilepanel") || "main");
+  const id = String(btn.getAttribute("data-mobilescreen") || "").trim();
+  if (!id) return;
+  if (id === "more") {
+    renderMobileMoreList();
+    setMobileMoreOpen(true);
+    return;
+  }
+  const layout = loadMobileLayout();
+  layout.active = id;
+  saveMobileLayout(layout);
+  setMobileScreen(id);
+  renderMobileNav();
+});
+
+function renderMobileMoreList() {
+  if (!(mobileMoreListEl instanceof HTMLElement)) return;
+  const q = String(mobileMoreSearchEl?.value || "").trim().toLowerCase();
+  const { core, plugins } = availableMobileScreens();
+
+  const filter = (item) => {
+    if (!q) return true;
+    return String(item.title || "").toLowerCase().includes(q) || String(item.id || "").toLowerCase().includes(q);
+  };
+
+  const section = (title, items) => {
+    const wrap = document.createElement("div");
+    const head = document.createElement("div");
+    head.className = "muted small";
+    head.textContent = title;
+    head.style.margin = "6px 0 6px 2px";
+    wrap.appendChild(head);
+    const list = document.createElement("div");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "10px";
+    for (const it of items.filter(filter)) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "mobileMoreItem";
+      row.innerHTML = `<span>${escapeHtml(it.title || it.id)}</span><span class="muted small">${escapeHtml(it.core ? "core" : "plugin")}</span>`;
+      row.onclick = () => {
+        const layout = loadMobileLayout();
+        layout.active = it.id;
+        saveMobileLayout(layout);
+        setMobileScreen(it.id);
+        renderMobileNav();
+        setMobileMoreOpen(false);
+      };
+      list.appendChild(row);
+    }
+    wrap.appendChild(list);
+    return wrap;
+  };
+
+  mobileMoreListEl.innerHTML = "";
+  mobileMoreListEl.appendChild(section("Core", core));
+  if (plugins.length) mobileMoreListEl.appendChild(section("Plugins", plugins));
+}
+
+mobileMoreSearchEl?.addEventListener("input", () => {
+  if (!mobileMoreOpen) return;
+  renderMobileMoreList();
+});
+
+mobileMoreCloseBtn?.addEventListener("click", () => setMobileMoreOpen(false));
+mobileMoreSheetEl?.addEventListener("click", (e) => {
+  const target = e.target;
+  if (!target) return;
+  if (target.closest?.("[data-mobilemoreclose]")) setMobileMoreOpen(false);
 });
 
 walkieRecordBtn?.addEventListener("pointerdown", (e) => {

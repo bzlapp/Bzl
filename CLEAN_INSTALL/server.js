@@ -379,11 +379,15 @@ function normalizeRemoteAddress(ip) {
 function normalizeForwardedIp(value) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "";
+  // "unknown" is valid in Forwarded headers; ignore it.
   if (raw.toLowerCase() === "unknown") return "";
+  // Remove surrounding quotes.
   const cleaned = raw.replace(/^"+|"+$/g, "").trim();
   if (!cleaned) return "";
+  // Handle "[::1]:1234" form.
   const bracket = cleaned.match(/^\[([^\]]+)\](?::\d+)?$/);
   if (bracket) return normalizeRemoteAddress(bracket[1]);
+  // Strip port for IPv4 "1.2.3.4:1234" form.
   const ipv4Port = cleaned.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/);
   if (ipv4Port) return normalizeRemoteAddress(ipv4Port[1]);
   return normalizeRemoteAddress(cleaned);
@@ -391,6 +395,7 @@ function normalizeForwardedIp(value) {
 
 function isTrustedProxyConnection(remoteAddress) {
   if (String(process.env.TRUST_PROXY || "").trim() === "1") return true;
+  // Safe default: when the TCP peer is loopback, it's almost certainly a local reverse proxy (Caddy/nginx).
   return isLoopbackAddress(normalizeRemoteAddress(remoteAddress || ""));
 }
 

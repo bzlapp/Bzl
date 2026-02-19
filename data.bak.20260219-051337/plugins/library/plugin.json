@@ -1,0 +1,9 @@
+{
+  "id": "library",
+  "name": "Library",
+  "version": "0.2.5",
+  "description": "Upload PDFs as library posts and read them in-app.",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["ui", "ws"]
+}

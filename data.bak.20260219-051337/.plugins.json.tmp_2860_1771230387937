@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "library",
+      "enabled": false
+    },
+    {
+      "id": "maps",
+      "enabled": false
+    }
+  ]
+}

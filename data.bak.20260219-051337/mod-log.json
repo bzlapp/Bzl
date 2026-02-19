@@ -1,0 +1,862 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "34925ec1-e101-45d1-8158-3b256c2ff207",
+      "actionType": "post_erase",
+      "actor": "azakaela",
+      "targetType": "post",
+      "targetId": "a4359e7f-4c6c-402d-8f16-1cc5830a6379",
+      "reason": "because i can goddamnit",
+      "metadata": {
+        "beforePreview": "Post was deleted",
+        "deletedUploads": 0,
+        "erasedAt": 1771383895387
+      },
+      "createdAt": 1771383895387
+    },
+    {
+      "id": "5ee30c0f-c8b2-41a5-99d1-037f0029175d",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "Iihn Aash Zulok",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#060611",
+          "panel": "#0c0c18",
+          "text": "#f6f0ff",
+          "accent": "#ff3ea5",
+          "accent2": "#b84bff",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "system",
+          "fontMono": "mono",
+          "mutedPct": 65,
+          "linePct": 10,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771383801645
+    },
+    {
+      "id": "f4cba8bd-5ac4-4788-8696-092308d7adf0",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "Iihn Aash Zulok",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#000000",
+          "panel": "#0a0a0a",
+          "text": "#ffffff",
+          "accent": "#ffd300",
+          "accent2": "#00d3ff",
+          "good": "#00ff85",
+          "bad": "#ff2d55",
+          "fontBody": "system",
+          "fontMono": "mono",
+          "mutedPct": 70,
+          "linePct": 16,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771383744236
+    },
+    {
+      "id": "63acdf14-9606-4b4d-8ecd-668d08bb6ff1",
+      "actionType": "self_post_delete",
+      "actor": "azakaela",
+      "targetType": "post",
+      "targetId": "a4359e7f-4c6c-402d-8f16-1cc5830a6379",
+      "reason": "Author deleted their post.",
+      "metadata": {
+        "beforePreview": "This is a post about nothing",
+        "deletedAt": 1771383714779
+      },
+      "createdAt": 1771383714779
+    },
+    {
+      "id": "24f57e16-4741-4021-b9ce-8acae79a0f7c",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "Iihn Aash Zulok",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#060a12",
+          "panel": "#0a1220",
+          "text": "#eaf4ff",
+          "accent": "#2bf5d6",
+          "accent2": "#4aa0ff",
+          "good": "#2bf5d6",
+          "bad": "#ff4d8a",
+          "fontBody": "system",
+          "fontMono": "mono",
+          "mutedPct": 64,
+          "linePct": 10,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771379779153
+    },
+    {
+      "id": "9ca15ea8-ee2a-4272-82ce-6fa14301dcd5",
+      "actionType": "post_erase",
+      "actor": "azakaela",
+      "targetType": "post",
+      "targetId": "c97ab995-7add-4075-b96f-e9f70da16219",
+      "reason": "test erase",
+      "metadata": {
+        "beforePreview": "Hello hello!",
+        "deletedUploads": 0,
+        "erasedAt": 1771379567684
+      },
+      "createdAt": 1771379567684
+    },
+    {
+      "id": "8d060113-5435-4e0c-882b-af8da2c28764",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "Iihn Aash Zulok",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3da7db",
+          "bad": "#ff4d4d",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 100,
+          "panel2Pct": 33
+        }
+      },
+      "createdAt": 1771379528954
+    },
+    {
+      "id": "a7f0fd6a-e256-4fc2-b872-b5241a27eb28",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3da7db",
+          "bad": "#ff4d4d",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 100,
+          "panel2Pct": 33
+        }
+      },
+      "createdAt": 1771379492821
+    },
+    {
+      "id": "fd6872a5-3668-446d-8820-6d71267823f4",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3da7db",
+          "bad": "#ff4d4d",
+          "fontBody": "serif",
+          "fontMono": "system",
+          "mutedPct": 66,
+          "linePct": 100,
+          "panel2Pct": 33
+        }
+      },
+      "createdAt": 1771379485272
+    },
+    {
+      "id": "be84ded2-26fd-4ca2-8633-4dc815bf9343",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3da7db",
+          "bad": "#ff4d4d",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 100,
+          "panel2Pct": 33
+        }
+      },
+      "createdAt": 1771379469028
+    },
+    {
+      "id": "cc38bd0b-87dc-4d5f-aeda-834dd54dcc30",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3da7db",
+          "bad": "#ff4d4d",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379432494
+    },
+    {
+      "id": "c38b6b28-7d5d-416d-98c5-3c229498ca93",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#545454",
+          "accent2": "#dedede",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379415055
+    },
+    {
+      "id": "b10036cd-cabf-457e-a8d7-6386f8c39945",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#262626",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379403522
+    },
+    {
+      "id": "602e1b80-fc44-4c5a-b468-c2e2370489d4",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#787878",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379398435
+    },
+    {
+      "id": "928f981e-9bac-4849-b084-f5489d7ed4cd",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#2e0022",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379390892
+    },
+    {
+      "id": "447c5fd5-f839-4496-a42d-9d8fba9ed0ad",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#141414",
+          "panel": "#160e14",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379386877
+    },
+    {
+      "id": "23d0a5be-acd7-405e-bdf1-651e557e1954",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#383838",
+          "panel": "#160e14",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379379132
+    },
+    {
+      "id": "001510b2-c109-464f-a82a-a5d61609fe6b",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "Temple of the Unfolding",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#0d0707",
+          "panel": "#160e14",
+          "text": "#fff2ea",
+          "accent": "#ffb020",
+          "accent2": "#ff3ea5",
+          "good": "#3ddc97",
+          "bad": "#ff4d8a",
+          "fontBody": "serif",
+          "fontMono": "mono",
+          "mutedPct": 66,
+          "linePct": 11,
+          "panel2Pct": 3
+        }
+      },
+      "createdAt": 1771379372975
+    },
+    {
+      "id": "56e2104a-585d-4393-b0bc-df4040445144",
+      "actionType": "collection_archive",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "f6f40eb9-deb2-4e8f-a724-ac06e015347b",
+      "reason": "Archived collection",
+      "metadata": {
+        "collectionId": "f6f40eb9-deb2-4e8f-a724-ac06e015347b"
+      },
+      "createdAt": 1771185394928
+    },
+    {
+      "id": "7fd2825e-95b4-49c1-bbb4-2cfe22369b10",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#060a12",
+          "panel": "#0a1220",
+          "text": "#eaf4ff",
+          "accent": "#2bf5d6",
+          "accent2": "#4aa0ff",
+          "good": "#2bf5d6",
+          "bad": "#ff4d8a",
+          "fontBody": "system",
+          "fontMono": "mono",
+          "mutedPct": 64,
+          "linePct": 10,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185348005
+    },
+    {
+      "id": "e312a61b-cf95-4294-9cd6-20bc6c3861bf",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#5b7661",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#ffffff",
+          "accent2": "#c2ffd4",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185339023
+    },
+    {
+      "id": "50b83632-7be0-4b74-ae56-36f9a1b4d735",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#5b7661",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#ffffff",
+          "accent2": "#1fff62",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185335325
+    },
+    {
+      "id": "eca1ccc8-dabb-4162-ad18-b9ad149eebd7",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#5b7661",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#fff829",
+          "accent2": "#1fff62",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185330509
+    },
+    {
+      "id": "42a24c03-f06e-4d4c-9779-772afc5faa7a",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#5b7661",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#fff829",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185324864
+    },
+    {
+      "id": "be0d9b5c-8162-4015-bfc9-2051e03d986f",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#5b7661",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#2bff88",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185304500
+    },
+    {
+      "id": "c373f7e6-f838-43d2-bf22-9f85e2f976bc",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#c5f7d1",
+          "panel": "#454545",
+          "text": "#d7ffe6",
+          "accent": "#2bff88",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185298951
+    },
+    {
+      "id": "c414ce88-d77b-47d2-897b-a9c08b666645",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#c5f7d1",
+          "panel": "#777977",
+          "text": "#d7ffe6",
+          "accent": "#2bff88",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185294569
+    },
+    {
+      "id": "656d776a-7355-42aa-a015-0fadb31c8bdf",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#c5f7d1",
+          "panel": "#909891",
+          "text": "#d7ffe6",
+          "accent": "#2bff88",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185288409
+    },
+    {
+      "id": "1e6e7574-2997-4446-81ae-69e7d13d027f",
+      "actionType": "instance_branding_set",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "instance",
+      "reason": "Updated instance branding",
+      "metadata": {
+        "title": "AZA'S STUDIO",
+        "subtitle": "uwu?",
+        "allowMemberPermanentPosts": true,
+        "appearance": {
+          "bg": "#c5f7d1",
+          "panel": "#070f08",
+          "text": "#d7ffe6",
+          "accent": "#2bff88",
+          "accent2": "#20d3ff",
+          "good": "#2bff88",
+          "bad": "#ff4d8a",
+          "fontBody": "mono",
+          "fontMono": "mono",
+          "mutedPct": 58,
+          "linePct": 12,
+          "panel2Pct": 2
+        }
+      },
+      "createdAt": 1771185280330
+    },
+    {
+      "id": "677fa9df-97f4-4ec3-8a96-750f09700031",
+      "actionType": "custom_role_archive",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "readers",
+      "reason": "Archived custom role",
+      "metadata": {
+        "key": "readers"
+      },
+      "createdAt": 1771185217553
+    },
+    {
+      "id": "1a4bceb9-2f19-4d91-a436-53043d3fdadf",
+      "actionType": "user_unban",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "brookemmmz",
+      "reason": "test unban",
+      "metadata": {},
+      "createdAt": 1771185206754
+    },
+    {
+      "id": "ffa44e7c-585e-44e4-a312-8658d422731f",
+      "actionType": "user_ban",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "brookemmmz",
+      "reason": "test ban",
+      "metadata": {},
+      "createdAt": 1771185201064
+    },
+    {
+      "id": "0f8627d5-4e8e-4d01-accc-8eef9d138cda",
+      "actionType": "user_unsuspend",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "brookemmmz",
+      "reason": "test unsuspend",
+      "metadata": {},
+      "createdAt": 1771185190599
+    },
+    {
+      "id": "cd8f10b0-b01e-4311-a5c7-5f225b0a2e5d",
+      "actionType": "user_suspend",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "brookemmmz",
+      "reason": "test suspend",
+      "metadata": {
+        "minutes": 120
+      },
+      "createdAt": 1771185181545
+    },
+    {
+      "id": "cc1951f4-d7d8-4241-ac70-0f92bb6d775e",
+      "actionType": "user_role_set",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "dokkaecat",
+      "reason": "testing mod removal",
+      "metadata": {
+        "role": "member"
+      },
+      "createdAt": 1771185111556
+    },
+    {
+      "id": "9ca00c34-316d-484d-af23-88922f258f39",
+      "actionType": "user_role_set",
+      "actor": "azakaela",
+      "targetType": "user",
+      "targetId": "dokkaecat",
+      "reason": "testing mod granting",
+      "metadata": {
+        "role": "moderator"
+      },
+      "createdAt": 1771185103364
+    },
+    {
+      "id": "be715560-4a9b-441a-b986-332749106e4f",
+      "actionType": "post_erase",
+      "actor": "azakaela",
+      "targetType": "post",
+      "targetId": "d9333af4-40f0-499b-b1d8-8037d23c767d",
+      "reason": "clearing things",
+      "metadata": {
+        "beforePreview": "BOO!",
+        "deletedUploads": 0,
+        "erasedAt": 1771185057993
+      },
+      "createdAt": 1771185057993
+    },
+    {
+      "id": "bcfebcc1-e688-4d46-958b-1460cc1d11de",
+      "actionType": "collection_archive",
+      "actor": "azakaela",
+      "targetType": "system",
+      "targetId": "a946af97-c5be-4ab4-927a-799da9796a04",
+      "reason": "Archived collection",
+      "metadata": {
+        "collectionId": "a946af97-c5be-4ab4-927a-799da9796a04"
+      },
+      "createdAt": 1771114198902
+    }
+  ]
+}

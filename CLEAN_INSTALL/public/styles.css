@@ -417,7 +417,7 @@ body {
   grid-template-areas: "sidebar sidebarResize main mainResize rightRack";
 }
 
-@media (max-width: 760px) {
+@media (hover: none) and (pointer: coarse) and (max-width: 900px), (hover: none) and (pointer: coarse) and (max-height: 520px) {
   .app {
     grid-template-columns: 300px 1fr;
     grid-template-rows: 1fr auto;
@@ -454,7 +454,7 @@ body {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (hover: none) and (pointer: coarse) and (max-width: 900px), (hover: none) and (pointer: coarse) and (max-height: 520px) {
   .app.sidebarHidden {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr auto;
@@ -1745,6 +1745,10 @@ button:disabled {
   display: inline-flex;
 }
 
+.mobileOnlyHiveControl {
+  display: none;
+}
+
 #pollinatePanel.composerCollapsed {
   display: none;
 }
@@ -2796,7 +2800,7 @@ button:disabled {
 .mobilePager {
   position: fixed;
   left: 50%;
-  bottom: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 80;
   display: flex;
@@ -2813,56 +2817,175 @@ button:disabled {
   border-radius: 999px;
 }
 
-@media (max-width: 900px) {
-  .app.mobileSwipe {
+/* Mobile UX: screens, not racks (see docs/MOBILE_UX.md). */
+.mobileNav {
+  position: fixed;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  width: min(720px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  justify-content: space-between;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 240, 255, 0.14);
+  background: rgba(8, 8, 16, 0.92);
+  backdrop-filter: blur(10px);
+}
+
+.mobileNav button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 0;
+  border-radius: 999px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileMoreSheet {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (max-width: 380px) {
+  .mobileNav {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .mobileNav button {
+    font-size: 12px;
+  }
+}
+
+.mobileMoreBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.mobileMoreCard {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 18px - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100vh - 18px - env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 0 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.mobileMoreBody {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.mobileMoreBody input {
+  width: 100%;
+}
+
+.mobileMoreList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobileMoreItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mobileScreenHost {
+  grid-area: main;
+  display: none;
+  flex-direction: column;
+  gap: var(--app-gap);
+  overflow: hidden;
+}
+
+@media (max-width: 760px), (hover: none) and (pointer: coarse) and (max-width: 900px), (hover: none) and (pointer: coarse) and (max-height: 520px) {
+  .app.mobileScreens {
     display: block;
     padding: 0;
     gap: 0;
+    height: 100dvh;
     height: 100vh;
   }
 
-  .app.mobileSwipe .sidebarToggle {
+  .app.mobileScreens .sidebarToggle,
+  .app.mobileScreens .peopleToggle,
+  .app.mobileScreens .sideRackToggle,
+  .app.mobileScreens .rightRackToggle {
     display: none;
   }
 
-  .app.mobileSwipe .sidebar,
-  .app.mobileSwipe .main,
-  .app.mobileSwipe .chat,
-  .app.mobileSwipe .panelResizeHandle,
-  .app.mobileSwipe .moderation {
+  .app.mobileScreens > .sidebar,
+  .app.mobileScreens > .main,
+  .app.mobileScreens > .chat,
+  .app.mobileScreens > .panelResizeHandle,
+  .app.mobileScreens > #rightRack,
+  .app.mobileScreens > .mobileScreenHost,
+  .app.mobileScreens > .moderation {
     display: none;
     width: 100%;
-    height: calc(100vh - 56px);
+    height: calc(100dvh - 56px - env(safe-area-inset-bottom, 0px));
+    height: calc(100vh - 56px - env(safe-area-inset-bottom, 0px));
     border-radius: 0;
     border-left: 0;
     border-right: 0;
   }
 
-  .app.mobileSwipe[data-mobile-panel="sidebar"] .sidebar {
+  /* Core screens */
+  .app.mobileScreens[data-mobile-screen="account"] > .sidebar {
     display: flex;
   }
 
-  .app.mobileSwipe[data-mobile-panel="main"] .main {
+  .app.mobileScreens[data-mobile-screen="hives"] > .main,
+  .app.mobileScreens[data-mobile-screen="chat"] > .chat,
+  .app.mobileScreens[data-mobile-screen="moderation"] > .moderation {
     display: flex;
   }
 
-  .app.mobileSwipe[data-mobile-panel="chat"] .chat {
+  .app.mobileScreens[data-mobile-screen="host"] > .mobileScreenHost {
     display: flex;
   }
 
-  .app.mobileSwipe + .peopleDrawer {
+  /* Force active screen to full width/height regardless of desktop grid. */
+  .app.mobileScreens[data-mobile-screen="account"] > .sidebar,
+  .app.mobileScreens[data-mobile-screen="hives"] > .main,
+  .app.mobileScreens[data-mobile-screen="chat"] > .chat,
+  .app.mobileScreens[data-mobile-screen="moderation"] > .moderation,
+  .app.mobileScreens[data-mobile-screen="host"] > .mobileScreenHost {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: 85;
+  }
+
+  /* People screen is a sibling of .app */
+  .app.mobileScreens + .peopleDrawer {
     display: none;
-  }
-
-  .app.mobileSwipe[data-mobile-panel="people"] + .peopleDrawer {
-    display: flex;
-  }
-
-  .app.mobileSwipe[data-mobile-panel="moderation"] .moderation {
-    display: flex;
-  }
-
-  .peopleDrawer {
     top: 0;
     right: 0;
     bottom: 56px;
@@ -2872,10 +2995,327 @@ button:disabled {
     border-right: 0;
   }
 
-  .peopleResizeHandle {
-    display: none;
+  .app.mobileScreens[data-mobile-screen="people"] + .peopleDrawer {
+    display: flex;
   }
 
+  .app.mobileScreens[data-mobile-screen="people"] + .peopleDrawer {
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: 85;
+  }
+
+  /* In mobile hives screen, hide the desktop side rack column. */
+  .app.mobileScreens[data-mobile-screen="hives"] #mainSideRack {
+    display: none !important;
+  }
+
+  /* Hide the hotbar unless explicitly shown elsewhere. */
+  .app.mobileScreens + .dockHotbar {
+    display: none;
+  }
+}
+
+/* (Rack-specific mobile styles removed in favor of screen-based mobile UX.) */
+
+/* JS-driven mobile mode: enforce screen behavior by class, even if viewport/media heuristics disagree. */
+.app.mobileScreens {
+  display: block;
+  padding: 0;
+  gap: 0;
+  width: 100vw;
+  height: 100dvh;
+  height: 100vh;
+  overflow: hidden;
+  grid-template-columns: 1fr !important;
+  grid-template-areas: "main" !important;
+}
+
+.app.mobileScreens .sidebarToggle,
+.app.mobileScreens .peopleToggle,
+.app.mobileScreens .sideRackToggle,
+.app.mobileScreens .rightRackToggle {
+  display: none !important;
+}
+
+.app.mobileScreens.rackMode .sideRackToggle,
+.app.mobileScreens.rackMode .rightRackToggle,
+.app.mobileScreens #showSideRack,
+.app.mobileScreens #showRightRack {
+  display: none !important;
+}
+
+.app.mobileScreens > .sidebar,
+.app.mobileScreens > .main,
+.app.mobileScreens > .chat,
+.app.mobileScreens > .panelResizeHandle,
+.app.mobileScreens > #rightRack,
+.app.mobileScreens > .mobileScreenHost,
+.app.mobileScreens > .moderation {
+  display: none !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: calc(100dvh - 56px - env(safe-area-inset-bottom, 0px));
+  height: calc(100vh - 56px - env(safe-area-inset-bottom, 0px));
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+}
+
+.app.mobileScreens[data-mobile-screen="account"] > .sidebar,
+.app.mobileScreens[data-mobile-screen="hives"] > .main,
+.app.mobileScreens[data-mobile-screen="chat"] > .chat,
+.app.mobileScreens[data-mobile-screen="moderation"] > .moderation,
+.app.mobileScreens[data-mobile-screen="host"] > .mobileScreenHost {
+  display: flex !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  z-index: 85;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] #mainSideRack {
+  display: none !important;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .main,
+.app.mobileScreens[data-mobile-screen="hives"] .mainRack,
+.app.mobileScreens[data-mobile-screen="hives"] #mainWorkspaceRack,
+.app.mobileScreens[data-mobile-screen="hives"] #hivesPanel {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .mainRack {
+  gap: 0;
+}
+
+.app.mobileScreens[data-mobile-screen="account"] #viewPanel .checkRow:has(#toggleSideRack),
+.app.mobileScreens[data-mobile-screen="account"] #viewPanel .checkRow:has(#toggleRightRack),
+.app.mobileScreens[data-mobile-screen="account"] #viewPanel .checkRow:has(#toggleReactions),
+.app.mobileScreens[data-mobile-screen="account"] .sidebarFooter {
+  display: none !important;
+}
+
+.app.mobileScreens[data-mobile-screen="host"] > .mobileScreenHost {
+  gap: 0;
+  overflow: auto;
+}
+
+.app.mobileScreens .mobileScreenHost > .peopleDrawer {
+  position: relative !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  box-shadow: none !important;
+}
+
+.app.mobileScreens .mobileScreenHost > .peopleDrawer .peopleResizeHandle {
+  display: none !important;
+}
+
+.app.mobileScreens .reactionsRow,
+.app.mobileScreens .chatReactions {
+  display: none !important;
+}
+
+.app.mobileScreens .chatMessages {
+  font-size: 13px;
+  line-height: 1.24;
+  padding: 8px 8px 6px;
+}
+
+.app.mobileScreens .chatMsg {
+  padding: 6px 7px;
+  margin-top: 6px;
+  border-radius: 12px;
+}
+
+.app.mobileScreens .chatMsg .meta {
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.app.mobileScreens .chatComposer .toolbar [data-chatcmd],
+.app.mobileScreens .chatComposer .toolbar [data-chatemoji],
+.app.mobileScreens .chatComposer .toolbar .sep {
+  display: none !important;
+}
+
+.app.mobileScreens .chatComposer .toolbar .chatModToggle:not(.hidden) {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.app.mobileScreens [data-rackdrag],
+.app.mobileScreens [data-skinny],
+.app.mobileScreens [data-expand],
+.app.mobileScreens [data-minimize] {
+  display: none !important;
+}
+
+.app.mobileScreens #pollinatePanel .toolbar [data-cmd],
+.app.mobileScreens #pollinatePanel .toolbar [data-postemoji],
+.app.mobileScreens #pollinatePanel .toolbar .sep {
+  display: none !important;
+}
+
+.app.mobileScreens .chatForm > .primary[type="submit"] {
+  align-self: stretch;
+  width: 100%;
+}
+
+.app.mobileScreens .chatForm {
+  gap: 8px;
+  padding: 8px;
+  padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+}
+
+.app.mobileScreens .typingIndicator {
+  padding: 0 8px 4px;
+  min-height: 14px;
+}
+
+.app.mobileScreens .chatHeaderActions {
+  margin-left: auto;
+}
+
+.app.mobileScreens .mobileChatList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app.mobileScreens .mobileChatListItem {
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.app.mobileScreens .mobileChatListTop {
+  font-weight: 800;
+}
+
+.app.mobileScreens .mobileChatListMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] #filterAuthor,
+.app.mobileScreens[data-mobile-screen="hives"] #filterKeywords,
+.app.mobileScreens[data-mobile-screen="hives"] #sortBy {
+  display: none !important;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .mobileOnlyHiveControl {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  height: 34px;
+  padding: 0 10px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] #mobileHiveSearch {
+  min-width: 42px;
+  font-size: 15px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .filters {
+  gap: 4px;
+  padding: 4px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .hiveTabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 8px 10px 8px;
+  margin-bottom: 0;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .hiveTabs button {
+  padding: 7px 12px;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .feed {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 8px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .post {
+  padding: 8px;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .postTitle {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .postTitleRow {
+  gap: 2px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .post .pfp {
+  display: none;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .post .small {
+  font-size: 11px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .postMeta {
+  margin-top: 4px;
+  gap: 4px;
+}
+
+.app.mobileScreens[data-mobile-screen="hives"] .tag {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.app.mobileScreens + .peopleDrawer {
+  display: none;
+}
+
+.app.mobileScreens[data-mobile-screen="people"] + .peopleDrawer {
+  display: flex !important;
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  width: 100vw;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  z-index: 85;
+}
+
+.app.mobileScreens + .dockHotbar {
+  display: none !important;
 }
 
 @keyframes fadeIn {
