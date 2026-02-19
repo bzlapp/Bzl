@@ -1,9 +1,0 @@
-{
-  "id": "maps",
-  "name": "Maps",
-  "version": "0.3.9",
-  "description": "Adds spatial chat rooms with map camera, collisions/masks/exits, fog + fall-through zones, and TTRPG tooling.",
-  "entryClient": "client.js",
-  "entryServer": "server.js",
-  "permissions": ["ui", "ws"]
-}
