@@ -936,6 +936,8 @@ body {
 .smallBtn {
   padding: 6px 10px;
   border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .mapChatToggle {
@@ -946,9 +948,10 @@ body {
 }
 
 .sidebarToggle {
-  position: absolute;
-  top: 12px;
+  position: fixed;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   left: 12px;
+  top: auto;
   z-index: 20;
 }
 
@@ -1490,6 +1493,22 @@ body {
   font-weight: 800;
 }
 
+.uiHint {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(246, 240, 255, 0.14);
+  background: rgba(120, 50, 190, 0.12);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.1rem;
+}
+
+.app:not(.hintsEnabled) .uiHint {
+  display: none !important;
+}
+
 .panelTitleSub {
   font-weight: 800;
   margin-top: 2px;
@@ -1577,6 +1596,94 @@ body {
   flex: 1;
 }
 
+.onboardingCard {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.onboardingAbout {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.onboardingRules {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboardingPanelBody {
+  padding: 10px;
+  overflow: auto;
+}
+
+.onbTabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.onbRuleList,
+.onbRuleEditorList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onbRuleViewerCard,
+.onbRuleEditorCard {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.onbRuleEditorBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.onbRoleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.onbSeverityInfo {
+  border-color: rgba(61, 220, 151, 0.55);
+  color: #9beac7;
+}
+
+.onbSeverityWarn {
+  border-color: rgba(255, 166, 0, 0.55);
+  color: #ffd28d;
+}
+
+.onbSeverityCritical {
+  border-color: rgba(255, 77, 138, 0.65);
+  color: #ffb3cb;
+}
+
+.goodText {
+  color: var(--good);
+}
+
+.badText {
+  color: var(--bad);
+}
+
 label span {
   display: block;
   color: var(--muted);
@@ -1594,6 +1701,22 @@ select {
   border-radius: 12px;
   padding: var(--control-pad-y) var(--control-pad-x);
   outline: none;
+}
+
+select option,
+select optgroup {
+  color: #11131a;
+  background: #f4f6fb;
+}
+
+select option:checked {
+  color: #0f1724;
+  background: #8eb8e6;
+}
+
+select optgroup {
+  font-weight: 700;
+  background: #e7ebf3;
 }
 
 input:focus,
@@ -3205,10 +3328,26 @@ button:disabled {
   margin-left: auto;
 }
 
-.app.mobileScreens .mobileChatList {
+.chatContextSelect {
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.mobileChatSection {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.app.mobileScreens .mobileChatList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app.mobileScreens .chatContextSelect {
+  min-width: 132px;
+  max-width: 180px;
 }
 
 .app.mobileScreens .mobileChatListItem {

@@ -1,4 +1,4 @@
-const connBadge = document.getElementById("connBadge");
+﻿const connBadge = document.getElementById("connBadge");
 const lanHint = document.getElementById("lanHint");
 
 const appRoot = document.querySelector(".app");
@@ -33,6 +33,7 @@ const layoutPresetEl = document.getElementById("layoutPreset");
 const uiScaleEl = document.getElementById("uiScale");
 const deviceLayoutEl = document.getElementById("deviceLayout");
 const stayConnectedEl = document.getElementById("stayConnected");
+const enableHintsEl = document.getElementById("enableHints");
 const dockHotbarEl = document.getElementById("dockHotbar");
 const showSideRackBtn = document.getElementById("showSideRack");
 const showRightRackBtn = document.getElementById("showRightRack");
@@ -40,6 +41,10 @@ const chatModToggleWrapEl = document.getElementById("chatModToggleWrap");
 const chatModToggleEl = document.getElementById("chatModToggle");
 
 const authHint = document.getElementById("authHint");
+const onboardingCard = document.getElementById("onboardingCard");
+const onboardingBody = document.getElementById("onboardingBody");
+const onboardingAcceptBtn = document.getElementById("onboardingAccept");
+const onboardingRefreshBtn = document.getElementById("onboardingRefresh");
 const userLabel = document.getElementById("userLabel");
 const authForm = document.getElementById("authForm");
 const authUser = document.getElementById("authUser");
@@ -55,7 +60,7 @@ const removeProfileImageBtn = document.getElementById("removeProfileImage");
 const nameColorInput = document.getElementById("nameColor");
 const saveProfileBtn = document.getElementById("saveProfile");
 const profileStatus = document.getElementById("profileStatus");
-// Instance + plugin admin UI lives in Moderation → Server tab (rendered dynamically).
+// Instance + plugin admin UI lives in Moderation -> Server tab (rendered dynamically).
 const modPanelEl = document.getElementById("modPanel");
 const modBodyEl = document.getElementById("modBody");
 const modRefreshBtn = document.getElementById("modRefresh");
@@ -102,6 +107,10 @@ const mobileSortCycleBtn = document.getElementById("mobileSortCycle");
 const clearFilterBtn = document.getElementById("clearFilter");
 const feedEl = document.getElementById("feed");
 const hiveTabsEl = document.getElementById("hiveTabs");
+const onboardingPanelEl = document.getElementById("onboardingPanel");
+const onboardingPanelBodyEl = document.getElementById("onboardingPanelBody");
+const onboardingPanelAcceptBtn = document.getElementById("onboardingPanelAccept");
+const onboardingPanelRefreshBtn = document.getElementById("onboardingPanelRefresh");
 const profileViewPanel = document.getElementById("profileViewPanel");
 const profileViewTitle = document.getElementById("profileViewTitle");
 const profileViewMeta = document.getElementById("profileViewMeta");
@@ -126,6 +135,7 @@ const profileCancelBtn = document.getElementById("profileCancelBtn");
 
 const chatTitle = document.getElementById("chatTitle");
 const chatMeta = document.getElementById("chatMeta");
+const chatContextSelectEl = document.getElementById("chatContextSelect");
 const chatBackToListBtn = document.getElementById("chatBackToList");
 const chatMessagesEl = document.getElementById("chatMessages");
 const typingIndicator = document.getElementById("typingIndicator");
@@ -215,6 +225,19 @@ let windowFocused = true;
 let typingStopTimer = null;
 let lastTypingSentAt = 0;
 let modTab = "reports";
+let onboardingViewerTab = "about";
+let onboardingAdminTab = "about";
+let onboardingAdminDraft = {
+  enabled: true,
+  aboutContent: "",
+  requireAcceptance: false,
+  blockReadUntilAccepted: false,
+  roleSelectEnabled: true,
+  selfAssignableRoleIds: [],
+  rules: [],
+};
+let onboardingAdminDraftStamp = "";
+const onboardingAdminExpandedRuleIds = new Set();
 let modReports = [];
 let modUsers = [];
 let modLog = [];
@@ -260,6 +283,10 @@ let dmThreadsById = new Map();
 const dmMessagesByThreadId = new Map();
 let activeDmThreadId = null;
 let pendingOpenDmThreadId = "";
+const CHAT_RECENTS_LIMIT = 24;
+let recentHiveChatIds = [];
+let recentDmChatThreadIds = [];
+let syncingChatContextSelect = false;
 let walkieRecording = false;
 let walkieStartAt = 0;
 let walkieRecorder = null;
@@ -309,7 +336,7 @@ const WORKSPACE_EXPANDED_DISPLACED_KEY = "bzl_workspace_expandedDisplaced";
 /** @type {RackLayoutState} */
 let rackLayoutState = {
   version: 2,
-  presetId: "discordLike",
+  presetId: "onboardingDefault",
   docked: { bottom: [] },
   racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
 };
@@ -458,7 +485,7 @@ function normalizeDeviceLayout(raw) {
 function detectViewportSize() {
   const w = Math.max(1, Number(window.innerWidth) || 1);
   const h = Math.max(1, Number(window.innerHeight) || 1);
-  // Keep this intentionally simple: we mostly care about “can we fit columns sanely?”
+  // Keep this intentionally simple: we mostly care about "can we fit columns sanely?"
   // Consider both width and height so low-res (ex: 1280x720) can auto-compact.
   if (w <= 1100 || h <= 720) return "xs";
   if (w <= 1400 || h <= 820) return "sm";
@@ -678,6 +705,7 @@ function togglePanelSkinny(panelId) {
 
 registerCorePanel({ id: "chat", title: "Chat", icon: "💬", role: "primary", defaultRack: "main", element: chatPanelEl });
 registerCorePanel({ id: "hives", title: "Hives", icon: "🐝", role: "primary", defaultRack: "main", element: hivesPanelEl });
+registerCorePanel({ id: "onboarding", title: "Onboarding", icon: "🧭", role: "primary", defaultRack: "main", element: onboardingPanelEl });
 registerCorePanel({ id: "people", title: "People", icon: "👥", role: "aux", defaultRack: "right", element: peopleDrawerEl });
 registerCorePanel({ id: "moderation", title: "Moderation", icon: "🛡️", role: "aux", defaultRack: "right", element: modPanelEl });
 registerCorePanel({ id: "profile", title: "Profile", icon: "👤", role: "transient", defaultRack: "main", element: profileViewPanel });
@@ -747,7 +775,7 @@ function ensurePluginRackPanel() {
   }
 
   // Ensure it's registered as a core panel for docking + layout state.
-  registerCorePanel({ id: "pluginRack", title: "Plugin Rack", icon: "ðŸ§°", role: "aux", defaultRack: "main", element: pluginRackPanelEl });
+  registerCorePanel({ id: "pluginRack", title: "Plugin Rack", icon: "🧩", role: "aux", defaultRack: "main", element: pluginRackPanelEl });
 
   // Append into the DOM so it can be docked/restored. (It will typically live in the hotbar.)
   const side = ensureMainSideRack();
@@ -860,6 +888,17 @@ window.__bzlPanels = { panelRegistry };
 const PRESET_DEFS = {
   // Presets are hard-applied (exact placement). Anything not explicitly placed starts in the hotbar.
   // Workspace uses two full-height primary slots (left + right). No vertical splits.
+  onboardingDefault: {
+    presetId: "onboardingDefault",
+    label: "Onboarding (Default)",
+    group: "user",
+    workspaceLeftOrder: ["onboarding"],
+    workspaceRightOrder: ["hives"],
+    sideOrder: ["chat", "profile", "composer"],
+    sideCollapsed: false,
+    rightOrder: ["people"],
+    dockBottom: ["pluginRack", "maps", "library"],
+  },
   social: {
     presetId: "social",
     label: "Default (Social)",
@@ -984,6 +1023,7 @@ const PRESET_DEFS = {
 const PRESET_ALIASES = {
   // Back-compat for older preset ids.
   discordLike: "social",
+  onboarding: "onboardingDefault",
   chat: "chatFocus",
   browsing: "browse",
   maps: "mapsSession",
@@ -995,12 +1035,12 @@ const PRESET_ALIASES = {
 function resolvePresetKey(presetId) {
   const raw = String(presetId || "").trim();
   const mapped = Object.prototype.hasOwnProperty.call(PRESET_ALIASES, raw) ? PRESET_ALIASES[raw] : raw;
-  return Object.prototype.hasOwnProperty.call(PRESET_DEFS, mapped) ? mapped : "social";
+  return Object.prototype.hasOwnProperty.call(PRESET_DEFS, mapped) ? mapped : "onboardingDefault";
 }
 
 function updateLayoutPresetOptions() {
   if (!layoutPresetEl) return;
-  const current = resolvePresetKey(rackLayoutState?.presetId || layoutPresetEl.value || "social");
+  const current = resolvePresetKey(rackLayoutState?.presetId || layoutPresetEl.value || "onboardingDefault");
 
   const defs = Object.values(PRESET_DEFS).filter((d) => d && typeof d === "object");
   const userDefs = defs.filter((d) => d.group === "user");
@@ -1027,8 +1067,8 @@ function updateLayoutPresetOptions() {
     layoutPresetEl.appendChild(modGroup);
   }
 
-  const nextValue = canModerate ? current : (PRESET_DEFS[current]?.modOnly ? "social" : current);
-  layoutPresetEl.value = Object.prototype.hasOwnProperty.call(PRESET_DEFS, nextValue) ? nextValue : "social";
+  const nextValue = canModerate ? current : (PRESET_DEFS[current]?.modOnly ? "onboardingDefault" : current);
+  layoutPresetEl.value = Object.prototype.hasOwnProperty.call(PRESET_DEFS, nextValue) ? nextValue : "onboardingDefault";
 }
 
 function readRackLayoutEnabled() {
@@ -1065,7 +1105,7 @@ function loadRackLayoutState() {
     if (!raw)
       return {
         version: 2,
-        presetId: "discordLike",
+        presetId: "onboardingDefault",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
         pluginRackWidgets: [],
@@ -1075,7 +1115,7 @@ function loadRackLayoutState() {
     if (!parsed || parsed.version !== 2)
       return {
         version: 2,
-        presetId: "discordLike",
+        presetId: "onboardingDefault",
         docked: { bottom: [] },
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
         pluginRackWidgets: [],
@@ -1085,7 +1125,7 @@ function loadRackLayoutState() {
     const pluginRackWidgets = Array.isArray(parsed?.pluginRackWidgets)
       ? parsed.pluginRackWidgets.map((x) => String(x || "")).filter(Boolean)
       : [];
-    const presetId = typeof parsed?.presetId === "string" ? parsed.presetId : "discordLike";
+    const presetId = typeof parsed?.presetId === "string" ? parsed.presetId : "onboardingDefault";
     const workspaceLeft = Array.isArray(parsed?.racks?.workspaceLeft) ? parsed.racks.workspaceLeft.map((x) => String(x || "")).filter(Boolean) : [];
     const workspaceRight = Array.isArray(parsed?.racks?.workspaceRight) ? parsed.racks.workspaceRight.map((x) => String(x || "")).filter(Boolean) : [];
     const side = Array.isArray(parsed?.racks?.side) ? parsed.racks.side.map((x) => String(x || "")).filter(Boolean) : [];
@@ -1102,7 +1142,7 @@ function loadRackLayoutState() {
   } catch {
     return {
       version: 2,
-      presetId: "discordLike",
+      presetId: "onboardingDefault",
       docked: { bottom: [] },
       racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
       pluginRackWidgets: [],
@@ -1194,7 +1234,7 @@ function panelCanExpand(panelId) {
 
 // Panels that are allowed to live in "skinny" columns (side rack / right rack).
 // These panels should be able to render in a narrow width without breaking layout.
-const SKINNY_CAPABLE_PANELS = new Set(["people", "profile", "composer", "hives", "chat", "dice"]);
+const SKINNY_CAPABLE_PANELS = new Set(["people", "profile", "composer", "chat", "pluginRack", "dice"]);
 
 function panelIsSkinnyCapable(panelId) {
   const id = String(panelId || "").trim();
@@ -1359,7 +1399,7 @@ function renderHotbar() {
   const plusHtml = includePlus
     ? `
     <button type="button" class="dockOrb dockOrbPlus" data-hotbarplus="1" title="Add panel">
-      <span class="dockOrbIcon" aria-hidden="true">＋</span>
+      <span class="dockOrbIcon" aria-hidden="true">+</span>
       <span>Add</span>
     </button>
   `
@@ -1401,7 +1441,7 @@ function openHotbarPlusMenu(anchorEl) {
   const menu = document.createElement("div");
   menu.className = "hotbarAddMenu";
   menu.innerHTML = `
-    <div class="small muted" style="padding:6px 8px 4px;">New chat panel for…</div>
+    <div class="small muted" style="padding:6px 8px 4px;">New chat panel for...</div>
     <div class="hotbarAddMenuList">${items || `<div class="small muted" style="padding:6px 8px;">No hives yet.</div>`}</div>
   `;
 
@@ -1545,6 +1585,15 @@ function enforceWorkspaceRules() {
   };
   enforceSkinny(side);
   enforceSkinny(rightRack);
+
+  // Side rack can stack, but keep it compact: at most 2 visible panels.
+  const sideKids = Array.from(side.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
+  if (sideKids.length > 2) {
+    for (const extra of sideKids.slice(2)) {
+      const id = String(extra?.dataset?.panelId || "").trim();
+      if (id) dockPanel(id);
+    }
+  }
 
   // Right rack is single-slot: keep at most one visible panel.
   const rightKids = Array.from(rightRack.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
@@ -1764,6 +1813,11 @@ function enableRackLayoutDom() {
 
   // Mark center panels as rack panels too (they already live in mainRack in normal DOM).
   if (main) {
+    if (onboardingPanelEl) {
+      mark(onboardingPanelEl, "onboarding");
+      if (left && onboardingPanelEl.parentElement !== left) left.appendChild(onboardingPanelEl);
+      onboardingPanelEl.classList.remove("hidden");
+    }
     if (hivesPanelEl) {
       mark(hivesPanelEl, "hives");
       if (left && hivesPanelEl.parentElement !== left) left.appendChild(hivesPanelEl);
@@ -1807,7 +1861,7 @@ function applyPreset(presetId) {
   const def = PRESET_DEFS[key];
   if (!def) return;
   if (def.modOnly && !canModerate) {
-    applyPreset("social");
+    applyPreset("onboardingDefault");
     return;
   }
 
@@ -1916,7 +1970,7 @@ function installPanelMinimizeButtons() {
       const drag = document.createElement("button");
       drag.type = "button";
       drag.className = "ghost smallBtn rackDragHandle";
-      drag.textContent = "☰";
+      drag.textContent = "≡";
       drag.title = "Drag to reorder";
       drag.setAttribute("data-rackdrag", panelId);
       row.appendChild(drag);
@@ -1926,18 +1980,21 @@ function installPanelMinimizeButtons() {
       const skinny = document.createElement("button");
       skinny.type = "button";
       skinny.className = "ghost smallBtn";
-      skinny.textContent = "][";
+      skinny.textContent = "↔";
       skinny.title = "Toggle skinny/full";
       skinny.setAttribute("data-skinny", panelId);
       skinny.onclick = () => togglePanelSkinny(panelId);
       row.appendChild(skinny);
+    }
+    if (!panelIsSkinnyCapable(panelId)) {
+      headerEl.querySelector(`[data-skinny="${cssEscape(panelId)}"]`)?.remove();
     }
 
     if (panelCanExpand(panelId) && !headerEl.querySelector(`[data-expand="${panelId}"]`)) {
       const expand = document.createElement("button");
       expand.type = "button";
       expand.className = "ghost smallBtn";
-      expand.textContent = "[]";
+      expand.textContent = "□";
       expand.title = "Expand workspace";
       expand.setAttribute("data-expand", panelId);
       expand.onclick = () => togglePrimaryExpand(panelId);
@@ -1948,7 +2005,7 @@ function installPanelMinimizeButtons() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ghost smallBtn";
-      btn.textContent = "—";
+      btn.textContent = "-";
       btn.title = "Minimize to hotbar";
       btn.setAttribute("data-minimize", panelId);
       btn.onclick = () => dockPanel(panelId);
@@ -1999,8 +2056,8 @@ function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
     <div class="panelHeader">
       <div class="panelTitle">${escapeHtml(title || panelId)}</div>
       <div class="row">
-        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">☰</button>
-        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">—</button>
+        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">≡</button>
+        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">-</button>
       </div>
     </div>
     <div class="panelBody" data-pluginmount="1"></div>
@@ -2013,7 +2070,7 @@ function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
       const expand = document.createElement("button");
       expand.type = "button";
       expand.className = "ghost smallBtn";
-      expand.textContent = "[]";
+      expand.textContent = "□";
       expand.title = "Expand workspace";
       expand.setAttribute("data-expand", panelId);
       expand.addEventListener("click", () => togglePrimaryExpand(panelId));
@@ -2048,10 +2105,10 @@ function ensureChatPostPanelInstance(postId, opts) {
         <div class="small muted chatMeta"></div>
       </div>
       <div class="row">
-        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">☰</button>
-        <button type="button" class="ghost smallBtn" data-skinny="${escapeHtml(panelId)}" title="Toggle skinny/full">][</button>
-        <button type="button" class="ghost smallBtn" data-expand="${escapeHtml(panelId)}" title="Expand workspace">[]</button>
-        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">—</button>
+        <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">≡</button>
+        <button type="button" class="ghost smallBtn" data-skinny="${escapeHtml(panelId)}" title="Toggle skinny/full">↔</button>
+        <button type="button" class="ghost smallBtn" data-expand="${escapeHtml(panelId)}" title="Expand workspace">□</button>
+        <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">-</button>
       </div>
     </div>
     <div class="chatMessages"></div>
@@ -2196,7 +2253,7 @@ function renderTypingIndicatorForPost(postId, targetEl) {
   }
   const names = Array.from(set.values()).slice(0, 3);
   const more = set.size > names.length ? ` +${set.size - names.length}` : "";
-  targetEl.textContent = `${names.map((u) => `@${u}`).join(", ")}${more} typing…`;
+  targetEl.textContent = `${names.map((u) => `@${u}`).join(", ")}${more} typing...`;
 }
 
 function renderChatPostPanelInstance(panelId, forceScroll) {
@@ -2339,6 +2396,48 @@ function renderChatInstancesForPost(postId) {
     if (String(inst?.postId || "") !== pid) continue;
     renderChatPostPanelInstance(panelId);
   }
+}
+
+function setChatInstancePanelPost(panelId, postId, forceScroll = true) {
+  const pid = String(postId || "").trim();
+  const id = String(panelId || "").trim();
+  if (!pid || !id) return false;
+  const inst = chatPanelInstances.get(id);
+  if (!inst) return false;
+  const post = posts.get(pid);
+  if (!post) return false;
+  inst.postId = pid;
+  chatPanelInstances.set(id, inst);
+  const root = getPanelElement(id);
+  const titleEl = root?.querySelector?.(".panelTitle");
+  if (titleEl) titleEl.textContent = post?.title ? `Chat: ${String(post.title).slice(0, 32)}` : "Chat";
+  renderChatPostPanelInstance(id, forceScroll);
+  return true;
+}
+
+function nearestVisibleChatInstancePanelId(sourceEl) {
+  const anchor = sourceEl instanceof HTMLElement ? sourceEl : null;
+  if (!anchor) return "";
+  const anchorRect = anchor.getBoundingClientRect();
+  const ax = anchorRect.left + anchorRect.width / 2;
+  const ay = anchorRect.top + anchorRect.height / 2;
+  let bestId = "";
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const [panelId] of chatPanelInstances.entries()) {
+    const root = getPanelElement(panelId);
+    if (!(root instanceof HTMLElement)) continue;
+    if (root.classList.contains("hidden")) continue;
+    const rect = root.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) continue;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.hypot(cx - ax, cy - ay);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = panelId;
+    }
+  }
+  return bestId;
 }
 
 function applyPluginPresetHint(panelDef) {
@@ -2605,11 +2704,11 @@ function initRackLayout() {
 
   if (layoutPresetEl) {
     updateLayoutPresetOptions();
-    layoutPresetEl.value = resolvePresetKey(rackLayoutState.presetId || "social");
+    layoutPresetEl.value = resolvePresetKey(rackLayoutState.presetId || "onboardingDefault");
     layoutPresetEl.disabled = !rackLayoutEnabled;
     layoutPresetEl.onchange = () => {
       if (!rackLayoutEnabled) return;
-      const next = String(layoutPresetEl.value || "social");
+      const next = String(layoutPresetEl.value || "onboardingDefault");
       applyPreset(next);
     };
   }
@@ -2669,6 +2768,15 @@ function initRackLayout() {
   setRightCollapsed(readBoolPref(RACK_RIGHT_COLLAPSED_KEY, false), { persist: false });
 
   applyRackStateToDom();
+  const hasOnboardingPlacement =
+    (Array.isArray(rackLayoutState?.racks?.workspaceLeft) && rackLayoutState.racks.workspaceLeft.includes("onboarding")) ||
+    (Array.isArray(rackLayoutState?.racks?.workspaceRight) && rackLayoutState.racks.workspaceRight.includes("onboarding")) ||
+    (Array.isArray(rackLayoutState?.racks?.side) && rackLayoutState.racks.side.includes("onboarding")) ||
+    (Array.isArray(rackLayoutState?.racks?.right) && rackLayoutState.racks.right.includes("onboarding")) ||
+    (Array.isArray(rackLayoutState?.docked?.bottom) && rackLayoutState.docked.bottom.includes("onboarding"));
+  if ((rackLayoutState?.presetId || "") === "onboardingDefault" && !hasOnboardingPlacement) {
+    applyPreset("onboardingDefault");
+  }
   installPanelMinimizeButtons();
   enableRackDnD();
   installWorkspaceInteractions();
@@ -2914,7 +3022,7 @@ function initRackLayout() {
 
   // First enable: seed state from the selected preset so users immediately get a sensible layout.
   if (!hadState) {
-    const preset = resolvePresetKey(rackLayoutState.presetId || (layoutPresetEl ? String(layoutPresetEl.value || "") : "") || "social");
+    const preset = resolvePresetKey(rackLayoutState.presetId || (layoutPresetEl ? String(layoutPresetEl.value || "") : "") || "onboardingDefault");
     applyPreset(preset);
   }
 
@@ -2956,8 +3064,31 @@ function readStayConnectedPref() {
 function writeStayConnectedPref(on) {
   writeBoolPref(STAY_CONNECTED_KEY, Boolean(on));
 }
+const ENABLE_HINTS_KEY = "bzl_enableHints";
+function readHintsEnabledPref() {
+  const raw = localStorage.getItem(ENABLE_HINTS_KEY);
+  if (raw == null) return true;
+  return raw !== "0";
+}
+function writeHintsEnabledPref(on) {
+  const enabled = Boolean(on);
+  localStorage.setItem(ENABLE_HINTS_KEY, enabled ? "1" : "0");
+  appRoot?.classList.toggle("hintsEnabled", enabled);
+}
 
 let instanceBranding = { title: "Bzl", subtitle: "Ephemeral hives + chat", allowMemberPermanentPosts: false, appearance: {} };
+let onboardingState = {
+  enabled: true,
+  rulesVersion: 1,
+  requireAcceptance: false,
+  blockReadUntilAccepted: false,
+  acceptedRulesVersion: 0,
+  acceptedAt: 0,
+  tutorialVersion: 1,
+  tutorialCompletedVersion: 0,
+  selectedRoleIds: [],
+  needsAcceptance: false,
+};
 let serverInfo = null;
 let serverHealth = null;
 let serverInfoStatus = { loading: false, at: 0, error: "" };
@@ -3155,11 +3286,76 @@ function normalizeInstanceBranding(raw) {
   const mutedPct = clampPct(appearanceRaw.mutedPct, 65);
   const linePct = clampPct(appearanceRaw.linePct, 10);
   const panel2Pct = clampPct(appearanceRaw.panel2Pct, 2);
+  const onboardingRaw = raw?.onboarding && typeof raw.onboarding === "object" ? raw.onboarding : {};
+  const aboutRaw = onboardingRaw.about && typeof onboardingRaw.about === "object" ? onboardingRaw.about : {};
+  const rulesRaw = onboardingRaw.rules && typeof onboardingRaw.rules === "object" ? onboardingRaw.rules : {};
+  const roleSelectRaw = onboardingRaw.roleSelect && typeof onboardingRaw.roleSelect === "object" ? onboardingRaw.roleSelect : {};
+  const tutorialRaw = onboardingRaw.tutorial && typeof onboardingRaw.tutorial === "object" ? onboardingRaw.tutorial : {};
+  const ruleItems = Array.isArray(rulesRaw.items)
+    ? rulesRaw.items
+        .map((r, idx) => ({
+          id: String(r?.id || `r${idx + 1}`).trim().slice(0, 40),
+          order: Number.isFinite(Number(r?.order)) ? Math.max(1, Math.floor(Number(r.order))) : idx + 1,
+          name: String(r?.name || "").trim().slice(0, 60),
+          shortDescription: String(r?.shortDescription || "").trim().slice(0, 180),
+          description: typeof r?.description === "string" ? r.description : "",
+          severity: ["info", "warn", "critical"].includes(String(r?.severity || "").trim().toLowerCase())
+            ? String(r.severity).trim().toLowerCase()
+            : "info",
+        }))
+        .filter((r) => r.id)
+        .slice(0, 200)
+        .sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || String(a.id || "").localeCompare(String(b.id || "")))
+    : [];
   return {
     title: title || "Bzl",
     subtitle: subtitle || "Ephemeral hives + chat",
     allowMemberPermanentPosts,
+    onboarding: {
+      enabled: Object.prototype.hasOwnProperty.call(onboardingRaw, "enabled") ? Boolean(onboardingRaw.enabled) : true,
+      about: {
+        content: typeof aboutRaw.content === "string" ? aboutRaw.content : "",
+        updatedAt: Number(aboutRaw.updatedAt || 0) || 0,
+        updatedBy: String(aboutRaw.updatedBy || "").trim().toLowerCase(),
+      },
+      rules: {
+        version: Math.max(1, Math.floor(Number(rulesRaw.version || 1))),
+        requireAcceptance: Boolean(rulesRaw.requireAcceptance),
+        blockReadUntilAccepted: Boolean(rulesRaw.blockReadUntilAccepted),
+        items: ruleItems,
+      },
+      roleSelect: {
+        enabled: Object.prototype.hasOwnProperty.call(roleSelectRaw, "enabled") ? Boolean(roleSelectRaw.enabled) : true,
+        selfAssignableRoleIds: Array.isArray(roleSelectRaw.selfAssignableRoleIds)
+          ? roleSelectRaw.selfAssignableRoleIds.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean).slice(0, 64)
+          : [],
+      },
+      tutorial: {
+        enabled: Object.prototype.hasOwnProperty.call(tutorialRaw, "enabled") ? Boolean(tutorialRaw.enabled) : true,
+        version: Math.max(1, Math.floor(Number(tutorialRaw.version || 1))),
+      },
+    },
     appearance: { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct },
+  };
+}
+
+function normalizeOnboardingState(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(src, "enabled") ? Boolean(src.enabled) : Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.enabled),
+    rulesVersion: Math.max(1, Math.floor(Number(src.rulesVersion || normalizeInstanceBranding(instanceBranding).onboarding?.rules?.version || 1))),
+    requireAcceptance: Object.prototype.hasOwnProperty.call(src, "requireAcceptance")
+      ? Boolean(src.requireAcceptance)
+      : Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.rules?.requireAcceptance),
+    blockReadUntilAccepted: Object.prototype.hasOwnProperty.call(src, "blockReadUntilAccepted")
+      ? Boolean(src.blockReadUntilAccepted)
+      : Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.rules?.blockReadUntilAccepted),
+    acceptedRulesVersion: Math.max(0, Math.floor(Number(src.acceptedRulesVersion || 0))),
+    acceptedAt: Number(src.acceptedAt || 0) || 0,
+    tutorialVersion: Math.max(1, Math.floor(Number(src.tutorialVersion || normalizeInstanceBranding(instanceBranding).onboarding?.tutorial?.version || 1))),
+    tutorialCompletedVersion: Math.max(0, Math.floor(Number(src.tutorialCompletedVersion || 0))),
+    selectedRoleIds: Array.isArray(src.selectedRoleIds) ? src.selectedRoleIds.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean).slice(0, 64) : [],
+    needsAcceptance: Boolean(src.needsAcceptance),
   };
 }
 
@@ -3250,6 +3446,7 @@ function normalizeDmMessage(raw) {
   return {
     id,
     fromUser: String(raw.fromUser || raw.from || "").trim().toLowerCase(),
+    asMod: Boolean(raw.asMod) || String(raw.fromUser || raw.from || "").trim().toLowerCase() === "mod",
     createdAt: Number(raw.createdAt || 0),
     text: typeof raw.text === "string" ? raw.text : "",
     html: typeof raw.html === "string" ? raw.html : "",
@@ -3259,6 +3456,91 @@ function normalizeDmMessage(raw) {
 function dmActivityAt(thread) {
   if (!thread) return 0;
   return Math.max(Number(thread.lastMessageAt || 0), Number(thread.updatedAt || 0), Number(thread.createdAt || 0));
+}
+
+function pushRecentUnique(list, id, limit = CHAT_RECENTS_LIMIT) {
+  const value = String(id || "").trim();
+  if (!value) return list;
+  const next = [value, ...list.filter((x) => x !== value)];
+  if (next.length > limit) next.length = limit;
+  return next;
+}
+
+function touchRecentHiveChat(postId) {
+  const id = String(postId || "").trim();
+  if (!id) return;
+  recentHiveChatIds = pushRecentUnique(recentHiveChatIds, id);
+}
+
+function touchRecentDmChat(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  recentDmChatThreadIds = pushRecentUnique(recentDmChatThreadIds, id);
+}
+
+function activeDmThreadsSorted() {
+  return dmThreads
+    .filter((t) => t && String(t.status || "") === "active")
+    .sort((a, b) => dmActivityAt(b) - dmActivityAt(a));
+}
+
+function renderChatContextSelect() {
+  if (!(chatContextSelectEl instanceof HTMLSelectElement)) return;
+  const dmThreadsActive = activeDmThreadsSorted();
+  const dmById = new Map(dmThreadsActive.map((t) => [t.id, t]));
+  recentDmChatThreadIds = recentDmChatThreadIds.filter((id) => dmById.has(id));
+  const dmRecent = [activeDmThreadId, ...recentDmChatThreadIds]
+    .map((id) => dmById.get(String(id || "")))
+    .filter(Boolean)
+    .filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i);
+
+  const postsById = new Map(Array.from(posts.values()).map((p) => [String(p.id), p]));
+  const openPanelPostIds = Array.from(chatPanelInstances.values())
+    .map((inst) => String(inst?.postId || "").trim())
+    .filter(Boolean);
+  recentHiveChatIds = recentHiveChatIds.filter((id) => {
+    const p = postsById.get(String(id));
+    return Boolean(p && !p.deleted);
+  });
+  const postRecent = [activeChatPostId, ...openPanelPostIds, ...recentHiveChatIds]
+    .map((id) => postsById.get(String(id || "")))
+    .filter((p) => p && !p.deleted)
+    .filter((p, i, arr) => arr.findIndex((x) => String(x.id) === String(p.id)) === i);
+
+  const hasAny = Boolean(dmRecent.length || postRecent.length || activeDmThreadId || activeChatPostId);
+  if (!hasAny) {
+    chatContextSelectEl.classList.add("hidden");
+    chatContextSelectEl.innerHTML = "";
+    return;
+  }
+
+  const activeDmValue = activeDmThreadId ? `dm:${activeDmThreadId}` : "";
+  const activePostValue = activeChatPostId ? `post:${activeChatPostId}` : "";
+  const selected = activeDmValue || activePostValue || "";
+
+  const dmOptions = dmRecent
+    .map((t) => {
+      const other = `@${escapeHtml(t.other || "unknown")}`;
+      return `<option value="dm:${escapeHtml(t.id)}">${other}</option>`;
+    })
+    .join("");
+
+  const postOptions = postRecent
+    .map((p) => {
+      const label = `${escapeHtml(postTitle(p))}${p.author ? ` - @${escapeHtml(String(p.author || ""))}` : ""}`;
+      return `<option value="post:${escapeHtml(String(p.id))}">${label}</option>`;
+    })
+    .join("");
+
+  const topPlaceholder = `<option value="">Open chats...</option>`;
+  const dmGroup = dmOptions ? `<optgroup label="DMs">${dmOptions}</optgroup>` : "";
+  const postGroup = postOptions ? `<optgroup label="Hive Chats">${postOptions}</optgroup>` : "";
+
+  syncingChatContextSelect = true;
+  chatContextSelectEl.classList.remove("hidden");
+  chatContextSelectEl.innerHTML = `${topPlaceholder}${dmGroup}${postGroup}`;
+  chatContextSelectEl.value = selected && chatContextSelectEl.querySelector(`option[value="${cssEscape(selected)}"]`) ? selected : "";
+  syncingChatContextSelect = false;
 }
 
 function setDmThreads(list) {
@@ -4133,7 +4415,9 @@ function isMobileScreenMode() {
 function loadMobileLayout() {
   const defaults = () => {
     const pinned = ["account", "hives", "chat", "people", "profile"];
-    return { version: 1, pinned, active: pinned[0] || "account", history: [], tools: { composerOpen: false, profileOpen: false, pluginRackOpen: false } };
+    const onboardingEnabled = Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.enabled);
+    const active = onboardingEnabled ? "onboarding" : pinned[0] || "account";
+    return { version: 1, pinned, active, history: [], tools: { composerOpen: false, profileOpen: false, pluginRackOpen: false } };
   };
   const sanitizeId = (id) => {
     const raw = String(id || "")
@@ -4144,7 +4428,7 @@ function loadMobileLayout() {
     if (raw === "mod") return canModerate ? "moderation" : "";
     if (raw === "sidebar") return "account";
     if (raw === "main" || raw === "workspace") return "hives";
-    if (raw === "account" || raw === "hives" || raw === "chat" || raw === "people" || raw === "profile") return raw;
+    if (raw === "account" || raw === "hives" || raw === "chat" || raw === "people" || raw === "profile" || raw === "onboarding") return raw;
     if (raw === "moderation") return canModerate ? "moderation" : "";
     if (panelRegistry.has(raw)) return raw;
     return "";
@@ -4177,6 +4461,7 @@ function saveMobileLayout(layout) {
 function availableMobileScreens() {
   const out = [];
   out.push({ id: "account", title: "Account", core: true });
+  if (Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.enabled)) out.push({ id: "onboarding", title: "Onboarding", core: true });
   out.push({ id: "hives", title: "Hives", core: true });
   out.push({ id: "chat", title: "Chat", core: true });
   out.push({ id: "people", title: "People", core: true });
@@ -4212,8 +4497,9 @@ function mobileScreenFromLegacyPanel(next) {
   if (raw === "chat") return "chat";
   if (raw === "people") return "people";
   if (raw === "profile") return "profile";
+  if (raw === "onboarding") return "onboarding";
   if (raw === "moderation" || raw === "mod") return canModerate ? "moderation" : "hives";
-  if (raw === "hives" || raw === "account" || raw === "people" || raw === "profile" || raw === "moderation") return raw;
+  if (raw === "hives" || raw === "account" || raw === "people" || raw === "profile" || raw === "onboarding" || raw === "moderation") return raw;
   // Plugin panel id can be treated as a screen.
   if (panelRegistry.has(raw)) return raw;
   return "hives";
@@ -4394,6 +4680,10 @@ function hostHivesInMobileScreen() {
 function setMobileScreen(screenId, { pushHistory = true } = {}) {
   if (!appRoot) return;
   const screen = mobileScreenFromLegacyPanel(screenId);
+  if (onboardingNeedsAcceptanceNow() && screen !== "onboarding" && screen !== "account") {
+    setMobileScreen("onboarding", { pushHistory: false });
+    return;
+  }
   const nextIsMore = screen === "more";
   if (nextIsMore) {
     setMobileMoreOpen(true);
@@ -4447,6 +4737,12 @@ function setMobileScreen(screenId, { pushHistory = true } = {}) {
     return;
   }
 
+  if (screen === "onboarding") {
+    const hosted = hostPanelInMobileScreen("onboarding");
+    appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
+    return;
+  }
+
   if (screen === "hives") {
     const hosted = hostHivesInMobileScreen();
     appRoot.setAttribute("data-mobile-screen", hosted ? "host" : "hives");
@@ -4496,7 +4792,7 @@ function applyMobileMode() {
   const current = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
   if (!wasMobile || !current) {
     const layout = loadMobileLayout();
-    const desired = mobileScreenFromLegacyPanel(layout.active || "hives");
+    const desired = onboardingNeedsAcceptanceNow() ? "onboarding" : mobileScreenFromLegacyPanel(layout.active || "hives");
     setMobileScreen(desired, { pushHistory: false });
   }
   renderMobileNav();
@@ -4514,8 +4810,8 @@ function applyMobileMode() {
 function shiftMobilePanel(delta) {
   if (!isMobileScreenMode()) return;
   const order = canModerate
-    ? ["account", "hives", "chat", "people", "profile", "moderation"]
-    : ["account", "hives", "chat", "people", "profile"];
+    ? ["account", "onboarding", "hives", "chat", "people", "profile", "moderation"]
+    : ["account", "onboarding", "hives", "chat", "people", "profile"];
   const current = mobileScreenFromLegacyPanel(appRoot?.getAttribute("data-mobile-screen") || "hives");
   const idx = order.indexOf(current);
   const at = idx >= 0 ? idx : 0;
@@ -5227,7 +5523,7 @@ function isOwnerUser() {
 function renderPluginsAdminHtml() {
   if (!isOwnerUser()) return `<div class="muted small">Owner only.</div>`;
   const status = pluginAdminStatus ? `<div class="small muted">${escapeHtml(pluginAdminStatus)}</div>` : "";
-  const busyLine = pluginAdminBusy ? `<div class="small muted">Working…</div>` : "";
+  const busyLine = pluginAdminBusy ? `<div class="small muted">Working...</div>` : "";
   const listHtml = !plugins.length
     ? `<div class="muted small">No plugins installed yet.</div>`
     : plugins
@@ -5688,7 +5984,7 @@ function renderFeed() {
   );
 
   if (list.length === 0) {
-    feedEl.innerHTML = `<div class="small muted">No active posts in this view/filter.</div>`;
+    feedEl.innerHTML = `<div class="small muted">No active posts in this view/filter.</div><div class="uiHint">Tap <b>New Hive</b> to create one, or clear filters to widen results.</div>`;
     return;
   }
 
@@ -5802,24 +6098,265 @@ function isMobileChatScreenActive() {
 }
 
 function renderMobileChatListHtml() {
-  const list = sortPosts(Array.from(posts.values()))
-    .filter((p) => p && !p.deleted)
+  const dmActive = activeDmThreadsSorted().slice(0, 30);
+  const recentPostIds = recentHiveChatIds.slice(0, 24);
+  const recentPosts = recentPostIds.map((id) => posts.get(id)).filter((p) => p && !p.deleted);
+  const recentPostIdSet = new Set(recentPosts.map((p) => String(p.id)));
+  const availablePosts = sortPosts(Array.from(posts.values()))
+    .filter((p) => p && !p.deleted && !recentPostIdSet.has(String(p.id)))
     .slice(0, 60);
-  if (!list.length) {
-    return `<div class="small muted">No active hives available for chat.</div>`;
+
+  if (!dmActive.length && !recentPosts.length && !availablePosts.length) {
+    return `<div class="small muted">No active hives available for chat.</div><div class="uiHint">Create a hive in Hives first, then return here to chat.</div>`;
   }
-  return `<div class="mobileChatList">${list
-    .map((p) => {
-      const title = escapeHtml(postTitle(p));
-      const author = p.author ? `@${escapeHtml(String(p.author || ""))}` : "anon";
-      const exp = formatCountdown(p.expiresAt);
-      const lock = p.locked ? " · locked" : "";
-      return `<button type="button" class="ghost mobileChatListItem" data-mobilechatopen="${escapeHtml(p.id)}">
-        <span class="mobileChatListTop">${title}</span>
-        <span class="mobileChatListMeta">${author} · ${escapeHtml(exp)}${lock}</span>
-      </button>`;
-    })
-    .join("")}</div>`;
+
+  const dmSection = dmActive.length
+    ? `<div class="mobileChatSection">
+        <div class="small muted">DMs</div>
+        ${dmActive
+          .map((t) => {
+            const who = `@${escapeHtml(String(t.other || "unknown"))}`;
+            const when = dmActivityAt(t) ? new Date(dmActivityAt(t)).toLocaleTimeString() : "active";
+            return `<button type="button" class="ghost mobileChatListItem" data-dmopen="${escapeHtml(t.id)}">
+              <span class="mobileChatListTop">${who}</span>
+              <span class="mobileChatListMeta">private chat · ${escapeHtml(when)}</span>
+            </button>`;
+          })
+          .join("")}
+      </div>`
+    : "";
+
+  const postItem = (p) => {
+    const title = escapeHtml(postTitle(p));
+    const author = p.author ? `@${escapeHtml(String(p.author || ""))}` : "anon";
+    const exp = formatCountdown(p.expiresAt);
+    const lock = p.locked ? " · locked" : "";
+    return `<button type="button" class="ghost mobileChatListItem" data-mobilechatopen="${escapeHtml(p.id)}">
+      <span class="mobileChatListTop">${title}</span>
+      <span class="mobileChatListMeta">${author} · ${escapeHtml(exp)}${lock}</span>
+    </button>`;
+  };
+
+  const recentSection = recentPosts.length
+    ? `<div class="mobileChatSection">
+        <div class="small muted">Recent Hive Chats</div>
+        ${recentPosts.map(postItem).join("")}
+      </div>`
+    : "";
+
+  const hivesSection = availablePosts.length
+    ? `<div class="mobileChatSection">
+        <div class="small muted">Available Hives</div>
+        ${availablePosts.map(postItem).join("")}
+      </div>`
+    : "";
+
+  return `<div class="mobileChatList">${dmSection}${recentSection}${hivesSection}</div>`;
+}
+
+function onboardingRequiresAcceptance() {
+  return Boolean(onboardingState.enabled && onboardingState.requireAcceptance);
+}
+
+function onboardingNeedsAcceptanceNow() {
+  if (!onboardingRequiresAcceptance()) return false;
+  return Boolean(onboardingState.needsAcceptance || Number(onboardingState.acceptedRulesVersion || 0) < Number(onboardingState.rulesVersion || 1));
+}
+
+function onboardingSeverityLabel(severity) {
+  const s = String(severity || "").toLowerCase();
+  if (s === "critical") return "Critical";
+  if (s === "warn") return "Warn";
+  return "Info";
+}
+
+function onboardingSeverityBadge(severity) {
+  const s = String(severity || "info").toLowerCase();
+  const cls = s === "critical" ? "onbSeverityCritical" : s === "warn" ? "onbSeverityWarn" : "onbSeverityInfo";
+  return `<span class="tag ${cls}">${escapeHtml(onboardingSeverityLabel(s))}</span>`;
+}
+
+function onboardingRuleListFromConfig(cfg) {
+  const list = Array.isArray(cfg?.rules?.items) ? cfg.rules.items : [];
+  return list
+    .map((r, index) => ({
+      id: String(r?.id || `r${index + 1}`).trim().slice(0, 40) || `r${index + 1}`,
+      order: Number.isFinite(Number(r?.order)) ? Math.max(1, Math.floor(Number(r.order))) : index + 1,
+      name: String(r?.name || "").trim().slice(0, 60) || `Rule ${index + 1}`,
+      shortDescription: String(r?.shortDescription || "").trim().slice(0, 180),
+      description: String(r?.description || "").slice(0, 6000),
+      severity: ["info", "warn", "critical"].includes(String(r?.severity || "").toLowerCase())
+        ? String(r.severity).toLowerCase()
+        : "info",
+    }))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || String(a.id || "").localeCompare(String(b.id || "")));
+}
+
+function onboardingDraftStampFromConfig(cfg) {
+  return JSON.stringify({
+    enabled: Boolean(cfg?.enabled),
+    aboutUpdatedAt: Number(cfg?.about?.updatedAt || 0),
+    rulesVersion: Number(cfg?.rules?.version || 1),
+    itemCount: Array.isArray(cfg?.rules?.items) ? cfg.rules.items.length : 0,
+    roleSelectEnabled: Boolean(cfg?.roleSelect?.enabled),
+    selfAssignableCount: Array.isArray(cfg?.roleSelect?.selfAssignableRoleIds) ? cfg.roleSelect.selfAssignableRoleIds.length : 0,
+  });
+}
+
+function syncOnboardingAdminDraft(force = false) {
+  const cfg = normalizeInstanceBranding(instanceBranding).onboarding || {};
+  const stamp = onboardingDraftStampFromConfig(cfg);
+  if (!force && stamp === onboardingAdminDraftStamp) return;
+  onboardingAdminDraft = {
+    enabled: Boolean(cfg?.enabled),
+    aboutContent: String(cfg?.about?.content || ""),
+    requireAcceptance: Boolean(cfg?.rules?.requireAcceptance),
+    blockReadUntilAccepted: Boolean(cfg?.rules?.blockReadUntilAccepted),
+    roleSelectEnabled: Boolean(cfg?.roleSelect?.enabled),
+    selfAssignableRoleIds: Array.isArray(cfg?.roleSelect?.selfAssignableRoleIds)
+      ? cfg.roleSelect.selfAssignableRoleIds.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean)
+      : [],
+    rules: onboardingRuleListFromConfig(cfg),
+  };
+  onboardingAdminDraftStamp = stamp;
+  onboardingAdminExpandedRuleIds.clear();
+  if (onboardingAdminDraft.rules[0]?.id) onboardingAdminExpandedRuleIds.add(onboardingAdminDraft.rules[0].id);
+}
+
+function normalizeOnboardingDraftRules() {
+  onboardingAdminDraft.rules = (Array.isArray(onboardingAdminDraft.rules) ? onboardingAdminDraft.rules : [])
+    .map((r, index) => ({
+      id: String(r?.id || `r${index + 1}`).trim().slice(0, 40) || `r${index + 1}`,
+      order: index + 1,
+      name: String(r?.name || "").trim().slice(0, 60) || `Rule ${index + 1}`,
+      shortDescription: String(r?.shortDescription || "").trim().slice(0, 180),
+      description: String(r?.description || "").slice(0, 6000),
+      severity: ["info", "warn", "critical"].includes(String(r?.severity || "").toLowerCase())
+        ? String(r.severity).toLowerCase()
+        : "info",
+    }))
+    .slice(0, 200);
+}
+
+function renderOnboardingPanel() {
+  if (!(onboardingPanelEl instanceof HTMLElement) || !(onboardingPanelBodyEl instanceof HTMLElement)) return;
+  const cfg = normalizeInstanceBranding(instanceBranding).onboarding || {};
+  if (!cfg.enabled) {
+    onboardingPanelEl.classList.add("hidden");
+    onboardingPanelBodyEl.innerHTML = `<div class="small muted">Onboarding is disabled for this server.</div>`;
+    if (onboardingPanelAcceptBtn instanceof HTMLButtonElement) onboardingPanelAcceptBtn.classList.add("hidden");
+    return;
+  }
+
+  onboardingPanelEl.classList.remove("hidden");
+  const needs = onboardingNeedsAcceptanceNow();
+  const rules = onboardingRuleListFromConfig(cfg);
+  const about = typeof cfg?.about?.content === "string" ? cfg.about.content.trim() : "";
+  const roleIds = Array.isArray(cfg?.roleSelect?.selfAssignableRoleIds) ? cfg.roleSelect.selfAssignableRoleIds : [];
+  const roleItems = roleIds
+    .map((key) => customRoles.find((r) => String(r?.key || "") === String(key)))
+    .filter(Boolean)
+    .map((r) => `<span class="tag">${escapeHtml(String(r.label || r.key || ""))}</span>`)
+    .join(" ");
+
+  onboardingPanelBodyEl.innerHTML = `
+    <div class="onbTabs">
+      <button type="button" class="${onboardingViewerTab === "about" ? "primary" : "ghost"} smallBtn" data-onbtab="about">About</button>
+      <button type="button" class="${onboardingViewerTab === "rules" ? "primary" : "ghost"} smallBtn" data-onbtab="rules">Rules</button>
+      <button type="button" class="${onboardingViewerTab === "roles" ? "primary" : "ghost"} smallBtn" data-onbtab="roles">Roles</button>
+    </div>
+    ${
+      onboardingViewerTab === "about"
+        ? about
+          ? `<div class="onboardingAbout">${about}</div>`
+          : `<div class="small muted">No About content published yet.</div>`
+        : onboardingViewerTab === "rules"
+          ? rules.length
+            ? `<div class="onbRuleList">${rules
+                .map(
+                  (r) => `<article class="onbRuleViewerCard">
+                      <div class="row" style="justify-content:space-between;align-items:center;">
+                        <b>${escapeHtml(r.name || "Rule")}</b>
+                        ${onboardingSeverityBadge(r.severity)}
+                      </div>
+                      ${r.shortDescription ? `<div class="small muted">${escapeHtml(r.shortDescription)}</div>` : ""}
+                      ${r.description ? `<div class="small">${r.description}</div>` : ""}
+                    </article>`
+                )
+                .join("")}</div>`
+            : `<div class="small muted">No rules configured.</div>`
+          : cfg?.roleSelect?.enabled
+            ? roleItems
+              ? `<div class="row" style="flex-wrap:wrap;gap:8px;">${roleItems}</div>`
+              : `<div class="small muted">No self-assignable roles configured.</div>`
+            : `<div class="small muted">Role select is disabled.</div>`
+    }
+    <div class="small ${needs ? "badText" : "goodText"}" style="margin-top:10px;">
+      ${
+        onboardingRequiresAcceptance()
+          ? needs
+            ? "Rules acceptance required before posting/chat."
+            : `Rules accepted${onboardingState.acceptedAt ? ` at ${escapeHtml(formatLocalTime(onboardingState.acceptedAt))}` : "."}`
+          : "Rules acceptance is optional on this server."
+      }
+    </div>`;
+
+  if (onboardingPanelAcceptBtn instanceof HTMLButtonElement) {
+    onboardingPanelAcceptBtn.classList.toggle("hidden", !onboardingRequiresAcceptance());
+    onboardingPanelAcceptBtn.disabled = !loggedInUser || !needs;
+    onboardingPanelAcceptBtn.textContent = needs ? "Accept and continue" : "Accepted";
+  }
+}
+
+function renderOnboardingCard() {
+  if (!(onboardingCard instanceof HTMLElement) || !(onboardingBody instanceof HTMLElement)) return;
+  // Onboarding now lives as a first-class workspace panel; keep the old account card hidden.
+  onboardingCard.classList.add("hidden");
+  onboardingBody.innerHTML = "";
+  if (onboardingAcceptBtn instanceof HTMLButtonElement) {
+    onboardingAcceptBtn.classList.add("hidden");
+    onboardingAcceptBtn.disabled = true;
+  }
+  renderOnboardingPanel();
+  return;
+
+  const cfg = normalizeInstanceBranding(instanceBranding).onboarding || {};
+  if (!cfg.enabled) {
+    onboardingCard.classList.add("hidden");
+    onboardingBody.innerHTML = "";
+    return;
+  }
+  onboardingCard.classList.remove("hidden");
+  const needs = onboardingNeedsAcceptanceNow();
+  const rules = onboardingRuleListFromConfig(cfg).slice(0, 6);
+  const about = typeof cfg?.about?.content === "string" ? cfg.about.content.trim() : "";
+  const aboutBlock = about ? `<div class="onboardingAbout">${about}</div>` : `<div class="small muted">No About text set yet.</div>`;
+  const rulesBlock = rules.length
+    ? `<ol class="onboardingRules">${rules
+        .map(
+          (r) =>
+            `<li><b>${escapeHtml(r.name || "Rule")}</b>${r.shortDescription ? `<div class="small muted">${escapeHtml(r.shortDescription)}</div>` : ""}</li>`
+        )
+        .join("")}</ol>`
+    : `<div class="small muted">No rules published yet.</div>`;
+  onboardingBody.innerHTML = `
+    ${aboutBlock}
+    <div class="small" style="margin-top:10px;"><b>Rules</b></div>
+    ${rulesBlock}
+    ${
+      onboardingRequiresAcceptance()
+        ? `<div class="small ${needs ? "badText" : "goodText"}" style="margin-top:10px;">
+             ${needs ? "Rules acceptance required before posting/chat." : `Rules accepted${onboardingState.acceptedAt ? ` at ${escapeHtml(formatLocalTime(onboardingState.acceptedAt))}` : "."}`}
+           </div>`
+        : `<div class="small muted" style="margin-top:10px;">Rules acceptance is optional on this server.</div>`
+    }
+  `;
+  if (onboardingAcceptBtn instanceof HTMLButtonElement) {
+    onboardingAcceptBtn.classList.toggle("hidden", !onboardingRequiresAcceptance());
+    onboardingAcceptBtn.disabled = !loggedInUser || !needs;
+    onboardingAcceptBtn.textContent = needs ? "Accept and continue" : "Accepted";
+  }
+  renderOnboardingPanel();
 }
 
 function setAuthUi() {
@@ -5827,7 +6364,9 @@ function setAuthUi() {
     userLabel.innerHTML = renderUserPill(loggedInUser);
     logoutBtn.classList.remove("hidden");
     const roleText = loggedInRole && loggedInRole !== "member" ? ` (${loggedInRole})` : "";
-    authHint.textContent = `Signed in${roleText}. You can post, chat, and boost others.`;
+    authHint.textContent = onboardingNeedsAcceptanceNow()
+      ? `Signed in${roleText}. Accept server rules to unlock posting/chat.`
+      : `Signed in${roleText}. You can post, chat, and boost others.`;
   } else {
     userLabel.textContent = "Signed out";
     logoutBtn.classList.add("hidden");
@@ -5849,6 +6388,7 @@ function setAuthUi() {
 
   codeRow.classList.toggle("hidden", !registrationEnabled);
   registerBtn.classList.toggle("hidden", !(registrationEnabled || canRegisterFirstUser));
+  renderOnboardingCard();
   renderModPanel();
 }
 
@@ -5879,7 +6419,7 @@ function renderPeoplePanel() {
   if (!membersTabOn) {
     if (!peopleDmsViewEl) return;
     if (!loggedInUser) {
-      peopleDmsViewEl.innerHTML = `<div class="muted">Sign in to use DMs.</div>`;
+      peopleDmsViewEl.innerHTML = `<div class="muted">Sign in to use DMs.</div><div class="uiHint">After signing in, open a DM request and accept it to start chatting.</div>`;
       return;
     }
 
@@ -5895,7 +6435,7 @@ function renderPeoplePanel() {
       eligibleMembers.length > 0
         ? `<div class="dmNewRow">
             <select class="dmToSelect" data-dmto="1">
-              <option value="">New DM…</option>
+              <option value="">New DM...</option>
               ${eligibleMembers.map((u) => `<option value="${escapeHtml(u)}">@${escapeHtml(u)}</option>`).join("")}
             </select>
             <button type="button" class="primary" data-dmrequestfromselect="1">Request</button>
@@ -5934,7 +6474,7 @@ function renderPeoplePanel() {
                   ? `<button type="button" class="primary smallBtn" data-dmopen="${escapeHtml(t.id)}">Open</button>`
                   : status === "declined"
                     ? `<button type="button" class="ghost smallBtn" data-dmrequest="${escapeHtml(other)}">Request again</button>`
-                    : `<span class="muted small">Waiting…</span>`;
+                    : `<span class="muted small">Waiting...</span>`;
 
             if (isBlocked) {
               actions =
@@ -5974,7 +6514,7 @@ function renderPeoplePanel() {
     .sort((a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)) || String(a.username).localeCompare(String(b.username)));
 
   if (!list.length) {
-    peopleListEl.innerHTML = `<div class="muted">No members found.</div>`;
+    peopleListEl.innerHTML = `<div class="muted">No members found.</div><div class="uiHint">Try clearing the search filter or check back when more members are online.</div>`;
     return;
   }
   peopleListEl.innerHTML = list
@@ -6103,7 +6643,7 @@ function renderModPanel() {
     const updatedAt = serverInfoStatus.at ? formatLocalTime(serverInfoStatus.at) : "";
 
     const statusLine = loading
-      ? `<span class="muted">Loading…</span>`
+      ? `<span class="muted">Loading...</span>`
       : err
         ? `<span class="bad">${escapeHtml(err)}</span>`
         : updatedAt
@@ -6142,7 +6682,7 @@ function renderModPanel() {
            <label style="flex:1">
              <span>Theme preset</span>
              <select data-theme-preset>
-               <option value="">(choose…)</option>
+               <option value="">(choose...)</option>
                ${THEME_PRESETS.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")}
              </select>
            </label>
@@ -6289,6 +6829,128 @@ function renderModPanel() {
     return;
   }
 
+  if (modTab === "onboarding") {
+    const isOwner = loggedInRole === "owner";
+    const canEdit = loggedInRole === "owner" || loggedInRole === "moderator";
+    syncOnboardingAdminDraft(false);
+    normalizeOnboardingDraftRules();
+    const roleOptions = customRoles
+      .map(
+        (r) =>
+          `<label class="checkRow">
+            <span>${escapeHtml(String(r.label || r.key || ""))}</span>
+            <input type="checkbox" data-onboarding-rolecheck="${escapeHtml(String(r.key || ""))}" ${
+              onboardingAdminDraft.selfAssignableRoleIds.includes(String(r.key || "")) ? "checked" : ""
+            } />
+          </label>`
+      )
+      .join("");
+    const rulesCards = onboardingAdminDraft.rules.length
+      ? onboardingAdminDraft.rules
+          .map((r, idx) => {
+            const expanded = onboardingAdminExpandedRuleIds.has(r.id);
+            return `<article class="onbRuleEditorCard" data-onb-ruleid="${escapeHtml(r.id)}">
+                <div class="row" style="justify-content:space-between;align-items:center;">
+                  <button type="button" class="ghost smallBtn" data-onb-ruletoggle="${escapeHtml(r.id)}">${expanded ? "▾" : "▸"} Rule ${idx + 1}</button>
+                  <div class="row" style="gap:6px;">
+                    <button type="button" class="ghost smallBtn" data-onb-ruleup="${escapeHtml(r.id)}" ${idx <= 0 ? "disabled" : ""}>↑</button>
+                    <button type="button" class="ghost smallBtn" data-onb-ruledown="${escapeHtml(r.id)}" ${
+                      idx >= onboardingAdminDraft.rules.length - 1 ? "disabled" : ""
+                    }>↓</button>
+                    <button type="button" class="ghost smallBtn" data-onb-ruledelete="${escapeHtml(r.id)}">Delete</button>
+                  </div>
+                </div>
+                ${
+                  expanded
+                    ? `<div class="onbRuleEditorBody">
+                         <label><span>Name</span><input data-onb-rulefield="name" data-onb-ruleid="${escapeHtml(r.id)}" value="${escapeHtml(
+                           r.name
+                         )}" maxlength="60" /></label>
+                         <label><span>Short description</span><input data-onb-rulefield="shortDescription" data-onb-ruleid="${escapeHtml(
+                           r.id
+                         )}" value="${escapeHtml(r.shortDescription)}" maxlength="180" /></label>
+                         <label><span>Full description</span><textarea data-onb-rulefield="description" data-onb-ruleid="${escapeHtml(
+                           r.id
+                         )}" rows="4">${escapeHtml(r.description)}</textarea></label>
+                         <label><span>Severity</span>
+                           <select data-onb-rulefield="severity" data-onb-ruleid="${escapeHtml(r.id)}">
+                             <option value="info" ${r.severity === "info" ? "selected" : ""}>Info</option>
+                             <option value="warn" ${r.severity === "warn" ? "selected" : ""}>Warn</option>
+                             <option value="critical" ${r.severity === "critical" ? "selected" : ""}>Critical</option>
+                           </select>
+                         </label>
+                       </div>`
+                    : ""
+                }
+              </article>`;
+          })
+          .join("")
+      : `<div class="small muted">No rules yet. Add your first rule.</div>`;
+
+    modBodyEl.innerHTML = `
+      <div class="modCard">
+        <div class="modRowTop"><div><b>Onboarding</b></div></div>
+        <div class="small muted">Configure About, Rules, and Role Select.</div>
+        <div class="onbTabs" style="margin-top:8px;">
+          <button type="button" class="${onboardingAdminTab === "about" ? "primary" : "ghost"} smallBtn" data-onb-admin-tab="about">About</button>
+          <button type="button" class="${onboardingAdminTab === "rules" ? "primary" : "ghost"} smallBtn" data-onb-admin-tab="rules">Rules</button>
+          <button type="button" class="${onboardingAdminTab === "roles" ? "primary" : "ghost"} smallBtn" data-onb-admin-tab="roles">Roles</button>
+        </div>
+      </div>
+      <div class="modCard">
+        ${
+          onboardingAdminTab === "about"
+            ? `<label class="checkRow">
+                 <span>Enable onboarding panel</span>
+                 <input type="checkbox" data-onboarding-enabled ${onboardingAdminDraft.enabled ? "checked" : ""} ${canEdit ? "" : "disabled"} />
+               </label>
+               <label>
+                 <span>About (rich text allowed)</span>
+                 <textarea data-onboarding-about rows="10" ${canEdit ? "" : "disabled"}>${escapeHtml(onboardingAdminDraft.aboutContent)}</textarea>
+               </label>
+               <div class="small muted">Updated by: ${escapeHtml(String(normalizeInstanceBranding(instanceBranding).onboarding?.about?.updatedBy || "n/a"))}</div>
+               <div class="small muted">Updated at: ${escapeHtml(
+                 formatLocalTime(normalizeInstanceBranding(instanceBranding).onboarding?.about?.updatedAt || 0) || "n/a"
+               )}</div>`
+            : onboardingAdminTab === "rules"
+              ? `<label class="checkRow">
+                   <span>Require rules acceptance before posting/chat</span>
+                   <input type="checkbox" data-onboarding-require ${onboardingAdminDraft.requireAcceptance ? "checked" : ""} ${
+                  canEdit ? "" : "disabled"
+                } />
+                 </label>
+                 <label class="checkRow">
+                   <span>Block reading hives until accepted ${isOwner ? "" : "(owner only)"}</span>
+                   <input type="checkbox" data-onboarding-blockread ${onboardingAdminDraft.blockReadUntilAccepted ? "checked" : ""} ${
+                  canEdit && isOwner ? "" : "disabled"
+                } />
+                 </label>
+                 <div class="row" style="justify-content:space-between;align-items:center;margin:8px 0;">
+                   <div><b>Rules</b></div>
+                   <button type="button" class="primary smallBtn" data-onb-ruleadd="1" ${canEdit ? "" : "disabled"}>+ Add Rule</button>
+                 </div>
+                 <div class="onbRuleEditorList">${rulesCards}</div>`
+              : `<label class="checkRow">
+                   <span>Enable custom role select in onboarding</span>
+                   <input type="checkbox" data-onboarding-roleenabled ${onboardingAdminDraft.roleSelectEnabled ? "checked" : ""} ${
+                  canEdit ? "" : "disabled"
+                } />
+                 </label>
+                 <div class="small muted">Choose self-assignable roles:</div>
+                 <div class="onbRoleGrid">${roleOptions || `<div class="small muted">No custom roles defined.</div>`}</div>`
+        }
+      </div>
+      <div class="modCard">
+        <div class="row" style="gap:8px;">
+          <button type="button" class="primary" data-onboarding-save="1" ${canEdit ? "" : "disabled"}>Save</button>
+          <button type="button" class="ghost" data-onboarding-publish="1" ${canEdit ? "" : "disabled"}>Publish</button>
+          <button type="button" class="ghost" data-onboarding-refresh="1">Reload</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   if (modTab === "users") {
     const roleList = customRoles.length
       ? customRoles
@@ -6408,7 +7070,7 @@ function renderModPanel() {
                       : "public";
                   return `<span class="tag">/${escapeHtml(c.name)}</span>${
                     c.id !== "general"
-                      ? `<button type="button" data-collectiongate="${escapeHtml(c.id)}">Gate…</button>
+                      ? `<button type="button" data-collectiongate="${escapeHtml(c.id)}">Gate...</button>
                          <button type="button" data-collectionpublic="${escapeHtml(c.id)}">Make public</button>`
                       : ""
                   }
@@ -6456,7 +7118,7 @@ function renderModPanel() {
             )}" data-ttl="1440">TTL 1d</button>
             <button type="button" data-modaction="post_ttl_set" data-targettype="post" data-targetid="${escapeHtml(
               p.id
-            )}" data-ttlprompt="1">Set TTL…</button>
+            )}" data-ttlprompt="1">Set TTL...</button>
             ${
               p.readOnly
                 ? `<button type="button" data-modaction="post_readonly_set" data-targettype="post" data-targetid="${escapeHtml(
@@ -6473,10 +7135,10 @@ function renderModPanel() {
                   )}" data-unprotect="1">Unprotect</button>
                    <button type="button" data-modaction="post_protection_set" data-targettype="post" data-targetid="${escapeHtml(
                      p.id
-                   )}" data-protect="1">Change password…</button>`
+                   )}" data-protect="1">Change password...</button>`
                 : `<button type="button" data-modaction="post_protection_set" data-targettype="post" data-targetid="${escapeHtml(
                     p.id
-                  )}" data-protect="1">Protect…</button>`
+                  )}" data-protect="1">Protect...</button>`
             }
             <button type="button" data-modaction="message_purge_recent" data-targettype="post" data-targetid="${escapeHtml(
               p.id
@@ -6677,6 +7339,7 @@ function pushMapChatMessage(mapId, scope, message) {
 
 function renderChatPanel(forceScroll = false) {
   updateChatModToggleVisibility();
+  renderChatContextSelect();
   const mobileChatScreen = isMobileChatScreenActive();
   const mediaState = captureMediaState(chatMessagesEl);
   if (activeDmThreadId) {
@@ -6709,7 +7372,7 @@ function renderChatPanel(forceScroll = false) {
               </div>`
             : status === "declined"
               ? `<button type="button" class="ghost smallBtn" data-dmrequest="${escapeHtml(thread.other)}">Request again</button>`
-              : `<div class="muted">Waiting for @${escapeHtml(thread.other)}…</div>`;
+              : `<div class="muted">Waiting for @${escapeHtml(thread.other)}...</div>`;
         chatMessagesEl.innerHTML = `<div class="small muted">${promptHtml}</div>`;
         restoreMediaState(chatMessagesEl, mediaState);
         setReplyToMessage(null);
@@ -6720,14 +7383,15 @@ function renderChatPanel(forceScroll = false) {
         .map((m, index) => {
           const from = m.fromUser || "";
           const isYou = loggedInUser && from && from === loggedInUser;
+          const isModMsg = Boolean(m?.asMod) || String(from || "").toLowerCase() === "mod";
           const rail = chatRailClass({
             fromUser: from,
-            isModMessage: Boolean(m?.asMod) || String(m?.fromUser || "").trim().toLowerCase() === "mod"
+            isModMessage: isModMsg
           });
           const prev = index > 0 ? messages[index - 1] : null;
           const sameAuthorAsPrev = Boolean(prev && String(prev.fromUser || "") === from);
-          const who = renderUserPill(from || "");
-          const youTag = isYou ? `<span class="muted">(you)</span>` : "";
+          const who = isModMsg ? `<span class="modPill">MOD</span>` : renderUserPill(from || "");
+          const youTag = isModMsg ? "" : isYou ? `<span class="muted">(you)</span>` : "";
           const time = new Date(m.createdAt).toLocaleTimeString();
           const tint = tintStylesFromHex(getProfile(from).color);
           const html = typeof m.html === "string" && m.html.trim() ? m.html : "";
@@ -6830,7 +7494,7 @@ function renderChatPanel(forceScroll = false) {
     if (chatPanelEl) chatPanelEl.classList.remove("walkie");
     if (walkieBarEl) walkieBarEl.classList.add("hidden");
     if (chatForm) chatForm.classList.remove("hidden");
-    chatMessagesEl.innerHTML = `<div class="small muted">No chat selected.</div>`;
+    chatMessagesEl.innerHTML = `<div class="small muted">No chat selected.</div><div class="uiHint">Open a hive and press <b>Chat</b>, or use People -> DMs to open a private thread.</div>`;
     restoreMediaState(chatMessagesEl, mediaState);
     setReplyToMessage(null);
     return;
@@ -7167,6 +7831,7 @@ function openDmThread(threadId) {
   if (activeChatPostId) ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
   activeChatPostId = null;
   activeDmThreadId = id;
+  touchRecentDmChat(id);
   setReplyToMessage(null);
   ws.send(JSON.stringify({ type: "dmHistory", threadId: id }));
   renderChatPanel(true);
@@ -7174,16 +7839,18 @@ function openDmThread(threadId) {
     setMobileScreen("chat");
     renderMobileNav();
   }
-  chatEditor?.focus();
 }
 
-function openChat(postId) {
+function openChat(postId, opts = null) {
   activeDmThreadId = null;
   stopWalkieRecording();
+  const options = opts && typeof opts === "object" ? opts : {};
+  const sourceEl = options.sourceEl instanceof HTMLElement ? options.sourceEl : null;
   const post = posts.get(postId);
   if (!post) return;
   if (post.deleted) {
     activeChatPostId = postId;
+    touchRecentHiveChat(postId);
     renderChatPanel(true);
     if (isMobileSwipeMode()) setMobilePanel("chat");
     return;
@@ -7193,47 +7860,42 @@ function openChat(postId) {
     return;
   }
 
-  // Rack mode: hive chats live in dedicated chat panels (instances). Don't also open the legacy main chat panel.
+  // Rack mode: switch the nearest visible chat panel when possible; otherwise use main chat.
   if (rackLayoutEnabled) {
-    const mainChatPanelIsIdle = Boolean(
-      chatPanelEl &&
-        typeof isDocked === "function" &&
-        !isDocked("chat") &&
-        !activeDmThreadId &&
-        !activeChatPostId &&
-        !isMapChatActive()
-    );
-    if (mainChatPanelIsIdle) {
+    const nearestInstanceId = nearestVisibleChatInstancePanelId(sourceEl);
+    if (nearestInstanceId) {
+      touchRecentHiveChat(postId);
+      markRead(postId);
+      renderFeed();
+      ws.send(JSON.stringify({ type: "getChat", postId }));
+      setChatInstancePanelPost(nearestInstanceId, postId, true);
+      renderChatContextSelect();
+      return;
+    }
+    if (chatPanelEl && typeof isDocked === "function" && !isDocked("chat")) {
       activeChatPostId = postId;
+      touchRecentHiveChat(postId);
       markRead(postId);
       renderFeed();
       ws.send(JSON.stringify({ type: "getChat", postId }));
       renderChatPanel(true);
       renderTypingIndicator();
       if (isMobileSwipeMode()) setMobilePanel("chat");
-      chatEditor.focus();
       return;
     }
-
-    markRead(postId);
-    renderFeed();
-    ws.send(JSON.stringify({ type: "getChat", postId }));
-    ensureChatPostPanelInstance(postId, { docked: false });
-    return;
   }
   if (activeChatPostId && activeChatPostId !== postId) {
     ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
     setReplyToMessage(null);
   }
   activeChatPostId = postId;
+  touchRecentHiveChat(postId);
   markRead(postId);
   renderFeed();
   ws.send(JSON.stringify({ type: "getChat", postId }));
   renderChatPanel(true);
   renderTypingIndicator();
   if (isMobileSwipeMode()) setMobilePanel("chat");
-  chatEditor.focus();
-
 }
 
 let pendingOpenChatAfterUnlock = null;
@@ -7513,6 +8175,114 @@ function shouldHandleWalkieHotkey(evt) {
   return true;
 }
 
+function isTextEntryFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = String(el.tagName || "").toLowerCase();
+  if (tag === "textarea") return true;
+  if (tag === "input") {
+    const type = String(el.getAttribute?.("type") || "text").toLowerCase();
+    return !["button", "checkbox", "color", "file", "hidden", "radio", "range", "reset", "submit"].includes(type);
+  }
+  return Boolean(el.isContentEditable);
+}
+
+function cycleLayoutPresetBy(step) {
+  if (!layoutPresetEl || !rackLayoutEnabled || layoutPresetEl.disabled) return;
+  const options = Array.from(layoutPresetEl.options || [])
+    .map((opt) => String(opt.value || "").trim())
+    .filter((v) => v);
+  if (!options.length) return;
+  const current = resolvePresetKey(String(layoutPresetEl.value || rackLayoutState?.presetId || "onboardingDefault"));
+  let idx = options.indexOf(current);
+  if (idx < 0) idx = 0;
+  const len = options.length;
+  const next = options[(idx + step + len) % len];
+  if (!next) return;
+  layoutPresetEl.value = next;
+  applyPreset(next);
+}
+
+let hotkeyPanelContext = "";
+function updateHotkeyPanelContextFromTarget(target) {
+  const el = target instanceof HTMLElement ? target : null;
+  if (!el) return;
+  if (el.closest("#hivesPanel")) {
+    hotkeyPanelContext = "hives";
+    return;
+  }
+  if (el.closest("aside.chat") || el.closest(".chatInstance") || el.closest("[data-panel-id^='chat:post:']")) {
+    hotkeyPanelContext = "chat";
+  }
+}
+
+function activePanelContextForHotkeys() {
+  if (isMobileScreenMode() && appRoot) {
+    const mobile = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
+    if (mobile === "hives") return "hives";
+    if (mobile === "chat" || (mobile === "host" && mobileHostPanelId === "chat")) return "chat";
+  }
+  const ae = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  if (ae) {
+    if (ae.closest("#hivesPanel")) return "hives";
+    if (ae.closest("aside.chat") || ae.closest(".chatInstance") || ae.closest("[data-panel-id^='chat:post:']")) return "chat";
+  }
+  return hotkeyPanelContext || "";
+}
+
+function cycleHiveViewBy(step) {
+  if (!hiveTabsEl) return false;
+  const views = Array.from(hiveTabsEl.querySelectorAll("button[data-hiveview]:not([disabled])"))
+    .map((b) => String(b.getAttribute("data-hiveview") || "").trim())
+    .filter(Boolean);
+  if (!views.length) return false;
+  let idx = views.indexOf(String(activeHiveView || "all"));
+  if (idx < 0) idx = 0;
+  const len = views.length;
+  const next = views[(idx + step + len) % len];
+  if (!next || next === activeHiveView) return false;
+  activeHiveView = next;
+  renderFeed();
+  return true;
+}
+
+function cycleChatContextBy(step) {
+  renderChatContextSelect();
+  if (!(chatContextSelectEl instanceof HTMLSelectElement)) return false;
+  const items = [
+    "__list__",
+    ...Array.from(chatContextSelectEl.options || [])
+      .map((o) => String(o.value || "").trim())
+      .filter((v) => v && (v.startsWith("dm:") || v.startsWith("post:"))),
+  ];
+  if (items.length <= 1) return false;
+  const current = activeDmThreadId ? `dm:${activeDmThreadId}` : activeChatPostId ? `post:${activeChatPostId}` : "__list__";
+  let idx = items.indexOf(current);
+  if (idx < 0) idx = 0;
+  const len = items.length;
+  const next = items[(idx + step + len) % len];
+  if (!next || next === current) return false;
+  if (next === "__list__") {
+    if (activeChatPostId && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "typing", postId: activeChatPostId, isTyping: false }));
+    activeChatPostId = null;
+    activeDmThreadId = null;
+    activeMapsRoomId = "";
+    activeMapsRoomTitle = "";
+    setReplyToMessage(null);
+    renderChatPanel(true);
+    return true;
+  }
+  if (next.startsWith("dm:")) {
+    openDmThread(next.slice(3));
+    return true;
+  }
+  if (next.startsWith("post:")) {
+    openChat(next.slice(5));
+    return true;
+  }
+  return false;
+}
+
 function canWalkieTalkNow() {
   if (!loggedInUser || !ws || ws.readyState !== WebSocket.OPEN) return false;
   if (!activeChatPostId) return false;
@@ -7525,7 +8295,7 @@ async function startWalkieRecording() {
   if (walkieRecording) return;
   if (!canWalkieTalkNow()) return;
   try {
-    if (walkieStatusEl) walkieStatusEl.textContent = "Requesting microphone…";
+    if (walkieStatusEl) walkieStatusEl.textContent = "Requesting microphone...";
     const { ctx, mix, dest } = await ensureWalkieGraph();
     if (ctx.state === "suspended") await ctx.resume();
 
@@ -7549,7 +8319,7 @@ async function startWalkieRecording() {
     walkieStartAt = Date.now();
     walkieRecording = true;
     if (walkieBarEl) walkieBarEl.classList.add("isRecording");
-    if (walkieStatusEl) walkieStatusEl.textContent = "Recording… release to send.";
+    if (walkieStatusEl) walkieStatusEl.textContent = "Recording... release to send.";
 
     const dispatch = await ensureWalkieDispatchBuffer();
     if (dispatch) {
@@ -7571,7 +8341,7 @@ async function startWalkieRecording() {
       const tookMs = Date.now() - walkieStartAt;
       walkieRecording = false;
       if (walkieBarEl) walkieBarEl.classList.remove("isRecording");
-      if (walkieStatusEl) walkieStatusEl.textContent = "Processing…";
+      if (walkieStatusEl) walkieStatusEl.textContent = "Processing...";
 
       // Give some browsers a tick to deliver the final dataavailable.
       await new Promise((r) => window.setTimeout(r, 0));
@@ -7585,7 +8355,7 @@ async function startWalkieRecording() {
 
       const ext = (rec.mimeType || "").includes("ogg") ? "ogg" : "webm";
       const file = new File([blob], `walkie-${Date.now()}.${ext}`, { type: rec.mimeType || blob.type || "audio/webm" });
-      if (walkieStatusEl) walkieStatusEl.textContent = "Uploading…";
+      if (walkieStatusEl) walkieStatusEl.textContent = "Uploading...";
       const url = await uploadMediaFile(file, "audio");
       if (!url) {
         if (walkieStatusEl) walkieStatusEl.textContent = "";
@@ -8007,6 +8777,10 @@ profileSaveBtn?.addEventListener("click", () => {
 
 newPostForm.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (onboardingNeedsAcceptanceNow()) {
+    toast("Onboarding", "Accept server rules in Account before creating hives.");
+    return;
+  }
   const title = String(postTitleInput?.value || "")
     .replace(/\s+/g, " ")
     .trim()
@@ -8073,6 +8847,10 @@ toggleComposerBtn?.addEventListener("click", () => {
 toggleComposerInlineBtn?.addEventListener("click", () => setComposerOpen(false));
 
 function submitChat() {
+  if (onboardingNeedsAcceptanceNow()) {
+    toast("Onboarding", "Accept server rules in Account before chatting.");
+    return;
+  }
   const html = chatEditor.innerHTML.trim();
   const text = chatEditor.innerText.trim();
   const hasImg = Boolean(chatEditor.querySelector("img"));
@@ -8244,7 +9022,7 @@ feedEl.addEventListener("click", (e) => {
     const postId = chatBtn.getAttribute("data-chat");
     const post = postId ? posts.get(postId) : null;
     if (post?.locked) unlockPostFlow(postId, true);
-    else openChat(postId);
+    else openChat(postId, { sourceEl: chatBtn });
     return;
   }
 
@@ -8350,6 +9128,43 @@ window.addEventListener("keydown", (e) => {
   for (const btn of feedEl.querySelectorAll("button[data-postmenu]")) btn.setAttribute("aria-expanded", "false");
   openPostMenuId = "";
 });
+
+window.addEventListener("keydown", (e) => {
+  if (e.defaultPrevented) return;
+  if (e.repeat) return;
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (isTextEntryFocused()) return;
+  const ctx = activePanelContextForHotkeys();
+  const plus = e.key === "=" || e.code === "NumpadAdd";
+  const minus = e.key === "-" || e.code === "NumpadSubtract";
+  if (ctx === "hives" && (plus || minus)) {
+    e.preventDefault();
+    cycleHiveViewBy(plus ? 1 : -1);
+    return;
+  }
+  if (ctx === "chat" && (plus || minus)) {
+    e.preventDefault();
+    cycleChatContextBy(plus ? 1 : -1);
+    return;
+  }
+  if (e.key === "[") {
+    e.preventDefault();
+    cycleLayoutPresetBy(-1);
+    return;
+  }
+  if (e.key === "]") {
+    e.preventDefault();
+    cycleLayoutPresetBy(1);
+  }
+});
+
+window.addEventListener(
+  "pointerdown",
+  (e) => {
+    updateHotkeyPanelContextFromTarget(e.target);
+  },
+  true
+);
 
 window.addEventListener("click", (e) => {
   if (!openPostMenuId) return;
@@ -8490,11 +9305,27 @@ chatBackToListBtn?.addEventListener("click", () => {
   renderChatPanel(true);
 });
 
+chatContextSelectEl?.addEventListener("change", () => {
+  if (syncingChatContextSelect) return;
+  const raw = String(chatContextSelectEl.value || "").trim();
+  if (!raw) return;
+  if (raw.startsWith("dm:")) {
+    const id = raw.slice(3);
+    if (id) openDmThread(id);
+    return;
+  }
+  if (raw.startsWith("post:")) {
+    const id = raw.slice(5);
+    if (id) openChat(id);
+  }
+});
+
 modPanelEl?.addEventListener("click", (e) => {
   const tabBtn = e.target.closest("[data-modtab]");
   if (tabBtn) {
     modTab = tabBtn.getAttribute("data-modtab") || "reports";
     if (modTab === "server") requestServerInfo();
+    if (modTab === "onboarding") syncOnboardingAdminDraft(true);
     renderModPanel();
     return;
   }
@@ -8503,6 +9334,11 @@ modPanelEl?.addEventListener("click", (e) => {
 modRefreshBtn?.addEventListener("click", () => {
   if (!canModerate) return;
   if (modTab === "server") requestServerInfo();
+  else if (modTab === "onboarding") {
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+    syncOnboardingAdminDraft(true);
+    renderModPanel();
+  }
   else requestModData();
 });
 modReportStatusEl?.addEventListener("change", () => {
@@ -8623,6 +9459,120 @@ modBodyEl?.addEventListener("click", (e) => {
   const serverRefreshBtn = e.target.closest("button[data-server-refresh]");
   if (serverRefreshBtn) {
     requestServerInfo();
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+    return;
+  }
+
+  const onboardingRefreshBtn = e.target.closest("button[data-onboarding-refresh]");
+  if (onboardingRefreshBtn) {
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+    syncOnboardingAdminDraft(true);
+    renderModPanel();
+    return;
+  }
+
+  const onbAdminTabBtn = e.target.closest("button[data-onb-admin-tab]");
+  if (onbAdminTabBtn) {
+    const tab = String(onbAdminTabBtn.getAttribute("data-onb-admin-tab") || "about").trim();
+    if (!["about", "rules", "roles"].includes(tab)) return;
+    onboardingAdminTab = tab;
+    renderModPanel();
+    return;
+  }
+
+  const onbRuleAddBtn = e.target.closest("button[data-onb-ruleadd]");
+  if (onbRuleAddBtn) {
+    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    normalizeOnboardingDraftRules();
+    const nextIndex = onboardingAdminDraft.rules.length + 1;
+    const id = `r${Date.now()}_${nextIndex}`;
+    onboardingAdminDraft.rules.push({
+      id,
+      order: nextIndex,
+      name: `Rule ${nextIndex}`,
+      shortDescription: "",
+      description: "",
+      severity: "info",
+    });
+    normalizeOnboardingDraftRules();
+    onboardingAdminExpandedRuleIds.add(id);
+    onboardingAdminTab = "rules";
+    renderModPanel();
+    return;
+  }
+
+  const onbRuleToggleBtn = e.target.closest("button[data-onb-ruletoggle]");
+  if (onbRuleToggleBtn) {
+    const id = String(onbRuleToggleBtn.getAttribute("data-onb-ruletoggle") || "").trim();
+    if (!id) return;
+    if (onboardingAdminExpandedRuleIds.has(id)) onboardingAdminExpandedRuleIds.delete(id);
+    else onboardingAdminExpandedRuleIds.add(id);
+    renderModPanel();
+    return;
+  }
+
+  const onbRuleDeleteBtn = e.target.closest("button[data-onb-ruledelete]");
+  if (onbRuleDeleteBtn) {
+    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    const id = String(onbRuleDeleteBtn.getAttribute("data-onb-ruledelete") || "").trim();
+    onboardingAdminDraft.rules = onboardingAdminDraft.rules.filter((r) => r.id !== id);
+    onboardingAdminExpandedRuleIds.delete(id);
+    normalizeOnboardingDraftRules();
+    renderModPanel();
+    return;
+  }
+
+  const onbRuleUpBtn = e.target.closest("button[data-onb-ruleup]");
+  if (onbRuleUpBtn) {
+    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    const id = String(onbRuleUpBtn.getAttribute("data-onb-ruleup") || "").trim();
+    const idx = onboardingAdminDraft.rules.findIndex((r) => r.id === id);
+    if (idx <= 0) return;
+    const tmp = onboardingAdminDraft.rules[idx - 1];
+    onboardingAdminDraft.rules[idx - 1] = onboardingAdminDraft.rules[idx];
+    onboardingAdminDraft.rules[idx] = tmp;
+    normalizeOnboardingDraftRules();
+    renderModPanel();
+    return;
+  }
+
+  const onbRuleDownBtn = e.target.closest("button[data-onb-ruledown]");
+  if (onbRuleDownBtn) {
+    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    const id = String(onbRuleDownBtn.getAttribute("data-onb-ruledown") || "").trim();
+    const idx = onboardingAdminDraft.rules.findIndex((r) => r.id === id);
+    if (idx < 0 || idx >= onboardingAdminDraft.rules.length - 1) return;
+    const tmp = onboardingAdminDraft.rules[idx + 1];
+    onboardingAdminDraft.rules[idx + 1] = onboardingAdminDraft.rules[idx];
+    onboardingAdminDraft.rules[idx] = tmp;
+    normalizeOnboardingDraftRules();
+    renderModPanel();
+    return;
+  }
+
+  const onboardingSaveBtn = e.target.closest("button[data-onboarding-save],button[data-onboarding-publish]");
+  if (onboardingSaveBtn) {
+    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    const publish = onboardingSaveBtn.hasAttribute("data-onboarding-publish");
+    normalizeOnboardingDraftRules();
+    ws.send(
+      JSON.stringify({
+        type: "instanceSetOnboarding",
+        publish,
+        enabled: Boolean(onboardingAdminDraft.enabled),
+        about: { content: String(onboardingAdminDraft.aboutContent || "") },
+        rules: {
+          requireAcceptance: Boolean(onboardingAdminDraft.requireAcceptance),
+          blockReadUntilAccepted: Boolean(onboardingAdminDraft.blockReadUntilAccepted),
+          items: onboardingAdminDraft.rules,
+        },
+        roleSelect: {
+          enabled: Boolean(onboardingAdminDraft.roleSelectEnabled),
+          selfAssignableRoleIds: onboardingAdminDraft.selfAssignableRoleIds,
+        }
+      })
+    );
+    toast("Onboarding", publish ? "Publishing..." : "Saving...");
     return;
   }
 
@@ -8657,7 +9607,7 @@ modBodyEl?.addEventListener("click", (e) => {
         appearance: { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct }
       })
     );
-    toast("Instance", "Saving…");
+    toast("Instance", "Saving...");
     return;
   }
 
@@ -8682,7 +9632,7 @@ modBodyEl?.addEventListener("click", (e) => {
         appearance: { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct }
       })
     );
-    toast("Theme", "Saving…");
+    toast("Theme", "Saving...");
     return;
   }
 
@@ -8699,7 +9649,7 @@ modBodyEl?.addEventListener("click", (e) => {
   if (pluginReloadBtn) {
     if (!isOwnerUser()) return;
     pluginAdminBusy = true;
-    pluginAdminStatus = "Reloading plugins…";
+    pluginAdminStatus = "Reloading plugins...";
     renderModPanel();
     ws.send(JSON.stringify({ type: "pluginReload" }));
     return;
@@ -8713,7 +9663,7 @@ modBodyEl?.addEventListener("click", (e) => {
     const ok = confirm(`Uninstall "${id}"? This deletes the plugin files from this server.`);
     if (!ok) return;
     pluginAdminBusy = true;
-    pluginAdminStatus = `Uninstalling "${id}"…`;
+    pluginAdminStatus = `Uninstalling "${id}"...`;
     renderModPanel();
     ws.send(JSON.stringify({ type: "pluginUninstall", id }));
     return;
@@ -8736,7 +9686,7 @@ modBodyEl?.addEventListener("click", (e) => {
       return;
     }
     pluginAdminBusy = true;
-    pluginAdminStatus = "Uploading plugin…";
+    pluginAdminStatus = "Uploading plugin...";
     renderModPanel();
     (async () => {
       try {
@@ -8779,7 +9729,7 @@ modBodyEl?.addEventListener("click", (e) => {
     const ok = confirm("NUKE the board? This clears all hives, reports, moderation log, and hive media uploads.");
     if (!ok) return;
     ws.send(JSON.stringify({ type: "nukeBoard", confirm: true, confirmText: "ARE YOU SURE?" }));
-    toast("NUKE", "Working…");
+    toast("NUKE", "Working...");
     return;
   }
 
@@ -8937,6 +9887,53 @@ modBodyEl?.addEventListener("click", (e) => {
 });
 
 modBodyEl?.addEventListener("change", (e) => {
+  const onbEnabled = e.target?.closest?.("input[data-onboarding-enabled]");
+  if (onbEnabled) {
+    onboardingAdminDraft.enabled = Boolean(onbEnabled.checked);
+    return;
+  }
+  const onbRequire = e.target?.closest?.("input[data-onboarding-require]");
+  if (onbRequire) {
+    onboardingAdminDraft.requireAcceptance = Boolean(onbRequire.checked);
+    return;
+  }
+  const onbBlockRead = e.target?.closest?.("input[data-onboarding-blockread]");
+  if (onbBlockRead) {
+    onboardingAdminDraft.blockReadUntilAccepted = Boolean(onbBlockRead.checked);
+    return;
+  }
+  const onbRoleEnabled = e.target?.closest?.("input[data-onboarding-roleenabled]");
+  if (onbRoleEnabled) {
+    onboardingAdminDraft.roleSelectEnabled = Boolean(onbRoleEnabled.checked);
+    return;
+  }
+  const onbRoleCheck = e.target?.closest?.("input[data-onboarding-rolecheck]");
+  if (onbRoleCheck) {
+    const key = String(onbRoleCheck.getAttribute("data-onboarding-rolecheck") || "").trim().toLowerCase();
+    if (!key) return;
+    const set = new Set(onboardingAdminDraft.selfAssignableRoleIds || []);
+    if (onbRoleCheck.checked) set.add(key);
+    else set.delete(key);
+    onboardingAdminDraft.selfAssignableRoleIds = Array.from(set);
+    return;
+  }
+  const onbRuleField = e.target?.closest?.("[data-onb-rulefield]");
+  if (onbRuleField) {
+    const id = String(onbRuleField.getAttribute("data-onb-ruleid") || "").trim();
+    const field = String(onbRuleField.getAttribute("data-onb-rulefield") || "").trim();
+    if (!id || !field) return;
+    const rule = onboardingAdminDraft.rules.find((r) => r.id === id);
+    if (!rule) return;
+    if (field === "severity") {
+      rule.severity = ["info", "warn", "critical"].includes(String(onbRuleField.value || "").toLowerCase())
+        ? String(onbRuleField.value || "").toLowerCase()
+        : "info";
+      return;
+    }
+    rule[field] = String(onbRuleField.value || "");
+    return;
+  }
+
   const presetSelect = e.target?.closest?.("select[data-theme-preset]");
   if (presetSelect) {
     if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
@@ -8984,11 +9981,27 @@ modBodyEl?.addEventListener("change", (e) => {
     for (const p of plugins) {
       if (p && String(p.id || "").toLowerCase() === id) p.enabled = enabled;
     }
-    pluginAdminStatus = enabled ? "Enabling…" : "Disabling…";
+    pluginAdminStatus = enabled ? "Enabling..." : "Disabling...";
     renderModPanel();
     wsRef.send(JSON.stringify({ type: "pluginSetEnabled", id, enabled }));
     return;
   }
+});
+
+modBodyEl?.addEventListener("input", (e) => {
+  const aboutEl = e.target?.closest?.("textarea[data-onboarding-about]");
+  if (aboutEl) {
+    onboardingAdminDraft.aboutContent = String(aboutEl.value || "");
+    return;
+  }
+  const onbRuleField = e.target?.closest?.("input[data-onb-rulefield],textarea[data-onb-rulefield]");
+  if (!onbRuleField) return;
+  const id = String(onbRuleField.getAttribute("data-onb-ruleid") || "").trim();
+  const field = String(onbRuleField.getAttribute("data-onb-rulefield") || "").trim();
+  if (!id || !field) return;
+  const rule = onboardingAdminDraft.rules.find((r) => r.id === id);
+  if (!rule) return;
+  rule[field] = String(onbRuleField.value || "");
 });
 
 modBodyEl?.addEventListener("change", (e) => {
@@ -9312,6 +10325,7 @@ function onWsMessage(evt) {
     devLog = [];
     profiles = msg.profiles && typeof msg.profiles === "object" ? msg.profiles : {};
     instanceBranding = normalizeInstanceBranding(msg.instance || {});
+    onboardingState = normalizeOnboardingState(msg.auth?.onboarding || {});
     renderInstanceBranding();
     collections = normalizeCollections(msg.collections);
     customRoles = normalizeRoleDefs(msg.roles?.custom);
@@ -9334,6 +10348,7 @@ function onWsMessage(evt) {
     renderLanHint();
     renderPeoplePanel();
     renderCenterPanels();
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
     return;
   }
 
@@ -9437,6 +10452,8 @@ function onWsMessage(evt) {
 
   if (msg.type === "instanceUpdated" && msg.instance && typeof msg.instance === "object") {
     instanceBranding = normalizeInstanceBranding(msg.instance);
+    onboardingState = normalizeOnboardingState(onboardingState);
+    if (modTab === "onboarding") syncOnboardingAdminDraft(true);
     renderInstanceBranding();
     applyInstanceAppearance();
     setAuthUi();
@@ -9445,6 +10462,8 @@ function onWsMessage(evt) {
 
   if (msg.type === "instanceOk" && msg.instance && typeof msg.instance === "object") {
     instanceBranding = normalizeInstanceBranding(msg.instance);
+    onboardingState = normalizeOnboardingState(onboardingState);
+    if (modTab === "onboarding") syncOnboardingAdminDraft(true);
     renderInstanceBranding();
     applyInstanceAppearance();
     setAuthUi();
@@ -9590,6 +10609,7 @@ function onWsMessage(evt) {
     loggedInUser = msg.username || null;
     loggedInRole = typeof msg.role === "string" ? msg.role : "member";
     canModerate = Boolean(msg.canModerate);
+    onboardingState = normalizeOnboardingState(msg.onboarding || onboardingState);
     if (typeof msg.sessionToken === "string" && msg.sessionToken) setSessionToken(msg.sessionToken);
     const profile = msg.profile || {};
     pendingProfileImage = typeof profile.image === "string" ? profile.image : "";
@@ -9615,6 +10635,7 @@ function onWsMessage(evt) {
     if (canModerate) requestModData();
     if (rackLayoutEnabled) applyDockState();
     updateLayoutPresetOptions();
+    renderOnboardingCard();
     return;
   }
 
@@ -9623,6 +10644,7 @@ function onWsMessage(evt) {
     loggedInUser = null;
     loggedInRole = "member";
     canModerate = false;
+    onboardingState = normalizeOnboardingState({ acceptedRulesVersion: 0, acceptedAt: 0, needsAcceptance: false });
     dmThreads = [];
     dmThreadsById = new Map();
     dmMessagesByThreadId.clear();
@@ -9642,6 +10664,7 @@ function onWsMessage(evt) {
     renderCenterPanels();
     if (rackLayoutEnabled) applyDockState();
     updateLayoutPresetOptions();
+    renderOnboardingCard();
     return;
   }
 
@@ -9649,6 +10672,7 @@ function onWsMessage(evt) {
     if (!loggedInUser || msg.username !== loggedInUser) return;
     loggedInRole = typeof msg.role === "string" ? msg.role : loggedInRole;
     canModerate = Boolean(msg.canModerate);
+    onboardingState = normalizeOnboardingState(msg.onboarding || onboardingState);
     if (!canModerate) lanUrls = [];
     if (msg.prefs && typeof msg.prefs === "object") setUserPrefs(msg.prefs);
     setAuthUi();
@@ -9657,6 +10681,14 @@ function onWsMessage(evt) {
     renderPeoplePanel();
     if (canModerate) requestModData();
     updateLayoutPresetOptions();
+    renderOnboardingCard();
+    return;
+  }
+
+  if (msg.type === "onboardingState" && msg.onboarding && typeof msg.onboarding === "object") {
+    onboardingState = normalizeOnboardingState(msg.onboarding);
+    setAuthUi();
+    renderOnboardingCard();
     return;
   }
 
@@ -9749,6 +10781,25 @@ function onWsMessage(evt) {
       }
       renderPeoplePanel();
     }
+    return;
+  }
+
+  if (msg.type === "dmModMessageReceived") {
+    const threadId = String(msg.threadId || "").trim();
+    if (!threadId) return;
+    if (!dmThreadsById.has(threadId) && ws?.readyState === WebSocket.OPEN) {
+      pendingOpenDmThreadId = threadId;
+      ws.send(JSON.stringify({ type: "dmList" }));
+    }
+    if (isMobileScreenMode()) {
+      const layout = loadMobileLayout();
+      layout.active = "chat";
+      saveMobileLayout(layout);
+      setMobileScreen("chat");
+      renderMobileNav();
+    }
+    if (dmThreadsById.has(threadId)) openDmThread(threadId);
+    toast("Moderator message", "Opened priority moderator DM.");
     return;
   }
 
@@ -10033,6 +11084,7 @@ setConn("connecting");
 connectWs();
 
 renderLanHint();
+writeHintsEnabledPref(readHintsEnabledPref());
 initDisplayPrefsUi();
 if (stayConnectedEl) {
   stayConnectedEl.checked = readStayConnectedPref();
@@ -10046,6 +11098,12 @@ if (stayConnectedEl) {
       clearWsReconnect();
       clearWsKeepalive();
     }
+  });
+}
+if (enableHintsEl) {
+  enableHintsEl.checked = readHintsEnabledPref();
+  enableHintsEl.addEventListener("change", () => {
+    writeHintsEnabledPref(Boolean(enableHintsEl.checked));
   });
 }
 renderPeoplePanel();
@@ -10256,6 +11314,39 @@ peopleDmsViewEl?.addEventListener("click", (e) => {
     if (sel) sel.value = "";
     return;
   }
+});
+
+onboardingAcceptBtn?.addEventListener("click", () => {
+  if (!loggedInUser) {
+    toast("Sign in required", "Sign in to accept server rules.");
+    return;
+  }
+  ws.send(JSON.stringify({ type: "onboardingAcceptRules" }));
+});
+
+onboardingRefreshBtn?.addEventListener("click", () => {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+});
+
+onboardingPanelAcceptBtn?.addEventListener("click", () => {
+  if (!loggedInUser) {
+    toast("Sign in required", "Sign in to accept server rules.");
+    return;
+  }
+  ws.send(JSON.stringify({ type: "onboardingAcceptRules" }));
+});
+
+onboardingPanelRefreshBtn?.addEventListener("click", () => {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+});
+
+onboardingPanelBodyEl?.addEventListener("click", (e) => {
+  const tabBtn = e.target.closest?.("button[data-onbtab]");
+  if (!tabBtn) return;
+  const tab = String(tabBtn.getAttribute("data-onbtab") || "about").trim();
+  if (!["about", "rules", "roles"].includes(tab)) return;
+  onboardingViewerTab = tab;
+  renderOnboardingPanel();
 });
 
 profileCard?.addEventListener("click", (e) => {

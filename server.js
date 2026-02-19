@@ -194,6 +194,7 @@ let instanceBranding = {
   title: "Bzl",
   subtitle: "Ephemeral hives + chat",
   allowMemberPermanentPosts: false,
+  onboarding: defaultOnboardingConfig(),
   appearance: {
     bg: "#060611",
     panel: "#0c0c18",
@@ -539,10 +540,116 @@ function sanitizeInstanceText(text, maxLen) {
   return clean.replace(/\s+/g, " ").trim().slice(0, maxLen);
 }
 
+function defaultOnboardingConfig() {
+  return {
+    enabled: true,
+    about: { content: "", updatedAt: 0, updatedBy: "" },
+    rules: { version: 1, requireAcceptance: false, blockReadUntilAccepted: false, items: [] },
+    roleSelect: { enabled: true, selfAssignableRoleIds: [] },
+    tutorial: { enabled: true, version: 1 }
+  };
+}
+
+function parseLegacyRulesTextToItems(text) {
+  const raw = typeof text === "string" ? text : "";
+  const clean = sanitizeRichHtml(raw).trim();
+  if (!clean) return [];
+  const plain = sanitizeHtml(clean, { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
+  if (!plain) return [];
+  return [
+    {
+      id: "r1",
+      order: 1,
+      name: "Server rules",
+      shortDescription: plain.slice(0, 180),
+      description: clean,
+      severity: "info"
+    }
+  ];
+}
+
+function sanitizeOnboardingRuleItem(raw, index = 0) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim().slice(0, 40) : `r${index + 1}`;
+  const name = sanitizeInstanceText(raw.name || "", 60);
+  const shortDescription = sanitizeInstanceText(raw.shortDescription || "", 180);
+  const descriptionRaw = typeof raw.description === "string" ? raw.description : "";
+  const description = sanitizeRichHtml(descriptionRaw).slice(0, 12_000);
+  const severityRaw = String(raw.severity || "").trim().toLowerCase();
+  const severity = severityRaw === "warn" || severityRaw === "critical" ? severityRaw : "info";
+  if (!name && !shortDescription && !description) return null;
+  const order = Number.isFinite(Number(raw.order)) ? Math.max(1, Math.floor(Number(raw.order))) : index + 1;
+  return { id, order, name: name || `Rule ${order}`, shortDescription, description, severity };
+}
+
+function sanitizeOnboardingConfig(raw) {
+  const fallback = defaultOnboardingConfig();
+  const src = raw && typeof raw === "object" ? raw : {};
+  const aboutRaw = src.about && typeof src.about === "object" ? src.about : {};
+  const rulesRaw = src.rules && typeof src.rules === "object" ? src.rules : {};
+  const roleSelectRaw = src.roleSelect && typeof src.roleSelect === "object" ? src.roleSelect : {};
+  const tutorialRaw = src.tutorial && typeof src.tutorial === "object" ? src.tutorial : {};
+  const aboutContent = sanitizeRichHtml(typeof aboutRaw.content === "string" ? aboutRaw.content : "").slice(0, 30_000);
+  const legacyRulesText =
+    typeof src.rulesText === "string"
+      ? src.rulesText
+      : typeof rulesRaw.text === "string"
+        ? rulesRaw.text
+        : typeof rulesRaw.rulesText === "string"
+          ? rulesRaw.rulesText
+          : "";
+  const itemsRaw = Array.isArray(rulesRaw.items) ? rulesRaw.items : parseLegacyRulesTextToItems(legacyRulesText);
+  const items = [];
+  const seen = new Set();
+  for (let i = 0; i < itemsRaw.length && items.length < 200; i += 1) {
+    const clean = sanitizeOnboardingRuleItem(itemsRaw[i], i);
+    if (!clean) continue;
+    if (seen.has(clean.id)) continue;
+    seen.add(clean.id);
+    items.push(clean);
+  }
+  items.sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || String(a.id || "").localeCompare(String(b.id || "")));
+  const rulesVersion = Math.max(1, Math.floor(Number(rulesRaw.version || fallback.rules.version)));
+  const tutorialVersion = Math.max(1, Math.floor(Number(tutorialRaw.version || fallback.tutorial.version)));
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(src, "enabled") ? Boolean(src.enabled) : fallback.enabled,
+    about: {
+      content: aboutContent,
+      updatedAt: Number(aboutRaw.updatedAt || 0) || 0,
+      updatedBy: normalizeUsername(aboutRaw.updatedBy || "")
+    },
+    rules: {
+      version: rulesVersion,
+      requireAcceptance: Boolean(rulesRaw.requireAcceptance),
+      blockReadUntilAccepted: Boolean(rulesRaw.blockReadUntilAccepted),
+      items
+    },
+    roleSelect: {
+      enabled: Object.prototype.hasOwnProperty.call(roleSelectRaw, "enabled") ? Boolean(roleSelectRaw.enabled) : fallback.roleSelect.enabled,
+      selfAssignableRoleIds: sanitizeCustomRoleKeys(roleSelectRaw.selfAssignableRoleIds)
+    },
+    tutorial: {
+      enabled: Object.prototype.hasOwnProperty.call(tutorialRaw, "enabled") ? Boolean(tutorialRaw.enabled) : fallback.tutorial.enabled,
+      version: tutorialVersion
+    }
+  };
+}
+
+function sanitizeOnboardingState(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    acceptedRulesVersion: Math.max(0, Math.floor(Number(src.acceptedRulesVersion || 0))),
+    acceptedAt: Number(src.acceptedAt || 0) || 0,
+    tutorialCompletedVersion: Math.max(0, Math.floor(Number(src.tutorialCompletedVersion || 0))),
+    selectedRoleIds: sanitizeCustomRoleKeys(src.selectedRoleIds)
+  };
+}
+
 function sanitizeInstanceBranding(raw) {
   const title = sanitizeInstanceText(raw?.title || "", INSTANCE_TITLE_MAX_LEN) || "Bzl";
   const subtitle = sanitizeInstanceText(raw?.subtitle || "", INSTANCE_SUBTITLE_MAX_LEN) || "Ephemeral hives + chat";
   const allowMemberPermanentPosts = Boolean(raw?.allowMemberPermanentPosts);
+  const onboarding = sanitizeOnboardingConfig(raw?.onboarding);
   const appearanceRaw = raw?.appearance && typeof raw.appearance === "object" ? raw.appearance : {};
   const bg = sanitizeColorHex(appearanceRaw.bg) || "#060611";
   const panel = sanitizeColorHex(appearanceRaw.panel) || "#0c0c18";
@@ -557,7 +664,7 @@ function sanitizeInstanceBranding(raw) {
   const linePct = sanitizePercentInt(appearanceRaw.linePct, 10);
   const panel2Pct = sanitizePercentInt(appearanceRaw.panel2Pct, 2);
   const appearance = { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct };
-  return { title, subtitle, allowMemberPermanentPosts, appearance };
+  return { title, subtitle, allowMemberPermanentPosts, onboarding, appearance };
 }
 
 function sanitizeAvatar(avatar) {
@@ -807,6 +914,81 @@ function userState(username) {
   };
 }
 
+function userOnboardingState(username) {
+  const normalized = normalizeUsername(username || "");
+  if (!normalized) return sanitizeOnboardingState(null);
+  const user = usersByName.get(normalized);
+  return sanitizeOnboardingState(user?.onboardingState);
+}
+
+function userNeedsOnboardingAcceptance(username) {
+  const normalized = normalizeUsername(username || "");
+  if (!normalized) return false;
+  if (hasRole(normalized, ROLE_MODERATOR)) return false;
+  const onboarding = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+  if (!onboarding.enabled) return false;
+  if (!onboarding.rules.requireAcceptance) return false;
+  const state = userOnboardingState(normalized);
+  const requiredVersion = Math.max(1, Number(onboarding.rules.version || 1));
+  return Number(state.acceptedRulesVersion || 0) < requiredVersion;
+}
+
+function userAllowedToReadContent(username) {
+  const onboarding = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+  if (!onboarding.enabled) return true;
+  if (!onboarding.rules.requireAcceptance) return true;
+  if (!onboarding.rules.blockReadUntilAccepted) return true;
+  const normalized = normalizeUsername(username || "");
+  if (!normalized) return false;
+  if (hasRole(normalized, ROLE_MODERATOR)) return true;
+  return !userNeedsOnboardingAcceptance(normalized);
+}
+
+function onboardingPayloadForUser(username) {
+  const cfg = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+  const normalized = normalizeUsername(username || "");
+  const state = userOnboardingState(normalized);
+  const needsAcceptance = normalized ? userNeedsOnboardingAcceptance(normalized) : Boolean(cfg.rules.requireAcceptance && cfg.rules.blockReadUntilAccepted);
+  return {
+    enabled: cfg.enabled,
+    rulesVersion: Number(cfg.rules.version || 1),
+    requireAcceptance: Boolean(cfg.rules.requireAcceptance),
+    blockReadUntilAccepted: Boolean(cfg.rules.blockReadUntilAccepted),
+    acceptedRulesVersion: Number(state.acceptedRulesVersion || 0),
+    acceptedAt: Number(state.acceptedAt || 0),
+    tutorialVersion: Number(cfg.tutorial.version || 1),
+    tutorialCompletedVersion: Number(state.tutorialCompletedVersion || 0),
+    selectedRoleIds: sanitizeCustomRoleKeys(state.selectedRoleIds),
+    needsAcceptance
+  };
+}
+
+function onboardingRulesOrdered() {
+  const cfg = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+  const items = Array.isArray(cfg?.rules?.items) ? cfg.rules.items.slice() : [];
+  items.sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || String(a.id || "").localeCompare(String(b.id || "")));
+  return items;
+}
+
+function resolveOnboardingRuleByOrdinal(ordinal) {
+  const n = Math.max(1, Math.floor(Number(ordinal || 0)));
+  if (!Number.isFinite(n)) return null;
+  const ordered = onboardingRulesOrdered();
+  return ordered[n - 1] || null;
+}
+
+function expandRuleRefsInPlainText(text) {
+  const input = String(text || "");
+  if (!input) return input;
+  const re = /(^|[\s(])&(\d{1,3})(?=$|[\s).,!?;:])/g;
+  return input.replace(re, (match, lead, num) => {
+    const rule = resolveOnboardingRuleByOrdinal(Number(num));
+    if (!rule) return match;
+    const short = String(rule.shortDescription || rule.name || `Rule ${num}`).replace(/\s+/g, " ").trim();
+    return `${lead}[Rule ${num}: ${short}]`;
+  });
+}
+
 function authPayloadForUser(username) {
   const state = userState(username);
   const user = usersByName.get(normalizeUsername(username));
@@ -814,6 +996,7 @@ function authPayloadForUser(username) {
     username,
     role: state.role,
     customRoles: sanitizeCustomRoleKeys(user?.customRoles),
+    onboarding: onboardingPayloadForUser(username),
     mutedUntil: state.mutedUntil,
     suspendedUntil: state.suspendedUntil,
     banned: state.banned
@@ -1040,7 +1223,8 @@ function loadUsersFromDisk() {
         suspendedUntil: parseUntil(u?.suspendedUntil),
         banned: Boolean(u?.banned),
         starredPostIds: sanitizePostIdList(u?.starredPostIds),
-        hiddenPostIds: sanitizePostIdList(u?.hiddenPostIds)
+        hiddenPostIds: sanitizePostIdList(u?.hiddenPostIds),
+        onboardingState: sanitizeOnboardingState(u?.onboardingState)
       });
     }
     sorted.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
@@ -1388,6 +1572,7 @@ function collectionForPost(post) {
 }
 
 function canUserSeePostByCollection(username, post) {
+  if (!userAllowedToReadContent(username)) return false;
   return hasCollectionAccessForUser(username, collectionForPost(post));
 }
 
@@ -2007,6 +2192,19 @@ function loadInstanceFromDisk() {
         ? data.allowMemberPermanentPosts
         : data?.instance?.allowMemberPermanentPosts
     ),
+    onboarding:
+      data?.onboarding && typeof data.onboarding === "object"
+        ? data.onboarding
+        : data?.instance?.onboarding && typeof data.instance.onboarding === "object"
+          ? data.instance.onboarding
+          : {
+              rulesText:
+                typeof data?.rulesText === "string"
+                  ? data.rulesText
+                  : typeof data?.instance?.rulesText === "string"
+                    ? data.instance.rulesText
+                    : ""
+            },
     appearance
   });
   lastInstanceBroadcastHash = JSON.stringify(instanceBranding);
@@ -2151,9 +2349,12 @@ function serializeDmMessageForWs(message) {
   }
   const text = typeof parsed?.text === "string" ? parsed.text : "";
   const html = typeof parsed?.html === "string" ? parsed.html : "";
+  const asMod = Boolean(parsed?.asMod) || String(message?.from || "").trim().toLowerCase() === "mod";
+  const fromUser = asMod ? "mod" : normalizeUsername(message?.from || "");
   return {
     id: String(message?.id || ""),
-    fromUser: String(message?.from || ""),
+    fromUser,
+    asMod,
     createdAt: Number(message?.createdAt || 0),
     text,
     html
@@ -3613,6 +3814,7 @@ function sendLoginOk(ws, username, sessionToken) {
       mutedUntil: state.mutedUntil,
       suspendedUntil: state.suspendedUntil,
       banned: state.banned,
+      onboarding: onboardingPayloadForUser(username),
       canModerate: hasRole(username, ROLE_MODERATOR),
       sessionToken: sessionToken || "",
       profile: getPublicProfile(username),
@@ -3648,6 +3850,9 @@ function enforceUserState(ws, mode) {
   if (mode === "chat" && state.suspended) return { ok: false, message: "Your account is suspended." };
   if (mode === "chat" && state.muted) return { ok: false, message: "You are muted right now." };
   if (mode === "write" && state.suspended) return { ok: false, message: "Your account is suspended." };
+  if ((mode === "chat" || mode === "write") && userNeedsOnboardingAcceptance(username)) {
+    return { ok: false, message: "Please accept the server rules in Account before posting or chatting." };
+  }
   return { ok: true, state };
 }
 
@@ -4160,6 +4365,7 @@ wss.on("connection", (ws, req) => {
         suspendedUntil: 0,
         banned: false,
         canModerate: false,
+        onboarding: onboardingPayloadForUser(""),
         canRegisterFirstUser: canRegisterFirstUser(ws),
         registrationEnabled: registrationEnabled()
       }
@@ -4363,6 +4569,7 @@ wss.on("connection", (ws, req) => {
         links: [],
         starredPostIds: [],
         hiddenPostIds: [],
+        onboardingState: sanitizeOnboardingState(null),
         createdAt: now()
       };
       try {
@@ -4822,9 +5029,10 @@ wss.on("connection", (ws, req) => {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, CHAT_MAX_LEN);
+      const expandedText = expandRuleRefsInPlainText(safeText).slice(0, CHAT_MAX_LEN);
 
       const hasMedia = /<(img|audio)\b/i.test(safeHtml);
-      if (!postId || (!safeText && !hasMedia)) return;
+      if (!postId || (!expandedText && !hasMedia)) return;
 
       const entry = posts.get(postId);
       if (!entry) {
@@ -4868,14 +5076,14 @@ wss.on("connection", (ws, req) => {
             createdAt: Number(replyTarget.createdAt || now())
           }
         : null;
-      const mentions = extractMentionUsernames(safeText);
+      const mentions = extractMentionUsernames(expandedText);
       const wantsMod = Boolean(msg.asMod);
       const asMod = wantsMod && hasRole(ws.user.username, ROLE_MODERATOR);
 
       const message = {
         id: toId(),
         postId,
-        text: safeText || "[media]",
+        text: expandedText || "[media]",
         html: safeHtml,
         asMod,
         mentions: sanitizePostMode(entry.post?.mode) === "walkie" ? [] : mentions,
@@ -5487,7 +5695,7 @@ wss.on("connection", (ws, req) => {
               fontBody: msg.fontBody,
               fontMono: msg.fontMono
             };
-      instanceBranding = sanitizeInstanceBranding({ title, subtitle, allowMemberPermanentPosts, appearance });
+      instanceBranding = sanitizeInstanceBranding({ ...instanceBranding, title, subtitle, allowMemberPermanentPosts, appearance });
       try {
         persistInstanceToDisk();
       } catch (e) {
@@ -5552,6 +5760,138 @@ wss.on("connection", (ws, req) => {
         reason: "Updated instance appearance",
         metadata: { appearance: instanceBranding.appearance }
       });
+      return;
+    }
+
+    if (msg.type === "instanceSetOnboarding") {
+      const actor = ws?.user?.username;
+      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+        return;
+      }
+      const current = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+      const next = { ...current };
+      const publish = Boolean(msg.publish);
+
+      if (Object.prototype.hasOwnProperty.call(msg, "enabled")) next.enabled = Boolean(msg.enabled);
+
+      const about = msg.about && typeof msg.about === "object" ? msg.about : null;
+      if (about) {
+        if (Object.prototype.hasOwnProperty.call(about, "content")) {
+          next.about = {
+            ...next.about,
+            content: sanitizeRichHtml(typeof about.content === "string" ? about.content : "").slice(0, 30_000),
+            updatedAt: now(),
+            updatedBy: normalizeUsername(actor)
+          };
+        }
+      }
+
+      const rules = msg.rules && typeof msg.rules === "object" ? msg.rules : null;
+      if (rules) {
+        if (Object.prototype.hasOwnProperty.call(rules, "requireAcceptance")) {
+          next.rules.requireAcceptance = Boolean(rules.requireAcceptance);
+        }
+        if (Object.prototype.hasOwnProperty.call(rules, "blockReadUntilAccepted")) {
+          if (!hasRole(actor, ROLE_OWNER)) {
+            ws.send(JSON.stringify({ type: "permissionDenied", message: "Owner access required to block read access." }));
+            return;
+          }
+          next.rules.blockReadUntilAccepted = Boolean(rules.blockReadUntilAccepted);
+        }
+        if (Array.isArray(rules.items)) {
+          const sanitizedItems = [];
+          const seenIds = new Set();
+          for (let i = 0; i < rules.items.length && sanitizedItems.length < 200; i += 1) {
+            const item = sanitizeOnboardingRuleItem(rules.items[i], i);
+            if (!item) continue;
+            if (seenIds.has(item.id)) continue;
+            seenIds.add(item.id);
+            sanitizedItems.push(item);
+          }
+          next.rules.items = sanitizedItems;
+        }
+        if (publish) next.rules.version = Math.max(1, Number(next.rules.version || 1) + 1);
+      }
+
+      const roleSelect = msg.roleSelect && typeof msg.roleSelect === "object" ? msg.roleSelect : null;
+      if (roleSelect) {
+        if (Object.prototype.hasOwnProperty.call(roleSelect, "enabled")) next.roleSelect.enabled = Boolean(roleSelect.enabled);
+        if (Object.prototype.hasOwnProperty.call(roleSelect, "selfAssignableRoleIds")) {
+          next.roleSelect.selfAssignableRoleIds = sanitizeCustomRoleKeys(roleSelect.selfAssignableRoleIds);
+        }
+      }
+
+      const tutorial = msg.tutorial && typeof msg.tutorial === "object" ? msg.tutorial : null;
+      if (publish && !rules) next.rules.version = Math.max(1, Number(next.rules.version || 1) + 1);
+      if (tutorial) {
+        if (Object.prototype.hasOwnProperty.call(tutorial, "enabled")) next.tutorial.enabled = Boolean(tutorial.enabled);
+        if (Boolean(tutorial.bumpVersion) || publish) next.tutorial.version = Math.max(1, Number(next.tutorial.version || 1) + 1);
+      }
+
+      instanceBranding = sanitizeInstanceBranding({ ...instanceBranding, onboarding: next });
+      try {
+        persistInstanceToDisk();
+      } catch (e) {
+        ws.send(JSON.stringify({ type: "error", message: e?.message || "Failed to save onboarding settings." }));
+        return;
+      }
+      broadcastInstanceUpdated(true);
+      ws.send(JSON.stringify({ type: "instanceOk", instance: instanceBranding }));
+      ws.send(JSON.stringify({ type: "onboardingState", onboarding: onboardingPayloadForUser(actor) }));
+      appendModLog({
+        actionType: "instance_onboarding_set",
+        actor,
+        targetType: "system",
+        targetId: "instance",
+        reason: "Updated onboarding settings",
+        metadata: {
+          enabled: instanceBranding?.onboarding?.enabled,
+          rulesVersion: Number(instanceBranding?.onboarding?.rules?.version || 1),
+          requireAcceptance: Boolean(instanceBranding?.onboarding?.rules?.requireAcceptance),
+          blockReadUntilAccepted: Boolean(instanceBranding?.onboarding?.rules?.blockReadUntilAccepted)
+        }
+      });
+      return;
+    }
+
+    if (msg.type === "onboardingGet") {
+      const actor = ws?.user?.username || "";
+      ws.send(JSON.stringify({ type: "onboardingState", onboarding: onboardingPayloadForUser(actor) }));
+      return;
+    }
+
+    if (msg.type === "onboardingAcceptRules") {
+      const actor = ws?.user?.username;
+      if (!actor) {
+        ws.send(JSON.stringify({ type: "error", message: "Please sign in first." }));
+        return;
+      }
+      const cfg = sanitizeOnboardingConfig(instanceBranding?.onboarding);
+      if (!cfg.enabled || !cfg.rules.requireAcceptance) {
+        ws.send(JSON.stringify({ type: "onboardingState", onboarding: onboardingPayloadForUser(actor) }));
+        return;
+      }
+      const requiredVersion = Math.max(1, Number(cfg.rules.version || 1));
+      const write = writeUserPatch(actor, (u) => {
+        const prior = sanitizeOnboardingState(u?.onboardingState);
+        return {
+          ...u,
+          onboardingState: {
+            ...prior,
+            acceptedRulesVersion: requiredVersion,
+            acceptedAt: now()
+          }
+        };
+      });
+      if (!write.ok) {
+        ws.send(JSON.stringify({ type: "error", message: write.message || "Failed to accept rules." }));
+        return;
+      }
+      ws.send(JSON.stringify({ type: "onboardingState", onboarding: onboardingPayloadForUser(actor) }));
+      ws.send(JSON.stringify({ type: "authState", ...authPayloadForUser(actor), canModerate: hasRole(actor, ROLE_MODERATOR), prefs: getUserPrefs(actor) }));
+      sendCollectionsForWs(ws);
+      sendPostsSnapshot(ws);
       return;
     }
 
@@ -6236,6 +6576,114 @@ wss.on("connection", (ws, req) => {
       }
       const messages = (thread.messages || []).slice(-200).map(serializeDmMessageForWs);
       ws.send(JSON.stringify({ type: "dmHistory", threadId, messages }));
+      return;
+    }
+
+    if (msg.type === "dmSendMod") {
+      const actor = ws.user?.username;
+      if (!actor) {
+        ws.send(JSON.stringify({ type: "error", message: "Please sign in first." }));
+        return;
+      }
+      if (!hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+        return;
+      }
+      const toUser = normalizeUsername(msg.to || "");
+      if (!toUser || toUser === normalizeUsername(actor)) {
+        ws.send(JSON.stringify({ type: "error", message: "Pick a valid user." }));
+        return;
+      }
+      if (!usersByName.has(toUser)) {
+        ws.send(JSON.stringify({ type: "error", message: "User not found." }));
+        return;
+      }
+
+      let thread = null;
+      for (const t of dmThreadsById.values()) {
+        if (!t?.users) continue;
+        const users = t.users.map((u) => normalizeUsername(u));
+        if (users.includes(normalizeUsername(actor)) && users.includes(toUser)) {
+          thread = t;
+          break;
+        }
+      }
+      if (!thread) {
+        thread = {
+          id: toId(),
+          users: [normalizeUsername(actor), toUser],
+          requestedBy: normalizeUsername(actor),
+          pendingFor: "",
+          state: "active",
+          createdAt: now(),
+          updatedAt: now(),
+          lastMessageAt: 0,
+          messages: []
+        };
+      } else {
+        thread.requestedBy = normalizeUsername(actor);
+        thread.pendingFor = "";
+        thread.state = "active";
+        thread.updatedAt = now();
+      }
+
+      const rawText = typeof msg.text === "string" ? msg.text : "";
+      const rawHtml = typeof msg.html === "string" ? msg.html : "";
+      const hasHtml = rawHtml && rawHtml.trim().length > 0;
+      const safeHtml = hasHtml ? sanitizeRichHtml(rawHtml) : "";
+      const safeText = (hasHtml ? sanitizeHtml(safeHtml, { allowedTags: [], allowedAttributes: {} }) : rawText)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAT_MAX_LEN);
+      if (!safeText && !safeHtml) {
+        ws.send(JSON.stringify({ type: "error", message: "Message is empty." }));
+        return;
+      }
+
+      const payload = JSON.stringify({ text: safeText, html: safeHtml, asMod: true });
+      const enc = dmEncryptUtf8(payload);
+      if (!enc) {
+        ws.send(JSON.stringify({ type: "error", message: "Failed to store DM message." }));
+        return;
+      }
+      const message = { id: toId(), from: "mod", createdAt: now(), enc };
+      thread.messages = Array.isArray(thread.messages) ? thread.messages : [];
+      thread.messages.push(message);
+      if (thread.messages.length > 500) thread.messages.splice(0, thread.messages.length - 500);
+      thread.lastMessageAt = message.createdAt;
+      thread.updatedAt = now();
+      dmThreadsById.set(thread.id, thread);
+      persistDmsToDisk();
+
+      appendModLog({
+        actionType: "dm_mod_message",
+        actor,
+        targetType: "user",
+        targetId: toUser,
+        reason: "Sent moderator DM message",
+        metadata: { threadId: thread.id }
+      });
+
+      const wsMsg = { type: "dmMessage", threadId: thread.id, message: serializeDmMessageForWs(message) };
+      sendToSockets(
+        (client) => {
+          const name = client?.user?.username;
+          if (!name) return false;
+          const n = normalizeUsername(name);
+          return thread.users.includes(n);
+        },
+        wsMsg
+      );
+      sendToSockets(
+        (client) => normalizeUsername(client?.user?.username || "") === toUser,
+        {
+          type: "dmModMessageReceived",
+          threadId: thread.id,
+          fromUser: "mod",
+          preview: safeText.slice(0, 160)
+        }
+      );
+      broadcastDmThread(thread);
       return;
     }
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=119" />
+    <link rel="stylesheet" href="/styles.css?v=126" />
   </head>
   <body>
       <div class="app">
@@ -28,6 +28,7 @@
 
         <section id="viewPanel" class="panel">
           <div class="panelTitle">View</div>
+          <div class="uiHint">Use layout presets for quick panel setups. Shortcuts: <b>[</b>/<b>]</b> cycle presets, <b>-</b>/<b>=</b> cycle hives/chats in the active panel.</div>
           <label class="checkRow" style="margin-top:8px;">
             <span>Rack layout (experimental)</span>
             <input id="toggleRackLayout" type="checkbox" />
@@ -61,6 +62,10 @@
             <span>Stay connected</span>
             <input id="stayConnected" type="checkbox" />
           </label>
+          <label class="checkRow" style="margin-top:8px;">
+            <span>Enable hints</span>
+            <input id="enableHints" type="checkbox" />
+          </label>
 
           <details style="margin-top:10px;">
             <summary class="small muted" style="cursor:pointer;user-select:none;">Advanced display</summary>
@@ -93,6 +98,7 @@
         <section id="accountPanel" class="panel">
           <div class="panelTitle">Account</div>
           <div class="small muted" id="authHint">Sign in to post, chat, and boost.</div>
+          <div class="uiHint">New here: create an account, then open a hive and tap <b>Chat</b> to join a conversation.</div>
 
           <div class="small muted">Signed in as</div>
           <div id="userLabel" class="userLine">Signed out</div>
@@ -119,11 +125,20 @@
               Note: this is a prototype; don't reuse important passwords.
             </div>
           </form>
+          <div id="onboardingCard" class="onboardingCard hidden">
+            <div class="panelTitle">Onboarding</div>
+            <div id="onboardingBody" class="small muted"></div>
+            <div class="row" style="margin-top:8px;">
+              <button id="onboardingAccept" class="primary grow hidden" type="button">Accept and continue</button>
+              <button id="onboardingRefresh" class="ghost" type="button">Refresh</button>
+            </div>
+          </div>
         </section>
 
         <section id="profilePanel" class="panel">
           <div class="panelTitle">Profile</div>
           <div class="small muted">Set how your name appears.</div>
+          <div class="uiHint">Your profile card appears in People and when someone opens your profile from a post or chat.</div>
           <label>
             <span>Profile picture</span>
             <input id="profileImage" type="file" accept="image/*" />
@@ -181,12 +196,30 @@
               <button id="toggleComposer" class="mobileComposerToggle" type="button">New Hive</button>
             </div>
           </div>
+          <div class="uiHint">Use filters to narrow posts, then tap <b>Chat</b> on a hive card. Shortcut in Hives: <b>-</b>/<b>=</b> cycles collections/views.</div>
           <div class="hiveTabs" id="hiveTabs">
             <button type="button" data-hiveview="all" class="primary">All</button>
             <button type="button" data-hiveview="starred" class="ghost">Starred</button>
             <button type="button" data-hiveview="hidden" class="ghost">Hidden</button>
           </div>
           <div id="feed" class="feed"></div>
+        </section>
+
+        <section id="onboardingPanel" class="panel panelFill hidden">
+          <div class="panelHeader">
+            <div>
+              <div class="panelTitle">Onboarding</div>
+              <div class="small muted">About, rules, and first steps.</div>
+            </div>
+          </div>
+          <div class="panelBody onboardingPanelBody">
+            <div class="uiHint">Read About and Rules first. If required, accept rules to unlock posting and chat.</div>
+            <div id="onboardingPanelBody" class="small muted"></div>
+            <div class="row" style="margin-top:10px;">
+              <button id="onboardingPanelAccept" class="primary grow hidden" type="button">Accept and continue</button>
+              <button id="onboardingPanelRefresh" class="ghost" type="button">Refresh</button>
+            </div>
+          </div>
         </section>
 
         <section id="profileViewPanel" class="panel panelFill hidden">
@@ -200,6 +233,7 @@
               <button id="profileEditToggleBtn" class="ghost smallBtn hidden" type="button">Edit profile</button>
             </div>
           </div>
+          <div class="uiHint">Tip: open someone from People, a hive card, or a chat message to view their profile here.</div>
           <div id="profileViewBody" class="profileViewBody">
             <div id="profileCard" class="profileCard"></div>
           </div>
@@ -254,6 +288,7 @@
             <div class="panelTitle">Create Hive</div>
             <button id="toggleComposerInline" class="ghost smallBtn" type="button">Hide</button>
           </div>
+          <div class="uiHint">Keep titles short and clear. Add keywords so others can find your hive faster.</div>
           <form id="newPostForm" class="form">
             <label>
               <span>Title (max 96 chars)</span>
@@ -325,9 +360,11 @@
             <div id="chatMeta" class="small muted">Select a post to chat.</div>
           </div>
           <div class="row chatHeaderActions">
+            <select id="chatContextSelect" class="chatContextSelect" aria-label="Open chats"></select>
             <button id="chatBackToList" class="ghost smallBtn hidden" type="button">Back</button>
           </div>
         </div>
+        <div class="uiHint">Select a hive chat or DM first, then type your message and press Send. Shortcut in Chat: <b>-</b>/<b>=</b> cycles chat list entries.</div>
         <div id="chatMessages" class="chatMessages"></div>
         <div id="typingIndicator" class="typingIndicator small muted"></div>
         <div id="walkieBar" class="walkieBar hidden" aria-label="Walkie talkie controls">
@@ -369,6 +406,7 @@
             <input id="chatImage" class="hidden" type="file" accept="image/*" />
             <input id="chatAudio" class="hidden" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.webm" />
           </div>
+          <div class="uiHint">Use Link, GIF/Image, and Audio to attach media quickly.</div>
           <button class="primary" type="submit">Send</button>
         </form>
       </aside>
@@ -379,11 +417,13 @@
         <div class="panelHeader">
           <div class="panelTitle">Moderation</div>
         </div>
+        <div class="uiHint">Use tabs to review reports, manage users/hives, configure server settings, and publish onboarding content.</div>
         <div class="modTabs">
           <button type="button" class="ghost" data-modtab="reports">Reports</button>
           <button type="button" class="ghost" data-modtab="users">Users</button>
           <button type="button" class="ghost" data-modtab="hives">Hives</button>
           <button type="button" class="ghost" data-modtab="server">Server</button>
+          <button type="button" class="ghost" data-modtab="onboarding">Onboarding</button>
           <button type="button" class="ghost" data-modtab="log">Log</button>
         </div>
         <div class="modFilters">
@@ -411,12 +451,14 @@
         <button id="peopleDmsTab" class="ghost" type="button">DMs</button>
       </div>
       <div id="peopleMembersView">
+        <div class="uiHint">Members list lets you open profiles and start DMs. Search filters by username.</div>
         <div class="peopleFilters">
           <input id="peopleSearch" placeholder="Search members" />
         </div>
         <div id="peopleList" class="peopleList small"></div>
       </div>
       <div id="peopleDmsView" class="peopleDms small hidden">
+        <div class="uiHint">DM requests must be accepted before chat opens. Active threads show an <b>Open</b> button.</div>
         DMs coming soon.
       </div>
     </aside>
@@ -558,6 +600,6 @@
     </div>
 
     <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
-    <script src="/app.js?v=134"></script>
+    <script src="/app.js?v=146"></script>
   </body>
 </html>

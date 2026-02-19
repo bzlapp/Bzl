@@ -3,6 +3,9 @@
 ## Purpose
 Capture the next major product features requested for community growth, and define a practical build order.
 
+## Related Specs
+- `docs/ONBOARDING_AND_MOD_MESSAGE_IMPLEMENTATION_SPEC.md` (onboarding panes, mod messages, tutorial overlays, onboarding-first preset)
+
 ## Scope
 This roadmap covers:
 - Discovery and organization of hives (`Collections`, sorting, search)
@@ -174,4 +177,3 @@ Acceptance:
 - Should custom role tags be visible publicly or owner/mod-only?
 - For Most Popular, should score weight reactions, chat volume, and recency equally?
 - Should blocked users be hidden in people list and typing indicators too?
-
