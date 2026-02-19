@@ -2878,6 +2878,90 @@ button:disabled {
 
 }
 
+@media (max-width: 900px) {
+  /* Rack mode mobile: screen-based (single surface at a time). */
+  .app.rackMode.mobileRack {
+    display: block;
+    padding: 0;
+    gap: 0;
+    height: 100vh;
+  }
+
+  .app.rackMode.mobileRack .sidebar,
+  .app.rackMode.mobileRack #sidebarResizeHandle,
+  .app.rackMode.mobileRack .main,
+  .app.rackMode.mobileRack #chatResizeHandle,
+  .app.rackMode.mobileRack #rightRack {
+    display: none;
+    width: 100%;
+    height: calc(100vh - 56px);
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .app.rackMode.mobileRack[data-mobile-panel="account"] .sidebar {
+    display: flex;
+  }
+
+  .app.rackMode.mobileRack[data-mobile-panel="workspace"] .main {
+    display: flex;
+  }
+
+  .app.rackMode.mobileRack[data-mobile-panel="side"] .main {
+    display: flex;
+  }
+
+  .app.rackMode.mobileRack[data-mobile-panel="right"] #rightRack {
+    display: flex;
+  }
+  .app.rackMode.mobileRack[data-mobile-panel="mod"] #rightRack {
+    display: flex;
+  }
+
+  /* When showing the main column, only show the workspace OR side rack. */
+  .app.rackMode.mobileRack[data-mobile-panel="side"] #mainWorkspaceRack {
+    display: none;
+  }
+  .app.rackMode.mobileRack[data-mobile-panel="side"] #mainSideRack {
+    display: flex;
+  }
+  .app.rackMode.mobileRack[data-mobile-panel="workspace"] #mainWorkspaceRack {
+    display: flex;
+  }
+  .app.rackMode.mobileRack[data-mobile-panel="workspace"] #mainSideRack {
+    display: none;
+  }
+
+  /* Make workspace layout simpler on phones. */
+  .app.rackMode.mobileRack #mainWorkspaceRack.workspaceRack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-gap);
+    overflow: hidden;
+  }
+
+  /* Full width slots on mobile (avoid 4x2 grid). */
+  .app.rackMode.mobileRack #mainWorkspaceRack.workspaceRack {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .app.rackMode.mobileRack .sideRackToggle,
+  .app.rackMode.mobileRack .rightRackToggle,
+  .app.rackMode.mobileRack .peopleToggle {
+    display: none;
+  }
+
+  /* Hotbar "screen": keep it visible and tappable. */
+  .app.rackMode.mobileRack[data-mobile-panel="hotbar"] + .dockHotbar {
+    display: flex;
+  }
+  .app.rackMode.mobileRack[data-mobile-panel="hotbar"] + .dockHotbar.hidden {
+    display: flex;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

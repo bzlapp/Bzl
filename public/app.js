@@ -215,7 +215,7 @@ let modLogView = localStorage.getItem("bzl_modLogView") || "dev"; // "dev" | "mo
 let devLogAutoScroll = localStorage.getItem("bzl_devLogAutoScroll") !== "0";
 let modModalContext = null;
 let lanUrls = [];
-let mobilePanel = "main";
+let mobilePanel = "workspace";
 let composerOpen = false;
 let touchStartX = 0;
 let touchStartY = 0;
@@ -4096,8 +4096,70 @@ function isMobileSwipeMode() {
   return window.matchMedia("(max-width: 760px)").matches;
 }
 
+function normalizeMobileRackPanel(next) {
+  const raw = String(next || "").trim();
+  if (!raw) return "workspace";
+  // Back-compat: older values / callers.
+  if (raw === "sidebar") return "account";
+  if (raw === "main") return "workspace";
+  if (raw === "chat") return "workspace";
+  if (raw === "people") return "right";
+  if (raw === "moderation") return canModerate ? "mod" : "right";
+
+  if (raw === "account" || raw === "workspace" || raw === "side" || raw === "right" || raw === "hotbar" || raw === "mod") {
+    if (raw === "mod" && !canModerate) return "right";
+    return raw;
+  }
+  return "workspace";
+}
+
+function focusModerationInRightRack() {
+  if (!rackLayoutEnabled) return;
+  if (!canModerate) return;
+  const rightRack = ensureRightRack();
+  const panelEl = getPanelElement("moderation");
+  if (!rightRack || !panelEl) return;
+
+  // Make sure it's not docked.
+  if (isDocked("moderation")) undockPanel("moderation");
+
+  const existing = rightRack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+  if (existing instanceof HTMLElement && existing !== panelEl) {
+    const existingId = String(existing.dataset.panelId || "").trim();
+    if (existingId) dockPanel(existingId);
+  }
+  rightRack.appendChild(panelEl);
+  rememberPanelLastRack("moderation", "rightRack");
+  saveRackLayoutState();
+  syncRackStateFromDom();
+}
+
 function setMobilePanel(next) {
   if (!appRoot) return;
+  if (rackLayoutEnabled) {
+    const panel = normalizeMobileRackPanel(next);
+    mobilePanel = panel;
+    appRoot.setAttribute("data-mobile-panel", panel);
+    const buttons = mobilePagerEl ? Array.from(mobilePagerEl.querySelectorAll("[data-mobilepanel]")) : [];
+    for (const btn of buttons) {
+      const on = btn.getAttribute("data-mobilepanel") === panel;
+      btn.classList.toggle("primary", on);
+      btn.classList.toggle("ghost", !on);
+    }
+
+    if (dockHotbarEl) {
+      if (panel === "hotbar") {
+        dockHotbarEl.dataset.lockVisible = "1";
+        showHotbar(true);
+      } else {
+        dockHotbarEl.dataset.lockVisible = "0";
+      }
+    }
+
+    if (panel === "mod") focusModerationInRightRack();
+    return;
+  }
+
   const allowMod = canModerate;
   const panel =
     next === "sidebar" || next === "chat" || next === "people" || (allowMod && next === "moderation") ? next : "main";
@@ -4119,12 +4181,20 @@ function setMobilePanel(next) {
 function applyMobileMode() {
   if (!appRoot) return;
   const mobile = isMobileSwipeMode();
-  appRoot.classList.toggle("mobileSwipe", mobile);
+  const rackMobile = Boolean(mobile && rackLayoutEnabled);
+  appRoot.classList.toggle("mobileRack", rackMobile);
+  appRoot.classList.toggle("mobileSwipe", Boolean(mobile && !rackLayoutEnabled));
+
   if (mobilePagerEl) mobilePagerEl.classList.toggle("hidden", !mobile);
-  if (mobileModBtn) mobileModBtn.classList.toggle("hidden", !canModerate);
-  if (!canModerate && mobilePanel === "moderation") mobilePanel = "main";
+  if (mobileModBtn) mobileModBtn.classList.toggle("hidden", !(canModerate && rackLayoutEnabled));
+
+  // Keep mobilePanel valid across modes.
+  if (rackLayoutEnabled) mobilePanel = normalizeMobileRackPanel(mobilePanel);
+  if (!rackLayoutEnabled && !canModerate && mobilePanel === "moderation") mobilePanel = "main";
+
   if (mobile) stopAnyPanelResize();
   if (mobile) setMobilePanel(mobilePanel);
+
   if (canResizeSidebarNow()) applySidebarWidth(readStoredSidebarWidth(), false);
   if (canResizeChatNow()) applyChatWidth(readStoredChatWidth(), false);
   if (canResizeModNow()) applyModWidth(readStoredModWidth(), false);
@@ -4134,6 +4204,16 @@ function applyMobileMode() {
 
 function shiftMobilePanel(delta) {
   if (!isMobileSwipeMode()) return;
+  if (rackLayoutEnabled) {
+    const order = canModerate ? ["account", "workspace", "side", "right", "hotbar", "mod"] : ["account", "workspace", "side", "right", "hotbar"];
+    const normalized = normalizeMobileRackPanel(mobilePanel);
+    const idx = order.indexOf(normalized);
+    const current = idx >= 0 ? idx : 1;
+    const nextIdx = Math.max(0, Math.min(order.length - 1, current + delta));
+    setMobilePanel(order[nextIdx]);
+    return;
+  }
+
   const order = canModerate ? ["sidebar", "main", "chat", "people", "moderation"] : ["sidebar", "main", "chat", "people"];
   const idx = order.indexOf(mobilePanel);
   const current = idx >= 0 ? idx : 1;

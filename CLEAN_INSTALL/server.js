@@ -376,6 +376,52 @@ function normalizeRemoteAddress(ip) {
   return ip.replace(/^::ffff:/, "").trim();
 }
 
+function normalizeForwardedIp(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  if (raw.toLowerCase() === "unknown") return "";
+  const cleaned = raw.replace(/^"+|"+$/g, "").trim();
+  if (!cleaned) return "";
+  const bracket = cleaned.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracket) return normalizeRemoteAddress(bracket[1]);
+  const ipv4Port = cleaned.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/);
+  if (ipv4Port) return normalizeRemoteAddress(ipv4Port[1]);
+  return normalizeRemoteAddress(cleaned);
+}
+
+function isTrustedProxyConnection(remoteAddress) {
+  if (String(process.env.TRUST_PROXY || "").trim() === "1") return true;
+  return isLoopbackAddress(normalizeRemoteAddress(remoteAddress || ""));
+}
+
+function getClientIpFromReq(req) {
+  const socketIp = normalizeRemoteAddress(req?.socket?.remoteAddress || "");
+  if (!isTrustedProxyConnection(socketIp)) return socketIp;
+
+  const headers = req?.headers && typeof req.headers === "object" ? req.headers : {};
+  const cf = normalizeForwardedIp(headers["cf-connecting-ip"]);
+  if (cf) return cf;
+
+  const realIp = normalizeForwardedIp(headers["x-real-ip"]);
+  if (realIp) return realIp;
+
+  const xff = typeof headers["x-forwarded-for"] === "string" ? headers["x-forwarded-for"] : "";
+  if (xff) {
+    const first = xff.split(",")[0] || "";
+    const parsed = normalizeForwardedIp(first);
+    if (parsed) return parsed;
+  }
+
+  const fwd = typeof headers["forwarded"] === "string" ? headers["forwarded"] : "";
+  if (fwd) {
+    const match = fwd.match(/(?:^|[,;])\s*for=(\"?)([^\",;]+)\1/i);
+    const parsed = normalizeForwardedIp(match ? match[2] : "");
+    if (parsed) return parsed;
+  }
+
+  return socketIp;
+}
+
 function wsIdentity(ws) {
   const username = normalizeUsername(ws?.user?.username || "");
   if (username) return `u:${username}`;
@@ -387,7 +433,7 @@ function wsIdentity(ws) {
 function reqIdentity(req, fallbackUser = "") {
   const username = normalizeUsername(fallbackUser || "");
   if (username) return `u:${username}`;
-  const ip = normalizeRemoteAddress(req?.socket?.remoteAddress || "");
+  const ip = getClientIpFromReq(req);
   if (ip) return `ip:${ip}`;
   return "ip:unknown";
 }
@@ -4078,10 +4124,7 @@ wss.on("connection", (ws, req) => {
   ws.user = null;
   ws.sessionId = "";
   ws.unlockedPostIds = new Set();
-  ws.remoteAddress =
-    req?.socket?.remoteAddress && typeof req.socket.remoteAddress === "string"
-      ? normalizeRemoteAddress(req.socket.remoteAddress)
-      : null;
+  ws.remoteAddress = getClientIpFromReq(req) || null;
   ws.isLoopback = isLoopbackAddress(ws.remoteAddress);
   sockets.add(ws);
 
