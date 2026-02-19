@@ -30,7 +30,18 @@ function normalizeUrl(s) {
   }
 }
 
-function postJson(targetUrl, token, payload) {
+function slugId(name) {
+  const raw = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  if (!raw) return "";
+  return /^[a-z0-9][a-z0-9_.-]{0,31}$/.test(raw) ? raw : raw.replace(/[^a-z0-9_.-]/g, "").slice(0, 32);
+}
+
+function postJson(targetUrl, payload) {
   return new Promise((resolve) => {
     let u;
     try {
@@ -52,7 +63,6 @@ function postJson(targetUrl, token, payload) {
         headers: {
           "Content-Type": "application/json",
           "Content-Length": body.length,
-          Authorization: token ? `Bearer ${token}` : ""
         }
       },
       (res) => {
@@ -69,7 +79,6 @@ function postJson(targetUrl, token, payload) {
 module.exports = function init(api) {
   const config = readJson(CONFIG_PATH, {
     directoryUrl: "",
-    token: "",
     instance: { id: "", url: "", name: "", description: "", bzlVersion: "", requiresRegistrationCode: false },
     publicHives: []
   });
@@ -83,7 +92,6 @@ module.exports = function init(api) {
     if (ws?.user?.role !== "owner") return;
     const next = msg?.config || {};
     config.directoryUrl = normalizeUrl(next.directoryUrl || config.directoryUrl);
-    config.token = String(next.token || config.token || "").trim();
     config.instance = { ...(config.instance || {}), ...(next.instance || {}) };
     config.instance.url = normalizeUrl(config.instance.url);
     config.instance.id = String(config.instance.id || "").trim();
@@ -100,9 +108,29 @@ module.exports = function init(api) {
     if (ws?.user?.role !== "owner") return;
     const urlBase = normalizeUrl(config.directoryUrl);
     if (!urlBase) return api.sendToUsers([ws.user.username], { type: "plugin:directory-publisher:result", ok: false, error: "Missing directory URL." });
+    const name = String(config.instance?.name || "").trim();
+    if (!name) return api.sendToUsers([ws.user.username], { type: "plugin:directory-publisher:result", ok: false, error: "Missing instance name." });
+    const instanceUrl = normalizeUrl(config.instance?.url || "");
+    if (!instanceUrl) {
+      return api.sendToUsers([ws.user.username], {
+        type: "plugin:directory-publisher:result",
+        ok: false,
+        error: "Missing instance URL (open publisher tab from the instance and save once)."
+      });
+    }
+    const id = String(config.instance?.id || "").trim() || slugId(name) || "instance";
+    const instancePayload = {
+      ...config.instance,
+      id,
+      name,
+      url: instanceUrl,
+      description: String(config.instance?.description || "").trim(),
+      bzlVersion: String(config.instance?.bzlVersion || "").trim(),
+      requiresRegistrationCode: Boolean(config.instance?.requiresRegistrationCode)
+    };
     const endpoint = `${urlBase}/api/plugins/directory-server/announce`;
-    const payload = { instance: config.instance, publicHives: config.publicHives };
-    const r = await postJson(endpoint, config.token, payload);
+    const payload = { instance: instancePayload, publicHives: config.publicHives };
+    const r = await postJson(endpoint, payload);
     api.sendToUsers([ws.user.username], { type: "plugin:directory-publisher:result", ...r });
   });
 

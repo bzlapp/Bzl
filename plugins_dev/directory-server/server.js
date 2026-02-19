@@ -16,15 +16,6 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
-function getTokenFromReq(req) {
-  const h = req?.headers || {};
-  const direct = typeof h["x-bzl-directory-token"] === "string" ? h["x-bzl-directory-token"].trim() : "";
-  if (direct) return direct;
-  const auth = typeof h.authorization === "string" ? h.authorization.trim() : "";
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : "";
-}
-
 function normalizeUrl(s) {
   const raw = String(s || "").trim();
   if (!raw) return "";
@@ -65,7 +56,7 @@ function sanitizePublicHives(payload) {
 }
 
 module.exports = function init(api) {
-  const config = readJson(CONFIG_PATH, { token: "", hiddenIds: [], blockedHosts: [] });
+  const config = readJson(CONFIG_PATH, { hiddenIds: [], blockedHosts: [] });
   const state = readJson(STATE_PATH, { version: 1, entries: {} });
   const entries = new Map(Object.entries(state.entries || {}));
 
@@ -91,19 +82,11 @@ module.exports = function init(api) {
     if (ws?.user?.role !== "owner") return;
     api.sendToUsers([ws.user.username], {
       type: "plugin:directory-server:config",
-      tokenSet: Boolean(config.token),
       hiddenIds: config.hiddenIds.slice(0, 500),
       blockedHosts: config.blockedHosts.slice(0, 500),
-      entryCount: entries.size
+      entryCount: entries.size,
+      pendingCount: Array.from(entries.values()).filter((e) => String(e?.status || "pending") === "pending").length
     });
-  });
-
-  api.registerWs("setToken", (ws, msg) => {
-    if (ws?.user?.role !== "owner") return;
-    const token = String(msg?.token || "").trim();
-    config.token = token;
-    writeJson(CONFIG_PATH, config);
-    api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
   });
 
   api.registerWs("getEntries", (ws) => {
@@ -133,7 +116,7 @@ module.exports = function init(api) {
     else set.delete(id);
     config.hiddenIds = Array.from(set.values()).sort();
     writeJson(CONFIG_PATH, config);
-    api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
+    api.broadcast({ type: "plugin:directory-server:configUpdated" });
   });
 
   api.registerWs("setBlockedHost", (ws, msg) => {
@@ -146,7 +129,7 @@ module.exports = function init(api) {
     else set.delete(host);
     config.blockedHosts = Array.from(set.values()).sort();
     writeJson(CONFIG_PATH, config);
-    api.broadcast({ type: "plugin:directory-server:configUpdated", tokenSet: Boolean(config.token) });
+    api.broadcast({ type: "plugin:directory-server:configUpdated" });
   });
 
   api.registerWs("deleteEntry", (ws, msg) => {
@@ -158,12 +141,57 @@ module.exports = function init(api) {
     api.broadcast({ type: "plugin:directory-server:updated", id, deleted: true });
   });
 
+  api.registerWs("approveEntry", (ws, msg) => {
+    if (ws?.user?.role !== "owner") return;
+    const id = normalizeId(msg?.id);
+    if (!id) return;
+    const current = entries.get(id);
+    if (!current || !current.instance) return;
+    const next = {
+      ...current,
+      status: "approved",
+      reviewedAt: Date.now(),
+      reviewedBy: String(ws?.user?.username || ""),
+      rejectedReason: ""
+    };
+    entries.set(id, next);
+    persist();
+    api.broadcast({ type: "plugin:directory-server:updated", id, status: "approved", reviewedAt: next.reviewedAt, reviewedBy: next.reviewedBy });
+  });
+
+  api.registerWs("rejectEntry", (ws, msg) => {
+    if (ws?.user?.role !== "owner") return;
+    const id = normalizeId(msg?.id);
+    if (!id) return;
+    const current = entries.get(id);
+    if (!current || !current.instance) return;
+    const reason = String(msg?.reason || "").trim().slice(0, 240);
+    const next = {
+      ...current,
+      status: "rejected",
+      reviewedAt: Date.now(),
+      reviewedBy: String(ws?.user?.username || ""),
+      rejectedReason: reason
+    };
+    entries.set(id, next);
+    persist();
+    api.broadcast({
+      type: "plugin:directory-server:updated",
+      id,
+      status: "rejected",
+      reviewedAt: next.reviewedAt,
+      reviewedBy: next.reviewedBy,
+      rejectedReason: reason
+    });
+  });
+
   api.registerHttp("GET", "/list", (_req, res, ctx) => {
     const hidden = new Set(config.hiddenIds);
     const blocked = new Set(config.blockedHosts);
     const list = Array.from(entries.values())
       .map((e) => e)
       .filter((e) => {
+        if (String(e?.status || "pending") !== "approved") return false;
         const id = normalizeId(e?.instance?.id);
         if (id && hidden.has(id)) return false;
         const host = normalizeHost(e?.instance?.url);
@@ -176,10 +204,6 @@ module.exports = function init(api) {
   });
 
   api.registerHttp("POST", "/announce", async (req, _res, ctx) => {
-    if (!config.token) return ctx.sendJson(503, { ok: false, error: "Directory token not configured." });
-    const token = getTokenFromReq(req);
-    if (!token || token !== config.token) return ctx.sendJson(401, { ok: false, error: "Unauthorized." });
-
     let body;
     try {
       body = await ctx.readJsonBody({ maxBytes: 256 * 1024 });
@@ -190,12 +214,26 @@ module.exports = function init(api) {
 
     const inst = sanitizeInstance(body);
     if (!inst) return ctx.sendJson(400, { ok: false, error: "Invalid instance payload." });
+    const host = normalizeHost(inst.url);
+    if (host && config.blockedHosts.includes(host)) {
+      return ctx.sendJson(403, { ok: false, error: "This host is blocked by the directory owner." });
+    }
     const publicHives = sanitizePublicHives(body);
-    const entry = { instance: inst, publicHives, lastSeenAt: Date.now() };
+    const current = entries.get(inst.id);
+    const keepApproved = String(current?.status || "") === "approved";
+    const entry = {
+      instance: inst,
+      publicHives,
+      lastSeenAt: Date.now(),
+      status: keepApproved ? "approved" : "pending",
+      reviewedAt: keepApproved ? Number(current?.reviewedAt || 0) : 0,
+      reviewedBy: keepApproved ? String(current?.reviewedBy || "") : "",
+      rejectedReason: ""
+    };
     entries.set(inst.id, entry);
     persist();
-    api.broadcast({ type: "plugin:directory-server:updated", id: inst.id, lastSeenAt: entry.lastSeenAt });
-    return ctx.sendJson(200, { ok: true, id: inst.id });
+    api.broadcast({ type: "plugin:directory-server:updated", id: inst.id, lastSeenAt: entry.lastSeenAt, status: entry.status });
+    return ctx.sendJson(200, { ok: true, id: inst.id, status: entry.status });
   });
 
   api.log("info", "directory-server loaded", { http: ["/announce", "/list"] });

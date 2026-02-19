@@ -14,7 +14,9 @@ window.BzlPluginHost.register("directory-publisher", (ctx) => {
       else if (v === false || v == null) continue;
       else node.setAttribute(k, String(v));
     }
-    for (const c of children) node.appendChild(c);
+    for (const c of children) {
+      if (c instanceof Node) node.appendChild(c);
+    }
     return node;
   };
 
@@ -28,10 +30,6 @@ window.BzlPluginHost.register("directory-publisher", (ctx) => {
     const inst = c.instance && typeof c.instance === "object" ? c.instance : {};
 
     const directoryUrl = el("input", { value: safe(c.directoryUrl), placeholder: "https://chat.bzl.one" });
-    const token = el("input", { value: safe(c.token), placeholder: "Directory token (shared secret)" });
-
-    const id = el("input", { value: safe(inst.id), placeholder: "instance id (e.g. temple)" });
-    const url = el("input", { value: safe(inst.url), placeholder: "https://your.instance" });
     const name = el("input", { value: safe(inst.name), placeholder: "Display name" });
     const description = el("input", { value: safe(inst.description), placeholder: "Short description" });
     const bzlVersion = el("input", { value: safe(inst.bzlVersion), placeholder: "bzl version (optional)" });
@@ -54,10 +52,9 @@ window.BzlPluginHost.register("directory-publisher", (ctx) => {
         ctx.send("setConfig", {
           config: {
             directoryUrl: safe(directoryUrl.value).trim(),
-            token: safe(token.value).trim(),
             instance: {
-              id: safe(id.value).trim(),
-              url: safe(url.value).trim(),
+              id: "",
+              url: window.location.origin,
               name: safe(name.value).trim(),
               description: safe(description.value).trim(),
               bzlVersion: safe(bzlVersion.value).trim(),
@@ -77,14 +74,10 @@ window.BzlPluginHost.register("directory-publisher", (ctx) => {
         el("div", { className: "row", style: "gap:10px; margin-top:10px" }, [
           el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Directory URL" }), directoryUrl]),
         ]),
-        el("div", { className: "row", style: "gap:10px; margin-top:10px" }, [el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Token" }), token])] ),
+        el("div", { className: "muted small", text: `Instance URL: ${window.location.origin}`, style: "margin-top:10px" }),
         el("div", { className: "muted small", text: "Instance metadata", style: "margin-top:14px" }),
-        el("div", { className: "row", style: "gap:10px; margin-top:8px" }, [
-          el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Instance id" }), id]),
-          el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Instance URL" }), url]),
-        ]),
         el("div", { className: "row", style: "gap:10px; margin-top:10px" }, [
-          el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Name" }), name]),
+          el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Bzl instance name" }), name]),
           el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Bzl version" }), bzlVersion]),
         ]),
         el("div", { className: "row", style: "gap:10px; margin-top:10px" }, [el("label", { style: "flex:1" }, [el("span", { className: "muted small", text: "Description" }), description])] ),

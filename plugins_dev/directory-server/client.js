@@ -20,7 +20,9 @@ window.BzlPluginHost.register("directory-server", (ctx) => {
       else if (v === false || v == null) continue;
       else node.setAttribute(k, String(v));
     }
-    for (const c of children) node.appendChild(c);
+    for (const c of children) {
+      if (c instanceof Node) node.appendChild(c);
+    }
     return node;
   };
 
@@ -124,32 +126,20 @@ window.BzlPluginHost.register("directory-server", (ctx) => {
     if (!modMount) return;
     modMount.innerHTML = "";
 
-    const tokenSet = Boolean(lastConfig?.tokenSet);
     const hiddenIds = Array.isArray(lastConfig?.hiddenIds) ? lastConfig.hiddenIds : [];
     const blockedHosts = Array.isArray(lastConfig?.blockedHosts) ? lastConfig.blockedHosts : [];
-
-    const tokenInput = el("input", {
-      placeholder: tokenSet ? "Token is set (enter to replace)" : "Set directory token (shared secret)",
-      style: "flex:1",
-    });
-    const saveBtn = el("button", {
-      type: "button",
-      className: "primary",
-      text: "Save token",
-      onclick: () => {
-        const token = String(tokenInput.value || "").trim();
-        ctx.send("setToken", { token });
-        tokenInput.value = "";
-      },
-    });
+    const pendingCount = Number(lastConfig?.pendingCount || 0);
 
     modMount.appendChild(
       el("div", { className: "panel", style: "padding:12px; margin-bottom:12px" }, [
         el("div", { className: "row", style: "justify-content:space-between; align-items:center; gap:10px" }, [
-          el("div", {}, [el("div", { text: "Directory settings", style: "font-weight:700" }), el("div", { className: "muted small", text: tokenSet ? "Token: set" : "Token: not set" })]),
+          el("div", {}, [
+            el("div", { text: "Directory review settings", style: "font-weight:700" }),
+            el("div", { className: "muted small", text: `${pendingCount} pending review` }),
+          ]),
           el("button", { type: "button", className: "ghost", text: "Refresh", onclick: () => ctx.send("getConfig", {}) }),
         ]),
-        el("div", { className: "row", style: "gap:10px; margin-top:10px" }, [tokenInput, saveBtn]),
+        el("div", { className: "muted small", text: "Announcements are open. Approve or reject each instance here.", style: "margin-top:10px" }),
       ])
     );
 
@@ -193,6 +183,7 @@ window.BzlPluginHost.register("directory-server", (ctx) => {
         const id = String(inst.id || "").trim().toLowerCase();
         const name = String(inst.name || inst.id || "Instance").slice(0, 60);
         const url = String(inst.url || "");
+        const status = String(entry?.status || "pending");
         const host = getHost(url).toLowerCase();
         const isHidden = Boolean(id && hiddenIds.includes(id));
         const isBlocked = Boolean(host && blockedHosts.includes(host));
@@ -202,6 +193,8 @@ window.BzlPluginHost.register("directory-server", (ctx) => {
           el("div", { text: name, style: "font-weight:700" }),
           el("div", { className: "muted small", text: url }),
           el("div", { className: "muted small", text: `Last seen: ${fmtTime(entry?.lastSeenAt)}` }),
+          el("div", { className: "muted small", text: `Status: ${status}${entry?.reviewedAt ? ` (reviewed ${fmtTime(entry.reviewedAt)})` : ""}` }),
+          entry?.rejectedReason ? el("div", { className: "muted small", text: `Rejection note: ${String(entry.rejectedReason)}` }) : null,
         ]);
 
         const controls = el("div", { className: "row", style: "gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end" });
@@ -211,6 +204,25 @@ window.BzlPluginHost.register("directory-server", (ctx) => {
           onchange: (e) => ctx.send("setHidden", { id, hidden: Boolean(e?.target?.checked) }),
         });
         controls.appendChild(el("label", { className: "row small", style: "gap:8px; align-items:center" }, [hideCb, el("span", { text: "Hide" })]));
+        controls.appendChild(
+          el("button", {
+            type: "button",
+            className: status === "approved" ? "primary" : "ghost",
+            text: "Approve",
+            onclick: () => ctx.send("approveEntry", { id }),
+          })
+        );
+        controls.appendChild(
+          el("button", {
+            type: "button",
+            className: status === "rejected" ? "danger" : "ghost",
+            text: "Reject",
+            onclick: () => {
+              const reason = prompt("Optional rejection note:");
+              ctx.send("rejectEntry", { id, reason: reason == null ? "" : String(reason) });
+            },
+          })
+        );
         if (host) {
           controls.appendChild(
             el("button", {
