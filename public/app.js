@@ -897,7 +897,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat", "profile", "composer"],
     sideCollapsed: false,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "maps", "library"],
+    dockBottom: ["pluginRack", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   social: {
     presetId: "social",
@@ -908,7 +908,7 @@ const PRESET_DEFS = {
     sideOrder: ["profile", "composer"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "maps", "library"],
+    dockBottom: ["pluginRack", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   chatFocus: {
     presetId: "chatFocus",
@@ -920,7 +920,7 @@ const PRESET_DEFS = {
     sideOrder: ["profile"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "hives", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "hives", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   browse: {
     presetId: "browse",
@@ -932,7 +932,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["profile"],
-    dockBottom: ["pluginRack", "people", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "people", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   creator: {
     presetId: "creator",
@@ -944,7 +944,7 @@ const PRESET_DEFS = {
     sideOrder: ["people"],
     sideCollapsed: true,
     rightOrder: ["profile"],
-    dockBottom: ["pluginRack", "chat", "maps", "library"],
+    dockBottom: ["pluginRack", "chat", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   mapsSession: {
     presetId: "mapsSession",
@@ -955,7 +955,7 @@ const PRESET_DEFS = {
     sideOrder: ["hives"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "library-browser", "library-shelf", "library-reader"],
   },
   quiet: {
     presetId: "quiet",
@@ -967,7 +967,29 @@ const PRESET_DEFS = {
     sideCollapsed: true,
     rightOrder: [],
     rightCollapsed: true,
-    dockBottom: ["pluginRack", "chat", "people", "maps", "library"],
+    dockBottom: ["pluginRack", "chat", "people", "maps", "library-browser", "library-shelf", "library-reader"],
+  },
+  readingNook: {
+    presetId: "readingNook",
+    label: "Reading Nook",
+    group: "user",
+    workspaceLeftOrder: ["library-reader"],
+    workspaceRightOrder: ["library-shelf"],
+    sideOrder: ["profile"],
+    sideCollapsed: true,
+    rightOrder: ["people"],
+    dockBottom: ["pluginRack", "hives", "chat", "composer", "maps", "library-browser"],
+  },
+  libraryCurator: {
+    presetId: "libraryCurator",
+    label: "Library Curator",
+    group: "user",
+    workspaceLeftOrder: ["library-browser"],
+    workspaceRightOrder: ["library-shelf"],
+    sideOrder: ["profile"],
+    sideCollapsed: true,
+    rightOrder: ["people"],
+    dockBottom: ["pluginRack", "hives", "chat", "composer", "maps", "library-reader"],
   },
   ops: {
     presetId: "ops",
@@ -979,7 +1001,7 @@ const PRESET_DEFS = {
     sideOrder: ["hives"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   reportsFocus: {
     presetId: "reportsFocus",
@@ -992,7 +1014,7 @@ const PRESET_DEFS = {
     sideOrder: ["people"],
     sideCollapsed: true,
     rightOrder: ["chat"],
-    dockBottom: ["pluginRack", "hives", "profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "hives", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   communityWatch: {
     presetId: "communityWatch",
@@ -1004,7 +1026,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   serverAdmin: {
     presetId: "serverAdmin",
@@ -1016,7 +1038,7 @@ const PRESET_DEFS = {
     sideOrder: ["chat"],
     sideCollapsed: true,
     rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library"],
+    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
 };
 
@@ -1030,6 +1052,8 @@ const PRESET_ALIASES = {
   focus: "quiet",
   clean: "social",
   moderation: "ops",
+  reading: "readingNook",
+  library: "libraryCurator",
 };
 
 function resolvePresetKey(presetId) {

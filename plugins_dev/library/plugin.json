@@ -1,8 +1,8 @@
 {
   "id": "library",
   "name": "Library",
-  "version": "0.2.5",
-  "description": "Upload PDFs as library posts and read them in-app.",
+  "version": "0.4.0",
+  "description": "Panel-based social library with Reader, Shelf, and Library browsing plus checkout/return and metadata tags.",
   "entryClient": "client.js",
   "entryServer": "server.js",
   "permissions": ["ui", "ws"]

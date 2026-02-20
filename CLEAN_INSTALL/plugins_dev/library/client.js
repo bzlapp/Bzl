@@ -1,8 +1,9 @@
+﻿
 (function () {
   const PLUGIN_ID = "library";
-
   const PDF_CHUNK_BYTES = 256 * 1024;
-  const TEXT_FILE_MAX_BYTES = 512 * 1024; // mirrors server default
+  const TEXT_FILE_MAX_BYTES = 512 * 1024;
+  const TAG_SUGGESTIONS = ["fic", "fix-it-fic", "journal", "fiction", "fantasy", "sci-fi", "lore", "poetry", "notes", "history"];
 
   function escapeHtml(text) {
     return String(text || "")
@@ -40,41 +41,44 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  function sanitizeFilenameBase(name) {
-    return String(name || "book")
+  function normalizeTag(raw) {
+    return String(raw || "")
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/[^a-z0-9 _-]+/g, "")
+      .replace(/\s+/g, "-")
       .replace(/-+/g, "-")
-      .replace(/^[-.]+|[-.]+$/g, "")
-      .slice(0, 80);
+      .replace(/^[-_]+|[-_]+$/g, "")
+      .slice(0, 32);
+  }
+
+  function parseTags(raw) {
+    const parts = String(raw || "")
+      .split(",")
+      .map((x) => normalizeTag(x))
+      .filter(Boolean);
+    return [...new Set(parts)].slice(0, 16);
   }
 
   function paginateText(text, opts = {}) {
-    const maxLines = Number(opts.maxLines || 42);
-    const maxChars = Number(opts.maxChars || 2200);
-    const raw = String(text || "").replace(/\r\n/g, "\n");
-    const lines = raw.split("\n");
-
+    const maxLines = Number(opts.maxLines || 40);
+    const maxChars = Number(opts.maxChars || 2400);
+    const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
     const pages = [];
     let buf = "";
     let lineCount = 0;
-
     const flush = () => {
       pages.push(buf);
       buf = "";
       lineCount = 0;
     };
-
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lineWithNl = i === lines.length - 1 ? line : `${line}\n`;
-
+      const lineWithNl = i === lines.length - 1 ? lines[i] : `${lines[i]}\n`;
       if (lineWithNl.length > maxChars) {
-        let remaining = lineWithNl;
-        while (remaining.length) {
-          const take = remaining.slice(0, maxChars);
-          remaining = remaining.slice(maxChars);
+        let r = lineWithNl;
+        while (r.length) {
+          const take = r.slice(0, maxChars);
+          r = r.slice(maxChars);
           if (buf && (buf.length + take.length > maxChars || lineCount >= maxLines)) flush();
           buf += take;
           lineCount += 1;
@@ -82,223 +86,97 @@
         }
         continue;
       }
-
       if (buf && (buf.length + lineWithNl.length > maxChars || lineCount + 1 > maxLines)) flush();
       buf += lineWithNl;
       lineCount += 1;
     }
-
     if (buf || !pages.length) pages.push(buf);
     return pages;
   }
 
   function ensureStyles() {
-    if (document.getElementById("bzlLibraryStyle")) return;
+    if (document.getElementById("bzlLibraryPanelsStyle")) return;
     const el = document.createElement("style");
-    el.id = "bzlLibraryStyle";
+    el.id = "bzlLibraryPanelsStyle";
     el.textContent = `
-      .bzlLibraryToggle {
-        position: fixed; right: 18px; bottom: 18px; z-index: 9998;
-        padding: 10px 14px; border-radius: 999px;
-        background: linear-gradient(180deg, rgba(255,140,0,0.95), rgba(255,80,160,0.95));
-        color: #1b0a12; border: 0; cursor: pointer; font-weight: 700;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-      }
-      .bzlLibraryPanel {
-        position: fixed; z-index: 9999;
-        left: 18px; top: 18px;
-        width: min(560px, calc(100vw - 36px));
-        height: min(74vh, 760px);
-        max-width: calc(100vw - 36px);
-        max-height: calc(100vh - 36px);
-        overflow: hidden;
-        border-radius: 16px;
-        background: rgba(20, 12, 18, 0.92);
-        border: 1px solid rgba(255,255,255,0.12);
-        box-shadow: 0 22px 70px rgba(0,0,0,0.55);
-        backdrop-filter: blur(10px);
-        display: flex;
-        flex-direction: column;
-      }
-      .bzlLibraryHeader {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 12px 12px 10px 12px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-      }
-      .bzlLibraryTitle {
-        font-weight: 800;
-        cursor: move;
-        user-select: none;
-        -webkit-user-select: none;
-        touch-action: none;
-      }
-      .bzlLibraryBody { padding: 12px; overflow: auto; flex: 1 1 auto; min-height: 0; }
-      .bzlLibraryRow { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; margin-bottom: 10px; }
-      .bzlLibraryRow input[type="text"], .bzlLibraryRow input[type="number"], .bzlLibraryRow textarea {
-        background: rgba(255,255,255,0.08); color: #f6e8f0;
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 10px; padding: 8px 10px;
-      }
-      .bzlLibraryBtn {
-        border-radius: 999px; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.06); color: #f6e8f0; cursor: pointer;
-      }
-      .bzlLibraryBtn.primary {
-        background: linear-gradient(180deg, rgba(255,140,0,0.95), rgba(255,80,160,0.95));
-        color: #1b0a12; border: 0; font-weight: 800;
-      }
-      .bzlLibraryTabs { display:flex; gap: 8px; align-items:center; }
-      .bzlLibraryList { display:flex; flex-direction: column; gap: 10px; }
-      .bzlLibraryItem {
-        border: 1px solid rgba(255,255,255,0.10);
-        background: rgba(255,255,255,0.04);
-        border-radius: 12px; padding: 10px;
-        display:flex; align-items:flex-start; justify-content: space-between; gap: 10px;
-      }
-      .bzlLibraryMeta { opacity: 0.8; font-size: 12px; margin-top: 4px; }
-      .bzlLibraryViewer { display:flex; flex-direction: column; gap: 10px; height: 100%; }
-      .bzlLibraryDocWrap { flex: 1 1 auto; min-height: 240px; min-width: 0; }
-      .bzlLibraryFrame {
-        width: 100%;
-        height: 100%;
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 12px;
-        background: rgba(0,0,0,0.25);
-      }
-      .bzlLibraryTextPage {
-        width: 100%;
-        height: 100%;
-        overflow: auto;
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 12px;
-        background: rgba(0,0,0,0.18);
-        padding: 10px;
-        color: #f6e8f0;
-        white-space: pre-wrap;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace;
-        font-size: 13px;
-        line-height: 1.35;
-      }
-      .bzlLibraryResize {
-        position: absolute;
-        right: 10px;
-        bottom: 10px;
-        width: 16px;
-        height: 16px;
-        border-radius: 5px;
-        border: 1px solid rgba(255,255,255,0.18);
-        background: rgba(255,255,255,0.10);
-        cursor: se-resize;
-        opacity: 0.85;
-      }
-      .bzlLibraryResize:hover { opacity: 1; }
-      .bzlLibraryHint { opacity: 0.8; font-size: 12px; margin-top: 6px; }
-      .hidden { display: none !important; }
+      .lib3 { color: var(--text, #f3f7ff); display:flex; flex-direction:column; gap:10px; min-height:0; height:100%; flex:1 1 auto; }
+      .lib3Row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .lib3 input[type="text"], .lib3 input[type="number"], .lib3 textarea, .lib3 select { background: rgba(255,255,255,0.08); color:#f6e8f0; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 7px 9px; }
+      .lib3Btn { border-radius: 999px; padding: 7px 11px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.08); color:#f6e8f0; cursor:pointer; }
+      .lib3Btn.primary { border:0; background: linear-gradient(180deg, rgba(255,145,50,0.95), rgba(255,90,160,0.95)); color:#1b0a12; font-weight:700; }
+      .lib3Scroll { overflow:auto; min-height:0; flex:1 1 auto; }
+      .lib3ReaderViewport { display:flex; flex:1 1 auto; min-height:0; }
+      .lib3Card { border: 1px solid rgba(255,255,255,0.13); border-radius: 12px; padding: 9px; background: rgba(255,255,255,0.04); margin-bottom:8px; }
+      .lib3Meta { opacity:.82; font-size:12px; margin-top:3px; }
+      .lib3Tag { display:inline-block; font-size:11px; border:1px solid rgba(255,255,255,0.18); border-radius:999px; padding:2px 7px; margin-right:4px; margin-top:4px; }
+      .lib3ReaderPage { white-space:pre-wrap; border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px; overflow:auto; height:100%; background: rgba(0,0,0,0.18); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; }
+      .lib3Hint { opacity:.78; font-size:12px; }
+      .lib3Iframe { width:100%; height:100%; border:1px solid rgba(255,255,255,0.12); border-radius:10px; }
     `;
     document.head.appendChild(el);
-  }
-
-  function whenBodyReady(fn) {
-    if (document.body) return fn();
-    const run = () => {
-      try {
-        document.removeEventListener("DOMContentLoaded", run);
-      } catch {
-        // ignore
-      }
-      fn();
-    };
-    document.addEventListener("DOMContentLoaded", run, { once: true });
   }
 
   window.BzlPluginHost?.register(PLUGIN_ID, (ctx) => {
     ensureStyles();
 
-    const PANEL_RECT_KEY = "bzlLibraryPanelRect";
-    const PANEL_MIN_W = 420;
-    const PANEL_MIN_H = 320;
-
-    let panelOpen = false;
-    let viewerOpen = false;
-    let items = [];
-    let filterKind = "all"; // all | pdf | text
-
-    let activeItem = null; // {id, kind, ...}
-    let activePage = 1;
-    let totalPages = 1;
-    let textPages = [""];
-    let activeText = "";
-    let editorOpen = false;
-    let editorText = "";
-    let editorTitle = "";
-
-    let uploadingPdf = false;
     let wsAttachedTo = null;
+    let snapshot = { me: "", myShelfId: "", shelves: [] };
+    let activeShelfId = "";
+    let readerBookId = "";
+    let readerPage = 1;
+    let searchQuery = "";
+    let searchTag = "";
+    let statusLine = "";
+    let uploadInProgress = false;
 
-    function readPanelRect() {
-      try {
-        const raw = localStorage.getItem(PANEL_RECT_KEY);
-        if (!raw) return null;
-        const json = JSON.parse(raw);
-        const left = Number(json?.left);
-        const top = Number(json?.top);
-        const width = Number(json?.width);
-        const height = Number(json?.height);
-        if (![left, top, width, height].every((n) => Number.isFinite(n))) return null;
-        return { left, top, width, height };
-      } catch {
-        return null;
-      }
-    }
-
-    function defaultPanelRect() {
-      const width = Math.min(560, Math.max(PANEL_MIN_W, window.innerWidth - 36));
-      const height = Math.min(Math.floor(window.innerHeight * 0.74), 760);
-      const left = Math.max(18, Math.floor(window.innerWidth - width - 18));
-      const top = Math.max(18, Math.floor(window.innerHeight - height - 70));
-      return { left, top, width, height };
-    }
-
-    function clampPanelRect(rect) {
-      const maxW = Math.max(PANEL_MIN_W, window.innerWidth - 36);
-      const maxH = Math.max(PANEL_MIN_H, window.innerHeight - 36);
-      const width = Math.min(maxW, Math.max(PANEL_MIN_W, Math.floor(rect.width)));
-      const height = Math.min(maxH, Math.max(PANEL_MIN_H, Math.floor(rect.height)));
-      const left = Math.min(window.innerWidth - 18 - width, Math.max(18, Math.floor(rect.left)));
-      const top = Math.min(window.innerHeight - 18 - height, Math.max(18, Math.floor(rect.top)));
-      return { left, top, width, height };
-    }
-
-    function applyPanelRect(panel, rect) {
-      const r = clampPanelRect(rect);
-      panel.style.left = `${r.left}px`;
-      panel.style.top = `${r.top}px`;
-      panel.style.right = "";
-      panel.style.bottom = "";
-      panel.style.width = `${r.width}px`;
-      panel.style.height = `${r.height}px`;
-    }
-
-    function savePanelRect(rect) {
-      try {
-        localStorage.setItem(PANEL_RECT_KEY, JSON.stringify(rect));
-      } catch {
-        // ignore
-      }
-    }
-
-    function savePanelRectFromEl(panel) {
-      const left = Number.parseFloat(panel.style.left || "0");
-      const top = Number.parseFloat(panel.style.top || "0");
-      const width = Number.parseFloat(panel.style.width || "0");
-      const height = Number.parseFloat(panel.style.height || "0");
-      if (![left, top, width, height].every((n) => Number.isFinite(n) && n > 0)) return;
-      savePanelRect(clampPanelRect({ left, top, width, height }));
-    }
+    const textByBookId = new Map();
+    const mounts = { library: null, shelf: null, reader: null };
 
     function setStatus(msg) {
-      const el = document.getElementById("bzlLibraryStatus");
-      if (el) el.textContent = String(msg || "");
+      statusLine = String(msg || "");
+      renderAll();
+    }
+
+    function ownedShelves() {
+      return (snapshot.shelves || []).filter((s) => Boolean(s?.isOwner));
+    }
+
+    function activeShelf() {
+      return (snapshot.shelves || []).find((s) => String(s?.id || "") === String(activeShelfId || "")) || null;
+    }
+
+    function defaultShelfId() {
+      if (snapshot.myShelfId && ownedShelves().some((s) => s.id === snapshot.myShelfId)) return snapshot.myShelfId;
+      return ownedShelves()[0]?.id || "";
+    }
+
+    function allShelfEntries() {
+      const out = [];
+      for (const shelf of snapshot.shelves || []) {
+        for (const entry of shelf.items || []) out.push({ shelf, entry, book: entry?.book || null });
+      }
+      return out;
+    }
+
+    function getBookById(bookId) {
+      const id = String(bookId || "");
+      if (!id) return null;
+      for (const x of allShelfEntries()) {
+        if (String(x.book?.id || "") === id) return x.book;
+      }
+      return null;
+    }
+
+    function activeReaderBook() {
+      return getBookById(readerBookId);
+    }
+
+    function requestList() {
+      ctx.send("list", {});
+    }
+
+    function requestText(bookId) {
+      ctx.send("textGet", { id: bookId });
     }
 
     function attachWsListener() {
@@ -307,129 +185,46 @@
       if (wsAttachedTo === ws) return;
       try {
         if (wsAttachedTo) wsAttachedTo.removeEventListener("message", onWsMsg);
-      } catch {
-        // ignore
-      }
+      } catch {}
       wsAttachedTo = ws;
       ws.addEventListener("message", onWsMsg);
     }
 
-    function requestList() {
-      ctx.send("list", {});
+    function openInReader(bookId) {
+      const id = String(bookId || "");
+      if (!id) return;
+      readerBookId = id;
+      readerPage = 1;
+      const book = getBookById(id);
+      if (book && String(book.kind || "") === "text" && !textByBookId.has(id)) requestText(id);
+      renderReader();
     }
-
-    function requestText(id) {
-      ctx.send("textGet", { id });
-    }
-
-    function isAuthor(it) {
-      const me = String(ctx.getUser() || "");
-      return Boolean(me) && String(it?.createdBy || "") === me;
-    }
-
-    function canDelete(it) {
-      const role = String(ctx.getRole() || "");
-      return role === "owner" || isAuthor(it);
-    }
-
-    function downloadTextFile(filename, text) {
-      try {
-        const blob = new Blob([String(text || "")], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-      } catch {
-        // ignore
-      }
-    }
-
-    function openItem(it) {
-      activeItem = it;
-      activePage = 1;
-      viewerOpen = true;
-      editorOpen = false;
-      editorText = "";
-      editorTitle = "";
-      activeText = "";
-      textPages = [""];
-      totalPages = 1;
-      render();
-      if (String(it.kind || "pdf") === "text") {
-        requestText(it.id);
-      } else {
-        setPage(1);
-      }
-    }
-
-    function closeViewer() {
-      viewerOpen = false;
-      activeItem = null;
-      activePage = 1;
-      totalPages = 1;
-      textPages = [""];
-      activeText = "";
-      editorOpen = false;
-      editorText = "";
-      editorTitle = "";
-      render();
-    }
-
-    function setPage(n) {
-      if (!viewerOpen || !activeItem) return;
-      const kind = String(activeItem.kind || "pdf");
-      if (kind === "text") {
-        const next = Math.max(1, Math.min(totalPages, Number(n || 1)));
-        activePage = next;
-        const pageLabel = document.getElementById("bzlLibraryPageLabel");
-        if (pageLabel) pageLabel.textContent = `Page ${activePage} / ${totalPages}`;
-        const inp = document.getElementById("bzlLibraryPage");
-        if (inp) inp.value = String(activePage);
-        const textEl = document.getElementById("bzlLibraryTextPage");
-        if (textEl) textEl.textContent = textPages[activePage - 1] || "";
-        return;
-      }
-      const next = Math.max(1, Math.min(9999, Number(n || 1)));
-      activePage = next;
-      const iframe = document.getElementById("bzlLibraryFrame");
-      if (iframe) iframe.src = `${activeItem.url}#page=${activePage}`;
-      const inp = document.getElementById("bzlLibraryPage");
-      if (inp) inp.value = String(activePage);
-      const pageLabel = document.getElementById("bzlLibraryPageLabel");
-      if (pageLabel) pageLabel.textContent = `Page ${activePage}`;
-    }
-
-    async function uploadSelectedPdf() {
-      if (uploadingPdf) return;
-      attachWsListener();
-      const fileEl = document.getElementById("bzlLibraryPdfFile");
-      const titleEl = document.getElementById("bzlLibraryPdfTitle");
-      const file = fileEl?.files?.[0];
-      if (!file) return setStatus("Choose a PDF first.");
-      const mime = String(file.type || "").trim().toLowerCase();
-      const isPdf = /\\.pdf$/i.test(file.name || "") || mime === "application/pdf";
-      if (!isPdf) return setStatus("Only PDF files are supported.");
-
-      uploadingPdf = true;
-      setStatus("Starting PDF upload...");
+    async function uploadPdfToShelf(file, meta, shelfId) {
+      if (uploadInProgress) return;
+      uploadInProgress = true;
       window.__bzlLibraryUploadId = "";
-      ctx.send("uploadStart", { filename: file.name, mime, size: file.size, title: String(titleEl?.value || "").trim() });
+      ctx.send("uploadStart", {
+        filename: file.name,
+        mime: String(file.type || "").trim().toLowerCase(),
+        size: file.size,
+        title: meta.title,
+        author: meta.author,
+        isOriginal: meta.isOriginal,
+        tags: meta.tags,
+        shelfId,
+      });
 
       const t0 = Date.now();
       while (!window.__bzlLibraryUploadId && Date.now() - t0 < 3000) {
         // eslint-disable-next-line no-await-in-loop
-        await sleep(30);
+        await sleep(35);
       }
       const uploadId = String(window.__bzlLibraryUploadId || "");
       if (!uploadId) {
-        uploadingPdf = false;
-        return setStatus("Upload failed to start.");
+        uploadInProgress = false;
+        setStatus("Upload failed to start.");
+        return;
       }
-      ctx.devLog("info", "library:uploadId", { uploadId, size: file.size });
 
       let sent = 0;
       for (let off = 0; off < file.size; off += PDF_CHUNK_BYTES) {
@@ -444,352 +239,358 @@
         // eslint-disable-next-line no-await-in-loop
         await sleep(0);
       }
-
       ctx.send("uploadFinish", { uploadId });
-      setStatus("Finalizing PDF...");
     }
 
-    async function importTextFromFile() {
-      const fileEl = document.getElementById("bzlLibraryTextFile");
-      const titleEl = document.getElementById("bzlLibraryTextTitle");
-      const file = fileEl?.files?.[0];
-      if (!file) return setStatus("Choose a text file first.");
-
-      const name = String(file.name || "").toLowerCase();
-      const okExt = name.endsWith(".txt") || name.endsWith(".md");
-      if (!okExt && String(file.type || "").toLowerCase() !== "text/plain") {
-        return setStatus("Supported: .txt, .md, or text/plain.");
-      }
-      if (file.size > TEXT_FILE_MAX_BYTES) {
-        return setStatus(`Text file too large. Max is ${formatBytes(TEXT_FILE_MAX_BYTES)}.`);
-      }
-
-      let text = "";
-      try {
-        text = await file.text();
-      } catch {
-        return setStatus("Failed to read file.");
-      }
-      const title = String(titleEl?.value || "").trim() || String(file.name || "").replace(/\\.(txt|md)$/i, "");
-      ctx.send("textCreate", { title, text });
-      setStatus("Importing text...");
-    }
-
-    function createBlankTextBook() {
-      const titleEl = document.getElementById("bzlLibraryTextNewTitle");
-      const title = String(titleEl?.value || "").trim() || "Untitled text";
-      ctx.send("textCreate", { title, text: "" });
-      setStatus("Creating blank text...");
-    }
-
-    function openEditor() {
-      if (!activeItem || String(activeItem.kind || "") !== "text") return;
-      if (!isAuthor(activeItem)) {
-        ctx.toast("Library", "Only the author can edit/export this text.");
+    async function createBookFromFile(file, payload) {
+      const name = String(file?.name || "").toLowerCase();
+      const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+      if (ext === ".pdf" || String(file.type || "").toLowerCase() === "application/pdf") {
+        await uploadPdfToShelf(file, payload, payload.shelfId);
         return;
       }
-      editorOpen = true;
-      editorText = String(activeText || "");
-      editorTitle = String(activeItem.title || "");
-      render();
-    }
-
-    function closeEditor() {
-      editorOpen = false;
-      editorText = "";
-      editorTitle = "";
-      render();
-    }
-
-    function saveEditor() {
-      if (!activeItem || String(activeItem.kind || "") !== "text") return;
-      if (!isAuthor(activeItem)) return;
-      ctx.send("textUpdate", { id: activeItem.id, title: editorTitle, text: editorText });
-      setStatus("Saving...");
-    }
-
-    function exportActiveText() {
-      if (!activeItem || String(activeItem.kind || "") !== "text") return;
-      if (!isAuthor(activeItem)) return;
-      const base = sanitizeFilenameBase(activeItem.title || "book") || "book";
-      downloadTextFile(`${base}.txt`, activeText);
-    }
-
-    function render() {
-      ensureDom();
-      const panel = document.getElementById("bzlLibraryPanel");
-      if (!panel) return;
-      panel.classList.toggle("hidden", !panelOpen);
-      if (!panelOpen) return;
-
-      const viewList = !viewerOpen;
-      const list = items
-        .filter((it) => {
-          const k = String(it?.kind || "pdf");
-          if (filterKind === "all") return true;
-          return k === filterKind;
-        })
-        .map((it) => {
-          const kind = String(it.kind || "pdf");
-          const title = escapeHtml(it.title || it.filename || (kind === "text" ? "Text" : "PDF"));
-          const when = new Date(Number(it.createdAt || 0) || 0).toLocaleString();
-          const who = escapeHtml(String(it.createdBy || ""));
-          const meta = `${kind.toUpperCase()} | ${who} | ${when} | ${formatBytes(it.bytes)}`;
-          const delBtn = canDelete(it) ? `<button type="button" class="bzlLibraryBtn" data-libdel="${escapeHtml(it.id)}">Delete</button>` : "";
-          const openBtn = `<button type="button" class="bzlLibraryBtn primary" data-libopen="${escapeHtml(it.id)}">Open</button>`;
-          const newTab =
-            kind === "pdf" && it.url
-              ? `<a class="bzlLibraryBtn" href="${escapeHtml(it.url)}" target="_blank" rel="noreferrer">New tab</a>`
-              : "";
-          return `
-            <div class="bzlLibraryItem">
-              <div>
-                <div><b>${title}</b></div>
-                <div class="bzlLibraryMeta">${escapeHtml(meta)}</div>
-              </div>
-              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
-                ${openBtn}
-                ${newTab}
-                ${delBtn}
-              </div>
-            </div>
-          `;
-        })
-        .join("");
-
-      const kindTabs = `
-        <div class="bzlLibraryTabs">
-          <button type="button" class="bzlLibraryBtn ${filterKind === "all" ? "primary" : ""}" data-libkind="all">All</button>
-          <button type="button" class="bzlLibraryBtn ${filterKind === "pdf" ? "primary" : ""}" data-libkind="pdf">PDFs</button>
-          <button type="button" class="bzlLibraryBtn ${filterKind === "text" ? "primary" : ""}" data-libkind="text">Texts</button>
-        </div>
-      `;
-
-      const isText = viewerOpen && activeItem && String(activeItem.kind || "pdf") === "text";
-      const canEdit = isText && isAuthor(activeItem);
-      const pageLabelText = isText ? `Page ${activePage} / ${totalPages}` : `Page ${activePage}`;
-
-      panel.innerHTML = `
-        <div class="bzlLibraryHeader">
-          <div class="bzlLibraryTitle" id="bzlLibraryDrag" title="Drag to move">Library</div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${kindTabs}
-            <button type="button" class="bzlLibraryBtn" id="bzlLibraryRefresh">Refresh</button>
-            <button type="button" class="bzlLibraryBtn" id="bzlLibraryReset" title="Reset panel size/position">Reset</button>
-            <button type="button" class="bzlLibraryBtn" id="bzlLibraryClose">Close</button>
-          </div>
-        </div>
-
-        <div class="bzlLibraryBody">
-          <div class="${viewList ? "" : "hidden"}" id="bzlLibraryListView">
-            <div class="bzlLibraryRow" style="align-items:flex-end;">
-              <div style="flex: 1 1 260px;">
-                <div class="bzlLibraryHint"><b>Upload PDF</b></div>
-                <div class="bzlLibraryRow" style="margin: 6px 0 0 0;">
-                  <input id="bzlLibraryPdfTitle" type="text" placeholder="PDF title (optional)" style="flex: 1 1 200px;" />
-                  <input id="bzlLibraryPdfFile" type="file" accept="application/pdf,.pdf" />
-                  <button type="button" class="bzlLibraryBtn primary" id="bzlLibraryPdfUpload">Upload PDF</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="bzlLibraryRow" style="align-items:flex-end;">
-              <div style="flex: 1 1 260px;">
-                <div class="bzlLibraryHint"><b>Text books</b> (for lore, notes, character bios, poetry, etc)</div>
-                <div class="bzlLibraryRow" style="margin: 6px 0 0 0;">
-                  <input id="bzlLibraryTextNewTitle" type="text" placeholder="New text title" style="flex: 1 1 200px;" />
-                  <button type="button" class="bzlLibraryBtn primary" id="bzlLibraryTextNew">New blank</button>
-                </div>
-                <div class="bzlLibraryRow" style="margin: 6px 0 0 0;">
-                  <input id="bzlLibraryTextTitle" type="text" placeholder="Import title (optional)" style="flex: 1 1 200px;" />
-                  <input id="bzlLibraryTextFile" type="file" accept="text/plain,.txt,.md" />
-                  <button type="button" class="bzlLibraryBtn primary" id="bzlLibraryTextImport">Import</button>
-                </div>
-              </div>
-            </div>
-
-            <div id="bzlLibraryStatus" class="bzlLibraryHint"></div>
-            <div class="bzlLibraryHint">Open to read here. Left/Right arrows change pages. Text books can be edited and exported by the author.</div>
-            <div style="height: 10px;"></div>
-            <div class="bzlLibraryList">
-              ${list || `<div class="bzlLibraryHint">No library items yet.</div>`}
-            </div>
-          </div>
-
-          <div class="${viewList ? "hidden" : ""} bzlLibraryViewer" id="bzlLibraryViewer">
-            <div class="bzlLibraryRow" style="justify-content: space-between; align-items:center;">
-              <div style="display:flex; gap:8px; align-items:center;">
-                <button type="button" class="bzlLibraryBtn" id="bzlLibraryBack">Back</button>
-                <div id="bzlLibraryPageLabel" class="bzlLibraryHint">${escapeHtml(pageLabelText)}</div>
-              </div>
-              <div style="display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
-                ${canEdit ? `<button type="button" class="bzlLibraryBtn" id="bzlLibraryEdit">Edit</button>` : ""}
-                ${canEdit ? `<button type="button" class="bzlLibraryBtn" id="bzlLibraryExport">Export .txt</button>` : ""}
-                <button type="button" class="bzlLibraryBtn" id="bzlLibraryPrev">&lt;</button>
-                <input id="bzlLibraryPage" type="number" min="1" step="1" value="${activePage}" style="width: 92px;" />
-                <button type="button" class="bzlLibraryBtn" id="bzlLibraryGo">Go</button>
-                <button type="button" class="bzlLibraryBtn" id="bzlLibraryNext">&gt;</button>
-              </div>
-            </div>
-
-            <div class="bzlLibraryDocWrap">
-              <div class="${isText ? "hidden" : ""}" style="height:100%;">
-                <iframe id="bzlLibraryFrame" class="bzlLibraryFrame" title="PDF viewer"></iframe>
-              </div>
-              <div class="${isText ? "" : "hidden"}" style="height:100%;">
-                <div id="bzlLibraryTextPage" class="bzlLibraryTextPage"></div>
-              </div>
-            </div>
-
-            <div class="bzlLibraryHint">${activeItem ? escapeHtml(activeItem.title || activeItem.filename || "") : ""}</div>
-
-            <div class="${editorOpen ? "" : "hidden"}" id="bzlLibraryEditorWrap">
-              <div style="height:10px;"></div>
-              <div class="bzlLibraryHint"><b>Edit text book</b> (author only)</div>
-              <div class="bzlLibraryRow" style="margin-top:6px;">
-                <input id="bzlLibraryEditorTitle" type="text" placeholder="Title" value="${escapeHtml(editorTitle)}" style="flex: 1 1 240px;" />
-              </div>
-              <div class="bzlLibraryRow" style="margin-top:6px;">
-                <textarea id="bzlLibraryEditorText" rows="12" style="width:100%; box-sizing:border-box;">${escapeHtml(
-                  editorText
-                )}</textarea>
-              </div>
-              <div class="bzlLibraryRow" style="justify-content:flex-end;">
-                <button type="button" class="bzlLibraryBtn" id="bzlLibraryEditorCancel">Cancel</button>
-                <button type="button" class="bzlLibraryBtn primary" id="bzlLibraryEditorSave">Save</button>
-              </div>
-              <div class="bzlLibraryHint">Note: pages are auto-generated from the text.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="bzlLibraryResize" id="bzlLibraryResize" title="Resize"></div>
-      `;
-
-      document.getElementById("bzlLibraryClose")?.addEventListener("click", () => {
-        panelOpen = false;
-        closeViewer();
-        render();
+      if (![".txt", ".md", ".rtf"].includes(ext)) {
+        setStatus("Supported upload types: PDF, TXT, MD, RTF.");
+        return;
+      }
+      if (file.size > TEXT_FILE_MAX_BYTES) {
+        setStatus(`Text/RTF too large. Max is ${formatBytes(TEXT_FILE_MAX_BYTES)}.`);
+        return;
+      }
+      const text = await file.text();
+      ctx.send("textCreate", {
+        shelfId: payload.shelfId,
+        title: payload.title,
+        author: payload.author,
+        isOriginal: payload.isOriginal,
+        tags: payload.tags,
+        format: ext === ".rtf" ? "rtf" : "text",
+        text,
       });
-      document.getElementById("bzlLibraryRefresh")?.addEventListener("click", () => requestList());
-      document.getElementById("bzlLibraryReset")?.addEventListener("click", () => {
+      setStatus("Book created.");
+    }
+
+    function filteredBrowseRows() {
+      const q = String(searchQuery || "").trim().toLowerCase();
+      const tag = String(searchTag || "").trim().toLowerCase();
+      return allShelfEntries().filter((x) => {
+        const book = x.book || {};
+        if (!book.id) return false;
+        if (q) {
+          const hay = `${book.title || ""} ${book.author || ""} ${(book.tags || []).join(" ")} ${x.shelf?.name || ""}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (tag) {
+          const tags = Array.isArray(book.tags) ? book.tags.map((t) => String(t || "").toLowerCase()) : [];
+          if (!tags.includes(tag)) return false;
+        }
+        return true;
+      });
+    }
+
+    function uniqueTags() {
+      const out = new Set();
+      for (const x of allShelfEntries()) {
+        for (const t of x?.book?.tags || []) out.add(String(t || "").toLowerCase());
+      }
+      return [...out].filter(Boolean).sort();
+    }
+
+    function renderLibrary() {
+      const mount = mounts.library;
+      if (!(mount instanceof HTMLElement)) return;
+      const rows = filteredBrowseRows();
+      const tags = uniqueTags();
+      const targetShelfId = defaultShelfId();
+      const shelfOpt = ownedShelves().map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === targetShelfId ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+
+      mount.innerHTML = `
+        <div class="lib3">
+          <div class="lib3Row">
+            <input id="lib3Search" type="text" placeholder="Search title, author, tags" value="${escapeHtml(searchQuery)}" style="flex:1 1 220px;" />
+            <select id="lib3TagFilter"><option value="">All tags</option>${tags.map((t) => `<option value="${escapeHtml(t)}" ${t === searchTag ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select>
+            <button type="button" class="lib3Btn" id="lib3Refresh">Refresh</button>
+          </div>
+          <div class="lib3Row"><span class="lib3Hint">Browse shelves and discover books. Choose one of your shelves for pin/check out:</span>
+            <select id="lib3LibraryTargetShelf">${shelfOpt || "<option value=''>No owned shelf</option>"}</select>
+          </div>
+          <div class="lib3Scroll">
+            ${rows.map((x) => {
+              const b = x.book || {};
+              const s = x.shelf || {};
+              const tagsHtml = (b.tags || []).map((t) => `<span class="lib3Tag">${escapeHtml(t)}</span>`).join("");
+              return `<div class="lib3Card">
+                <div><b>${escapeHtml(b.title || "Untitled")}</b> ${x.entry?.kind === "checkout" ? "<span title='Checked out'>↩</span>" : ""}</div>
+                <div class="lib3Meta">by ${escapeHtml(b.author || b.createdBy || "Unknown")} | shelf ${escapeHtml(s.name || "Shelf")}${s.owner ? ` · @${escapeHtml(s.owner)}` : ""} | ${formatBytes(b.bytes)} | pins ${Number(b?.popularity?.pins || 0)} | checkouts ${Number(b?.popularity?.checkouts || 0)}</div>
+                <div>${tagsHtml}</div>
+                <div class="lib3Row" style="margin-top:6px;">
+                  <button type="button" class="lib3Btn primary" data-open-book="${escapeHtml(b.id)}">Read</button>
+                  <button type="button" class="lib3Btn" data-pin-book="${escapeHtml(b.id)}" data-source-shelf="${escapeHtml(s.id || "")}">Pin</button>
+                  <button type="button" class="lib3Btn" data-checkout-book="${escapeHtml(b.id)}" data-source-shelf="${escapeHtml(s.id || "")}">Check out</button>
+                  <button type="button" class="lib3Btn" data-wander-shelf="${escapeHtml(s.id || "")}">Wander shelf</button>
+                </div>
+              </div>`;
+            }).join("") || "<div class='lib3Hint'>No matches.</div>"}
+          </div>
+          <div class="lib3Hint">Wander shelves and open a book in Reader.</div>
+        </div>
+      `;
+
+      mount.querySelector("#lib3Search")?.addEventListener("input", (e) => {
+        searchQuery = String(e?.target?.value || "");
+        renderLibrary();
+      });
+      mount.querySelector("#lib3TagFilter")?.addEventListener("change", (e) => {
+        searchTag = String(e?.target?.value || "").toLowerCase();
+        renderLibrary();
+      });
+      mount.querySelector("#lib3Refresh")?.addEventListener("click", () => requestList());
+      mount.querySelectorAll("[data-open-book]").forEach((btn) => btn.addEventListener("click", () => openInReader(btn.getAttribute("data-open-book") || "")));
+      mount.querySelectorAll("[data-wander-shelf]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeShelfId = String(btn.getAttribute("data-wander-shelf") || "");
+          renderShelf();
+        });
+      });
+      mount.querySelectorAll("[data-pin-book]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const shelfId = String(mount.querySelector("#lib3LibraryTargetShelf")?.value || "");
+          const bookId = String(btn.getAttribute("data-pin-book") || "");
+          const sourceShelfId = String(btn.getAttribute("data-source-shelf") || "");
+          if (!shelfId || !bookId) return setStatus("Pick one of your shelves first.");
+          ctx.send("pinBook", { shelfId, bookId, sourceShelfId });
+          setStatus("Pinned.");
+        });
+      });
+      mount.querySelectorAll("[data-checkout-book]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetShelfId = String(mount.querySelector("#lib3LibraryTargetShelf")?.value || "");
+          const sourceBookId = String(btn.getAttribute("data-checkout-book") || "");
+          const sourceShelfId = String(btn.getAttribute("data-source-shelf") || "");
+          if (!targetShelfId || !sourceBookId) return setStatus("Pick one of your shelves first.");
+          ctx.send("checkoutBook", { targetShelfId, sourceBookId, sourceShelfId });
+          setStatus("Checked out.");
+        });
+      });
+    }
+    function renderShelf() {
+      const mount = mounts.shelf;
+      if (!(mount instanceof HTMLElement)) return;
+      const mine = ownedShelves();
+      if (!activeShelfId || !(snapshot.shelves || []).some((s) => s.id === activeShelfId)) activeShelfId = snapshot.myShelfId || snapshot.shelves?.[0]?.id || "";
+      const shelf = activeShelf();
+      const shelfList = (snapshot.shelves || []).map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === activeShelfId ? "selected" : ""}>${escapeHtml(s.name)}${s.owner ? ` (@${escapeHtml(s.owner)})` : ""}</option>`).join("");
+      const mineDefault = defaultShelfId();
+      const mineList = mine.map((s) => `<option value="${escapeHtml(s.id)}" ${s.id === mineDefault ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+
+      mount.innerHTML = `
+        <div class="lib3">
+          <div class="lib3Row">
+            <select id="lib3ShelfPick" style="min-width:220px;">${shelfList || "<option>No shelves</option>"}</select>
+            ${shelf && !shelf.isOwner ? `<button type="button" class="lib3Btn" id="lib3SubBtn">${shelf.isSubscribed ? "Unsubscribe" : "Subscribe"}</button>` : ""}
+            <button type="button" class="lib3Btn" id="lib3RefreshShelf">Refresh</button>
+          </div>
+          <div class="lib3Card">
+            <div class="lib3Row">
+              <input id="lib3NewShelfName" type="text" placeholder="New shelf name" style="flex:1 1 180px;" />
+              <input id="lib3NewShelfDesc" type="text" placeholder="Shelf description" style="flex:2 1 220px;" />
+              <button type="button" class="lib3Btn" id="lib3CreateShelf">Create shelf</button>
+            </div>
+          </div>
+          <div class="lib3Card">
+            <div class="lib3Row"><b>Add Book</b> <span class="lib3Hint">(PDF, TXT, MD, RTF)</span></div>
+            <div class="lib3Row">
+              <select id="lib3CreateTargetShelf">${mineList || "<option value=''>No owned shelves</option>"}</select>
+              <input id="lib3BookTitle" type="text" placeholder="Book name" style="flex:1 1 180px;" />
+              <input id="lib3BookAuthor" type="text" placeholder="Author" style="flex:1 1 160px;" value="${escapeHtml(snapshot.me || "")}" />
+              <label class="lib3Hint"><input id="lib3BookOriginal" type="checkbox" checked/> original</label>
+            </div>
+            <div class="lib3Row">
+              <input id="lib3BookTags" type="text" placeholder="tags: fic, fantasy, journal" style="flex:1 1 260px;" />
+              <select id="lib3TagQuick"><option value="">Tag quick-add</option>${TAG_SUGGESTIONS.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("")}</select>
+            </div>
+            <div class="lib3Row">
+              <input id="lib3BookFile" type="file" accept=".pdf,.txt,.md,.rtf,application/pdf,text/plain,application/rtf,text/rtf" />
+              <button type="button" class="lib3Btn primary" id="lib3UploadBook">Upload File</button>
+            </div>
+            <div class="lib3Row">
+              <select id="lib3TextFormat"><option value="text">Text</option><option value="rtf">Rich text (RTF)</option></select>
+              <textarea id="lib3BookText" rows="5" placeholder="Or create a book directly" style="width:100%; box-sizing:border-box;"></textarea>
+              <button type="button" class="lib3Btn" id="lib3CreateText">Create Text Book</button>
+            </div>
+          </div>
+          <div class="lib3Scroll">
+            ${(shelf?.items || []).map((x) => {
+              const b = x.book || {};
+              const tHtml = (b.tags || []).map((t) => `<span class="lib3Tag">${escapeHtml(t)}</span>`).join("");
+              return `<div class="lib3Card">
+                <div><b>${escapeHtml(b.title || "Untitled")}</b> ${x.kind === "checkout" ? "<span title='Checked out'>↩</span>" : ""}</div>
+                <div class="lib3Meta">by ${escapeHtml(b.author || b.createdBy || "Unknown")} | ${String(b.kind || "").toUpperCase()} | ${formatBytes(b.bytes)} | original: ${b.isOriginal !== false ? "yes" : "no"}</div>
+                <div>${tHtml}</div>
+                <div class="lib3Row" style="margin-top:6px;">
+                  <button type="button" class="lib3Btn primary" data-open-book="${escapeHtml(b.id)}">Read</button>
+                  ${x.canReturn ? `<button type="button" class="lib3Btn" data-return-item="${escapeHtml(x.id)}">Return</button>` : ""}
+                  ${x.canRemoveItem ? `<button type="button" class="lib3Btn" data-remove-item="${escapeHtml(x.id)}">Remove</button>` : ""}
+                  ${b.canDeleteBook ? `<button type="button" class="lib3Btn" data-delete-book="${escapeHtml(b.id)}">Delete book</button>` : ""}
+                  <button type="button" class="lib3Btn" data-checkout-book="${escapeHtml(b.id)}" data-source-shelf="${escapeHtml(shelf?.id || "")}">Check out</button>
+                </div>
+              </div>`;
+            }).join("") || "<div class='lib3Hint'>No books on this shelf.</div>"}
+          </div>
+          <div class="lib3Hint">${escapeHtml(statusLine)}</div>
+        </div>
+      `;
+
+      mount.querySelector("#lib3ShelfPick")?.addEventListener("change", (e) => {
+        activeShelfId = String(e?.target?.value || "");
+        renderShelf();
+      });
+      mount.querySelector("#lib3RefreshShelf")?.addEventListener("click", () => requestList());
+      mount.querySelector("#lib3SubBtn")?.addEventListener("click", () => {
+        if (!shelf || shelf.isOwner) return;
+        ctx.send("shelfSubscribe", { shelfId: shelf.id, subscribe: !shelf.isSubscribed });
+      });
+      mount.querySelector("#lib3CreateShelf")?.addEventListener("click", () => {
+        const name = String(mount.querySelector("#lib3NewShelfName")?.value || "").trim();
+        const description = String(mount.querySelector("#lib3NewShelfDesc")?.value || "").trim();
+        if (!name) return setStatus("Shelf name required.");
+        ctx.send("shelfCreate", { name, description, isPublic: true });
+        setStatus("Shelf created.");
+      });
+      mount.querySelector("#lib3TagQuick")?.addEventListener("change", (e) => {
+        const v = String(e?.target?.value || "").trim();
+        if (!v) return;
+        const inp = mount.querySelector("#lib3BookTags");
+        const next = parseTags(`${String(inp?.value || "")}, ${v}`);
+        if (inp) inp.value = next.join(", ");
+        e.target.value = "";
+      });
+      mount.querySelector("#lib3UploadBook")?.addEventListener("click", async () => {
+        const shelfId = String(mount.querySelector("#lib3CreateTargetShelf")?.value || "");
+        const title = String(mount.querySelector("#lib3BookTitle")?.value || "").trim();
+        const author = String(mount.querySelector("#lib3BookAuthor")?.value || "").trim();
+        const isOriginal = Boolean(mount.querySelector("#lib3BookOriginal")?.checked);
+        const tags = parseTags(String(mount.querySelector("#lib3BookTags")?.value || ""));
+        const file = mount.querySelector("#lib3BookFile")?.files?.[0];
+        if (!shelfId) return setStatus("Pick one of your shelves.");
+        if (!file) return setStatus("Choose a file first.");
         try {
-          localStorage.removeItem(PANEL_RECT_KEY);
+          await createBookFromFile(file, { shelfId, title: title || file.name, author: author || snapshot.me || "Unknown", isOriginal, tags });
         } catch {
-          // ignore
+          setStatus("Failed to create book from file.");
         }
-        applyPanelRect(panel, defaultPanelRect());
-        savePanelRectFromEl(panel);
       });
-      panel.querySelectorAll("[data-libkind]").forEach((b) => {
-        b.addEventListener("click", () => {
-          filterKind = String(b.getAttribute("data-libkind") || "all");
-          render();
+      mount.querySelector("#lib3CreateText")?.addEventListener("click", () => {
+        const shelfId = String(mount.querySelector("#lib3CreateTargetShelf")?.value || "");
+        const title = String(mount.querySelector("#lib3BookTitle")?.value || "").trim();
+        const author = String(mount.querySelector("#lib3BookAuthor")?.value || "").trim();
+        const isOriginal = Boolean(mount.querySelector("#lib3BookOriginal")?.checked);
+        const tags = parseTags(String(mount.querySelector("#lib3BookTags")?.value || ""));
+        const format = String(mount.querySelector("#lib3TextFormat")?.value || "text").toLowerCase() === "rtf" ? "rtf" : "text";
+        const text = String(mount.querySelector("#lib3BookText")?.value || "");
+        if (!shelfId) return setStatus("Pick one of your shelves.");
+        if (!title) return setStatus("Book name required.");
+        ctx.send("textCreate", { shelfId, title, author: author || snapshot.me || "Unknown", isOriginal, tags, format, text });
+        setStatus("Book created.");
+      });
+      mount.querySelectorAll("[data-open-book]").forEach((btn) => btn.addEventListener("click", () => openInReader(btn.getAttribute("data-open-book") || "")));
+      mount.querySelectorAll("[data-checkout-book]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetShelfId = String(mount.querySelector("#lib3CreateTargetShelf")?.value || "");
+          const sourceBookId = String(btn.getAttribute("data-checkout-book") || "");
+          const sourceShelfId = String(btn.getAttribute("data-source-shelf") || "");
+          if (!targetShelfId || !sourceBookId) return;
+          ctx.send("checkoutBook", { targetShelfId, sourceBookId, sourceShelfId });
+          setStatus("Checked out.");
         });
       });
-
-      const drag = document.getElementById("bzlLibraryDrag");
-      const resize = document.getElementById("bzlLibraryResize");
-
-      if (drag) {
-        drag.addEventListener("pointerdown", (e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          const start = { x: e.clientX, y: e.clientY };
-          const rect = panel.getBoundingClientRect();
-          const startRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-
-          const onMove = (ev) => {
-            const dx = ev.clientX - start.x;
-            const dy = ev.clientY - start.y;
-            applyPanelRect(panel, { ...startRect, left: startRect.left + dx, top: startRect.top + dy });
-          };
-          const onUp = () => {
-            window.removeEventListener("pointermove", onMove, true);
-            window.removeEventListener("pointerup", onUp, true);
-            window.removeEventListener("pointercancel", onUp, true);
-            savePanelRectFromEl(panel);
-          };
-
-          window.addEventListener("pointermove", onMove, true);
-          window.addEventListener("pointerup", onUp, true);
-          window.addEventListener("pointercancel", onUp, true);
+      mount.querySelectorAll("[data-remove-item]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!shelf) return;
+          const shelfItemId = String(btn.getAttribute("data-remove-item") || "");
+          if (!shelfItemId) return;
+          ctx.send("shelfItemRemove", { shelfId: shelf.id, shelfItemId });
         });
+      });
+      mount.querySelectorAll("[data-return-item]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!shelf) return;
+          const shelfItemId = String(btn.getAttribute("data-return-item") || "");
+          if (!shelfItemId) return;
+          ctx.send("returnBook", { shelfId: shelf.id, shelfItemId });
+        });
+      });
+      mount.querySelectorAll("[data-delete-book]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const bookId = String(btn.getAttribute("data-delete-book") || "");
+          if (!bookId) return;
+          ctx.send("delete", { id: bookId });
+        });
+      });
+    }
+
+    function renderReader() {
+      const mount = mounts.reader;
+      if (!(mount instanceof HTMLElement)) return;
+      const book = activeReaderBook();
+      if (!book) {
+        mount.innerHTML = `<div class="lib3"><div class="lib3Hint">Select a book from Shelf or Library to start reading.</div></div>`;
+        return;
       }
 
-      if (resize) {
-        resize.addEventListener("pointerdown", (e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          const start = { x: e.clientX, y: e.clientY };
-          const rect = panel.getBoundingClientRect();
-          const startRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      const isText = String(book.kind || "") === "text";
+      const fullText = textByBookId.get(String(book.id || "")) || "";
+      const pages = isText ? paginateText(fullText) : [];
+      const totalPages = isText ? Math.max(1, pages.length) : 1;
+      readerPage = Math.max(1, Math.min(isText ? totalPages : 9999, Number(readerPage || 1)));
 
-          const onMove = (ev) => {
-            const dx = ev.clientX - start.x;
-            const dy = ev.clientY - start.y;
-            applyPanelRect(panel, { ...startRect, width: startRect.width + dx, height: startRect.height + dy });
-          };
-          const onUp = () => {
-            window.removeEventListener("pointermove", onMove, true);
-            window.removeEventListener("pointerup", onUp, true);
-            window.removeEventListener("pointercancel", onUp, true);
-            savePanelRectFromEl(panel);
-          };
+      const tagsHtml = (book.tags || []).map((t) => `<span class="lib3Tag">${escapeHtml(t)}</span>`).join("");
+      mount.innerHTML = `
+        <div class="lib3">
+          <div class="lib3Row" style="justify-content:space-between;">
+            <div>
+              <div><b>${escapeHtml(book.title || "Untitled")}</b> ${book.checkedOutBy ? "<span title='Checked out'>↩</span>" : ""}</div>
+              <div class="lib3Meta">by ${escapeHtml(book.author || book.createdBy || "Unknown")} | ${String(book.kind || "").toUpperCase()} | ${formatBytes(book.bytes)}</div>
+              <div>${tagsHtml}</div>
+            </div>
+            ${
+              isText
+                ? `<div class="lib3Row">
+              <button type="button" class="lib3Btn" id="lib3ReadPrev">&lt;</button>
+              <input id="lib3ReadPage" type="number" min="1" value="${readerPage}" style="width:84px;" />
+              <button type="button" class="lib3Btn" id="lib3ReadGo">Go</button>
+              <button type="button" class="lib3Btn" id="lib3ReadNext">&gt;</button>
+            </div>`
+                : `<div class="lib3Hint">Use the PDF toolbar to navigate pages.</div>`
+            }
+          </div>
+          <div class="lib3ReaderViewport">
+            ${isText ? `<div id="lib3ReaderText" class="lib3ReaderPage">${escapeHtml(pages[readerPage - 1] || (fullText ? "" : "Loading text..."))}</div>` : `<iframe class="lib3Iframe" src="${escapeHtml(`${book.url || ""}#page=${readerPage}`)}" title="Reader"></iframe>`}
+          </div>
+          <div class="lib3Hint">Page ${readerPage}${isText ? ` / ${totalPages}` : ""}</div>
+        </div>
+      `;
 
-          window.addEventListener("pointermove", onMove, true);
-          window.addEventListener("pointerup", onUp, true);
-          window.addEventListener("pointercancel", onUp, true);
+      if (isText && !textByBookId.has(String(book.id || ""))) requestText(book.id);
+      if (isText) {
+        mount.querySelector("#lib3ReadPrev")?.addEventListener("click", () => {
+          readerPage -= 1;
+          renderReader();
+        });
+        mount.querySelector("#lib3ReadNext")?.addEventListener("click", () => {
+          readerPage += 1;
+          renderReader();
+        });
+        mount.querySelector("#lib3ReadGo")?.addEventListener("click", () => {
+          readerPage = Number(mount.querySelector("#lib3ReadPage")?.value || 1);
+          renderReader();
         });
       }
-
-      document.getElementById("bzlLibraryPdfUpload")?.addEventListener("click", () => uploadSelectedPdf());
-      document.getElementById("bzlLibraryTextImport")?.addEventListener("click", () => importTextFromFile());
-      document.getElementById("bzlLibraryTextNew")?.addEventListener("click", () => createBlankTextBook());
-
-      panel.querySelectorAll("[data-libopen]").forEach((b) => {
-        b.addEventListener("click", () => {
-          const id = String(b.getAttribute("data-libopen") || "");
-          const it = items.find((x) => String(x.id || "") === id);
-          if (it) openItem(it);
-        });
-      });
-      panel.querySelectorAll("[data-libdel]").forEach((b) => {
-        b.addEventListener("click", () => {
-          const id = String(b.getAttribute("data-libdel") || "");
-          if (!id) return;
-          if (!confirm("Delete this item from the library?")) return;
-          ctx.send("delete", { id });
-        });
-      });
-
-      document.getElementById("bzlLibraryBack")?.addEventListener("click", () => closeViewer());
-      document.getElementById("bzlLibraryPrev")?.addEventListener("click", () => setPage(activePage - 1));
-      document.getElementById("bzlLibraryNext")?.addEventListener("click", () => setPage(activePage + 1));
-      document.getElementById("bzlLibraryGo")?.addEventListener("click", () => {
-        const inp = document.getElementById("bzlLibraryPage");
-        setPage(Number(inp?.value || 1));
-      });
-      document.getElementById("bzlLibraryEdit")?.addEventListener("click", () => openEditor());
-      document.getElementById("bzlLibraryExport")?.addEventListener("click", () => exportActiveText());
-      document.getElementById("bzlLibraryEditorCancel")?.addEventListener("click", () => closeEditor());
-      document.getElementById("bzlLibraryEditorSave")?.addEventListener("click", () => {
-        const titleEl = document.getElementById("bzlLibraryEditorTitle");
-        const textEl = document.getElementById("bzlLibraryEditorText");
-        editorTitle = String(titleEl?.value || "").trim();
-        editorText = String(textEl?.value || "");
-        saveEditor();
-        closeEditor();
-      });
-
-      if (viewerOpen && activeItem) {
-        if (String(activeItem.kind || "pdf") === "pdf") {
-          const iframe = document.getElementById("bzlLibraryFrame");
-          if (iframe && !iframe.src) iframe.src = `${activeItem.url}#page=${activePage}`;
-        } else {
-          setPage(activePage);
-        }
-      }
+    }
+    function renderAll() {
+      renderLibrary();
+      renderShelf();
+      renderReader();
     }
 
     function onWsMsg(ev) {
@@ -799,17 +600,24 @@
         if (!type.startsWith("plugin:library:")) return;
 
         if (type === "plugin:library:list") {
-          items = Array.isArray(msg.items) ? msg.items : [];
-          render();
+          snapshot = { me: String(msg.me || ""), myShelfId: String(msg.myShelfId || ""), shelves: Array.isArray(msg.shelves) ? msg.shelves : [] };
+          if (!activeShelfId || !snapshot.shelves.some((s) => s.id === activeShelfId)) activeShelfId = snapshot.myShelfId || snapshot.shelves[0]?.id || "";
+          renderAll();
           return;
         }
         if (type === "plugin:library:changed") {
-          if (panelOpen) requestList();
+          requestList();
+          return;
+        }
+        if (type === "plugin:library:text") {
+          const it = msg.item || null;
+          if (!it || !it.id) return;
+          textByBookId.set(String(it.id), String(it.text || ""));
+          renderReader();
           return;
         }
         if (type === "plugin:library:uploadStarted") {
-          const uploadId = String(msg.uploadId || "");
-          if (uploadId) window.__bzlLibraryUploadId = uploadId;
+          window.__bzlLibraryUploadId = String(msg.uploadId || "");
           return;
         }
         if (type === "plugin:library:uploadProgress") {
@@ -817,104 +625,89 @@
           return;
         }
         if (type === "plugin:library:uploadFinished") {
-          uploadingPdf = false;
+          uploadInProgress = false;
           window.__bzlLibraryUploadId = "";
           setStatus("Upload complete.");
           requestList();
-          render();
-          return;
-        }
-        if (type === "plugin:library:text") {
-          const it = msg.item;
-          if (!it || !activeItem || String(activeItem.id || "") !== String(it.id || "")) return;
-          activeText = String(it.text || "");
-          textPages = paginateText(activeText);
-          totalPages = Math.max(1, textPages.length);
-          activeItem = { ...activeItem, title: it.title, createdBy: it.createdBy, updatedAt: it.updatedAt, bytes: it.bytes };
-          editorTitle = String(activeItem.title || "");
-          setStatus("");
-          render();
-          setPage(1);
-          return;
-        }
-        if (type === "plugin:library:textCreated") {
-          requestList();
-          setStatus("Created.");
-          return;
-        }
-        if (type === "plugin:library:textUpdated") {
-          requestList();
-          setStatus("Saved.");
-          if (activeItem && String(activeItem.kind || "") === "text" && msg.id && String(msg.id) === String(activeItem.id)) {
-            requestText(activeItem.id);
-          }
-          return;
-        }
-        if (type === "plugin:library:deleted") {
-          requestList();
-          if (activeItem && msg.id && String(msg.id) === String(activeItem.id)) closeViewer();
           return;
         }
         if (type === "plugin:library:error") {
-          uploadingPdf = false;
+          uploadInProgress = false;
           setStatus(String(msg.message || "Error."));
           ctx.toast("Library", String(msg.message || "Error."));
+          return;
+        }
+        if (
+          type === "plugin:library:textCreated" ||
+          type === "plugin:library:textUpdated" ||
+          type === "plugin:library:shelfCreated" ||
+          type === "plugin:library:shelfUpdated" ||
+          type === "plugin:library:shelfSubscribed" ||
+          type === "plugin:library:pinned" ||
+          type === "plugin:library:checkedOut" ||
+          type === "plugin:library:shelfItemRemoved" ||
+          type === "plugin:library:returned" ||
+          type === "plugin:library:deleted"
+        ) {
+          requestList();
         }
       } catch {
         // ignore
       }
     }
 
-    function ensureDom() {
-      if (document.getElementById("bzlLibraryToggle")) return;
-      if (!document.body) {
-        ctx.devLog("warn", "library:bodyMissing", {});
-        return;
-      }
-      const btn = document.createElement("button");
-      btn.id = "bzlLibraryToggle";
-      btn.className = "bzlLibraryToggle";
-      btn.type = "button";
-      btn.textContent = "Library";
-      btn.addEventListener("click", () => {
-        panelOpen = !panelOpen;
-        if (panelOpen) {
-          const panel = document.getElementById("bzlLibraryPanel");
-          if (panel) applyPanelRect(panel, readPanelRect() || defaultPanelRect());
-          requestList();
-        }
-        render();
+    function mountPanel(kind, mount) {
+      if (!(mount instanceof HTMLElement)) return;
+      mount.style.height = "100%";
+      mount.style.minHeight = "0";
+      mount.style.display = "flex";
+      mounts[kind] = mount;
+      renderAll();
+    }
+
+    const panelOpts = { defaultRack: "main", role: "primary" };
+    if (ctx?.ui?.registerPanel) {
+      ctx.ui.registerPanel({
+        id: "library-reader",
+        title: "Reader",
+        icon: "Read",
+        ...panelOpts,
+        render(mount) {
+          mountPanel("reader", mount);
+          return () => {
+            if (mounts.reader === mount) mounts.reader = null;
+          };
+        },
       });
-      document.body.appendChild(btn);
-      ctx.devLog("info", "library:toggleMounted", {});
-
-      const panel = document.createElement("div");
-      panel.id = "bzlLibraryPanel";
-      panel.className = "bzlLibraryPanel hidden";
-      applyPanelRect(panel, readPanelRect() || defaultPanelRect());
-      document.body.appendChild(panel);
-
-      window.addEventListener("resize", () => {
-        const p = document.getElementById("bzlLibraryPanel");
-        if (!p) return;
-        applyPanelRect(p, readPanelRect() || defaultPanelRect());
+      ctx.ui.registerPanel({
+        id: "library-shelf",
+        title: "Shelf",
+        icon: "Shelf",
+        ...panelOpts,
+        render(mount) {
+          mountPanel("shelf", mount);
+          return () => {
+            if (mounts.shelf === mount) mounts.shelf = null;
+          };
+        },
       });
-
-      window.addEventListener("keydown", (e) => {
-        if (!panelOpen || !viewerOpen) return;
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          setPage(activePage - 1);
-        } else if (e.key === "ArrowRight") {
-          e.preventDefault();
-          setPage(activePage + 1);
-        }
+      ctx.ui.registerPanel({
+        id: "library-browser",
+        title: "Library",
+        icon: "Books",
+        ...panelOpts,
+        render(mount) {
+          mountPanel("library", mount);
+          return () => {
+            if (mounts.library === mount) mounts.library = null;
+          };
+        },
       });
     }
 
     setInterval(attachWsListener, 1000);
     attachWsListener();
-    whenBodyReady(ensureDom);
-    ctx.devLog("info", "library:init", { ok: true });
+    requestList();
+    ctx.devLog("info", "library:init", { ok: true, panels: ["library-reader", "library-shelf", "library-browser"] });
   });
 })();
