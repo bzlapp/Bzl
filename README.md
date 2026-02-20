@@ -4,7 +4,7 @@ Bzl is a self-hostable, modular social platform designed for creators and commun
 
 🚀 Learn more & quick start: https://bzl.one/
 
-💬 Follow development in real time: https://chat.bzl.one/
+💬 Follow development in real time: https://chat.bzl.one/    REGISTRATION CODE IS "bzl" 
 
 If you're experimenting, building plugins, or just curious how Bzl works in the wild — jump into the official instance and say hi.
 
