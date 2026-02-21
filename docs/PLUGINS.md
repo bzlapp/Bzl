@@ -4,6 +4,19 @@ This is the **minimal plugin system** used to ship optional features without for
 
 Plugins are **trusted code**: the owner installs them, and they can run both client-side and server-side logic.
 
+## Included plugins at a glance
+
+Use this quick reference when packaging releases or deciding what to enable by default.
+
+| Plugin | What it adds | Where to install | Notes |
+|---|---|---|---|
+| `maps` | Spatial map rooms, local/global map chat, movement, collisions, TTRPG-style props/sprites | Any instance | Good for social hub worlds and events. |
+| `library` | Shelf/Reader workflow, text + PDF style content management, community borrowing/return flow | Any instance | Best used as persistent knowledge + story archive. |
+| `radio` | Community radio stations with uploaded tracks and shared listening | Any instance | Requires upload storage; tune in from panel UI. |
+| `dice` | Shared dice roller (`XdY+Z`) broadcast to connected users | Any instance | Lightweight RP/TTRPG utility. |
+| `directory-server` | Public directory endpoint + moderation queue for listings (`/api/plugins/directory-server/list`) | **Directory host instance only** | Acts as the central directory service. |
+| `directory-publisher` | Sends this instance announcement payloads to a directory server | Any instance that wants listing | Configure directory URL + instance URL/name, then publish. |
+
 ## Install / manage (Owner UI)
 
 1. Sign in as the `owner`.
