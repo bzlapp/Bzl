@@ -98,6 +98,8 @@ const AUDIO_UPLOAD_MAX_BYTES = Number(process.env.AUDIO_UPLOAD_MAX_BYTES || 150 
 const PLUGINS_DIR = process.env.PLUGINS_DIR || path.join(__dirname, "data", "plugins");
 const PLUGINS_FILE = process.env.PLUGINS_FILE || path.join(__dirname, "data", "plugins.json");
 const PLUGIN_ZIP_MAX_BYTES = Number(process.env.PLUGIN_ZIP_MAX_BYTES || 50 * 1024 * 1024);
+const STREAM_ENABLED = String(process.env.STREAM_ENABLED || "1") !== "0";
+const STREAM_ICE_SERVERS_JSON = typeof process.env.STREAM_ICE_SERVERS_JSON === "string" ? process.env.STREAM_ICE_SERVERS_JSON : "";
 
 const publicDir = path.join(__dirname, "public");
 
@@ -233,6 +235,8 @@ let pluginRuntimeById = new Map();
 
 /** @type {Map<string, Map<string, NodeJS.Timeout>>} */
 const typingByPostId = new Map();
+/** @type {Map<string, {postId: string, hostClientId: string, hostUsername: string, kind: string, viewers: Set<string>, startedAt: number}>} */
+const streamSessionsByPostId = new Map();
 
 const ALLOWED_POST_REACTIONS = ["👍", "❤️", "😡", "😭", "🥺", "😂", "⭐"];
 const ALLOWED_CHAT_REACTIONS = ["👍", "❤️", "😡", "😭", "🥺", "😂"];
@@ -251,6 +255,47 @@ const ROLE_MODERATOR = "moderator";
 const ROLE_OWNER = "owner";
 const ROLE_RANK = { [ROLE_MEMBER]: 1, [ROLE_MODERATOR]: 2, [ROLE_OWNER]: 3 };
 const DEFAULT_COLLECTION_ID = "general";
+const POST_MODE_TEXT = "text";
+const POST_MODE_WALKIE = "walkie";
+const POST_MODE_STREAM = "stream";
+const STREAM_KIND_WEBCAM = "webcam";
+const STREAM_KIND_SCREEN = "screen";
+const STREAM_KIND_AUDIO = "audio";
+const STREAM_KIND_SET = new Set([STREAM_KIND_WEBCAM, STREAM_KIND_SCREEN, STREAM_KIND_AUDIO]);
+
+function parseStreamIceServers(raw) {
+  const fallback = [{ urls: ["stun:stun.l.google.com:19302"] }];
+  const input = String(raw || "").trim();
+  if (!input) return fallback;
+  try {
+    const parsed = JSON.parse(input);
+    if (!Array.isArray(parsed)) return fallback;
+    const out = [];
+    for (const item of parsed.slice(0, 6)) {
+      if (!item || typeof item !== "object") continue;
+      const urls = Array.isArray(item.urls)
+        ? item.urls
+            .map((x) => String(x || "").trim())
+            .filter((x) => /^stuns?:|^turns?:/i.test(x))
+            .slice(0, 8)
+        : typeof item.urls === "string" && /^stuns?:|^turns?:/i.test(item.urls.trim())
+          ? [item.urls.trim()]
+          : [];
+      if (!urls.length) continue;
+      const row = { urls };
+      const username = typeof item.username === "string" ? item.username.trim() : "";
+      const credential = typeof item.credential === "string" ? item.credential.trim() : "";
+      if (username) row.username = username.slice(0, 140);
+      if (credential) row.credential = credential.slice(0, 220);
+      out.push(row);
+    }
+    return out.length ? out : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const STREAM_ICE_SERVERS = parseStreamIceServers(STREAM_ICE_SERVERS_JSON);
 
 function now() {
   return Date.now();
@@ -1135,13 +1180,20 @@ function serializeChatHistoryForWs(entry) {
 }
 
 function serializePostForWs(ws, post) {
+  const mode = sanitizePostMode(post.mode);
+  const streamKind = sanitizePostStreamKind(mode, post.streamKind);
+  const streamSession = mode === POST_MODE_STREAM ? streamSessionsByPostId.get(post.id) : null;
   const base = {
     id: post.id,
     title: post.title || "",
     content: post.content || "",
     contentHtml: post.contentHtml || "",
     author: post.author,
-    mode: sanitizePostMode(post.mode),
+    mode,
+    streamKind,
+    streamLive: Boolean(streamSession),
+    streamHost: streamSession?.hostUsername || "",
+    streamViewerCount: streamSession?.viewers?.size || 0,
     readOnly: Boolean(post.readOnly),
     collectionId: normalizeCollectionId(post.collectionId || "") || DEFAULT_COLLECTION_ID,
     keywords: post.keywords,
@@ -1176,6 +1228,9 @@ function serializePostForWs(ws, post) {
       title: showDeleted ? "Post was deleted" : "",
       content: showDeleted ? "This post was deleted." : "",
       contentHtml: "",
+      streamLive: false,
+      streamHost: "",
+      streamViewerCount: 0,
       keywords: [],
       reactions: {}
     };
@@ -2559,6 +2614,8 @@ function loadPostsFromDisk() {
           title: snapTitle || "(untitled)",
           content: snapContentText || (snapContentHtml ? "[media]" : ""),
           contentHtml: snapContentHtml,
+          mode: sanitizePostMode(sp.mode || sp.chatMode || ""),
+          streamKind: sanitizePostStreamKind(sp.mode || sp.chatMode || "", sp.streamKind),
           collectionId: getActiveCollectionById(sp.collectionId)?.id || DEFAULT_COLLECTION_ID,
           keywords: normalizeKeywords(sp.keywords),
           author: snapAuthor || null,
@@ -2583,7 +2640,8 @@ function loadPostsFromDisk() {
       title: title || "(untitled)",
       content: contentText || (contentHtml ? "[media]" : ""),
       contentHtml,
-      mode: sanitizePostMode(p.mode),
+      mode: sanitizePostMode(p.mode || p.chatMode || ""),
+      streamKind: sanitizePostStreamKind(p.mode || p.chatMode || "", p.streamKind),
       readOnly: Boolean(p.readOnly),
       collectionId: getActiveCollectionById(p.collectionId)?.id || DEFAULT_COLLECTION_ID,
       keywords: normalizeKeywords(p.keywords),
@@ -2701,7 +2759,17 @@ function sanitizePostTitle(title) {
 
 function sanitizePostMode(mode) {
   const m = String(mode || "").trim().toLowerCase();
-  return m === "walkie" ? "walkie" : "text";
+  if (m === POST_MODE_WALKIE) return POST_MODE_WALKIE;
+  if (m === POST_MODE_STREAM) return POST_MODE_STREAM;
+  return POST_MODE_TEXT;
+}
+
+function sanitizePostStreamKind(mode, kind) {
+  const m = sanitizePostMode(mode);
+  if (m !== POST_MODE_STREAM) return "";
+  const k = String(kind || "").trim().toLowerCase();
+  if (STREAM_KIND_SET.has(k)) return k;
+  return STREAM_KIND_WEBCAM;
 }
 
 function broadcast(obj) {
@@ -2709,6 +2777,100 @@ function broadcast(obj) {
   for (const ws of sockets) {
     if (ws.readyState === ws.OPEN) ws.send(payload);
   }
+}
+
+function findSocketByClientId(clientId) {
+  const id = typeof clientId === "string" ? clientId : "";
+  if (!id) return null;
+  for (const ws of sockets) {
+    if (ws?.clientId === id) return ws;
+  }
+  return null;
+}
+
+function canSocketAccessPost(ws, post) {
+  if (!ws || !post) return false;
+  if (!canUserSeePostByCollection(ws.user?.username || "", post)) return false;
+  if (post.protected && !hasPostAccess(ws, post)) return false;
+  return true;
+}
+
+function streamStatePayload(postId) {
+  const entry = posts.get(postId);
+  if (!entry?.post) return null;
+  const postMode = sanitizePostMode(entry.post.mode);
+  if (postMode !== POST_MODE_STREAM) {
+    return { type: "streamState", postId, live: false, kind: "", host: "", hostClientId: "", viewerCount: 0 };
+  }
+  const session = streamSessionsByPostId.get(postId);
+  return {
+    type: "streamState",
+    postId,
+    live: Boolean(session),
+    kind: sanitizePostStreamKind(postMode, session?.kind || entry.post.streamKind || ""),
+    host: session?.hostUsername || "",
+    hostClientId: session?.hostClientId || "",
+    viewerCount: session?.viewers?.size || 0
+  };
+}
+
+function sendStreamState(postId) {
+  const payload = streamStatePayload(postId);
+  if (!payload) return;
+  const entry = posts.get(postId);
+  if (!entry?.post) return;
+  sendToSockets((ws) => canSocketAccessPost(ws, entry.post), payload);
+}
+
+function endStreamSession(postId, reason = "ended") {
+  const session = streamSessionsByPostId.get(postId);
+  if (!session) return false;
+  streamSessionsByPostId.delete(postId);
+  const notify = {
+    type: "streamEnded",
+    postId,
+    reason: String(reason || "ended")
+      .trim()
+      .slice(0, 80)
+  };
+  const targets = new Set([session.hostClientId, ...(session.viewers || [])]);
+  for (const clientId of targets) {
+    const target = findSocketByClientId(clientId);
+    if (!target || target.readyState !== target.OPEN) continue;
+    target.send(JSON.stringify(notify));
+  }
+  sendStreamState(postId);
+  return true;
+}
+
+function detachViewerFromStream(postId, clientId, notifyHost = true) {
+  const session = streamSessionsByPostId.get(postId);
+  if (!session) return false;
+  if (!session.viewers.has(clientId)) return false;
+  session.viewers.delete(clientId);
+  if (notifyHost) {
+    const host = findSocketByClientId(session.hostClientId);
+    if (host && host.readyState === host.OPEN) {
+      host.send(JSON.stringify({ type: "streamViewerLeave", postId, viewerClientId: clientId }));
+    }
+  }
+  sendStreamState(postId);
+  return true;
+}
+
+function detachSocketFromStreams(ws, hostReason = "host_disconnected") {
+  const clientId = typeof ws?.clientId === "string" ? ws.clientId : "";
+  if (!clientId) return;
+  const streamEnds = [];
+  for (const [postId, session] of streamSessionsByPostId.entries()) {
+    if (!session) continue;
+    if (session.hostClientId === clientId) {
+      streamEnds.push(postId);
+      continue;
+    }
+    detachViewerFromStream(postId, clientId, true);
+  }
+  for (const postId of streamEnds) endStreamSession(postId, hostReason);
 }
 
 function setTyping(postId, username, isTyping) {
@@ -2762,6 +2924,7 @@ function setTyping(postId, username, isTyping) {
 function deletePost(id, reason = "expired") {
   const entry = posts.get(id);
   if (!entry) return;
+  if (streamSessionsByPostId.has(id)) endStreamSession(id, reason === "expired" ? "post_expired" : "post_deleted");
   clearTimeout(entry.timer);
   for (const m of entry.chat) {
     if (m?.id) chatReactionsByMessageId.delete(m.id);
@@ -2777,7 +2940,7 @@ function deletePost(id, reason = "expired") {
   schedulePersist();
 }
 
-function createPost({ content, keywords, ttl, author, lock, collectionId, mode }) {
+function createPost({ content, keywords, ttl, author, lock, collectionId, mode, streamKind }) {
   const createdAt = now();
   const isPermanent = Number(ttl || 0) === 0;
   const ttlMs = isPermanent ? 0 : clampTtl(ttl);
@@ -2789,6 +2952,7 @@ function createPost({ content, keywords, ttl, author, lock, collectionId, mode }
     content: title || "",
     contentHtml: "",
     mode: sanitizePostMode(mode),
+    streamKind: sanitizePostStreamKind(mode, streamKind),
     readOnly: false,
     collectionId: getActiveCollectionById(collectionId)?.id || DEFAULT_COLLECTION_ID,
     keywords: normalizeKeywords(keywords),
@@ -2875,6 +3039,7 @@ function markPostDeleted(postId, actor, reason = "", roleOverride = "") {
   const entry = posts.get(postId);
   if (!entry) return { ok: false, message: "Post not found." };
   if (entry.post.deleted) return { ok: false, message: "Post is already deleted." };
+  if (streamSessionsByPostId.has(postId)) endStreamSession(postId, "post_deleted");
   if (!entry.post.deletedSnapshot) {
     const prePost = entry.post || {};
     const postReactions = mapSetsToObj(postReactionsByPostId.get(postId));
@@ -2890,6 +3055,8 @@ function markPostDeleted(postId, actor, reason = "", roleOverride = "") {
         title: prePost.title || "",
         content: prePost.content || "",
         contentHtml: prePost.contentHtml || "",
+        mode: sanitizePostMode(prePost.mode),
+        streamKind: sanitizePostStreamKind(prePost.mode, prePost.streamKind),
         collectionId: normalizeCollectionId(prePost.collectionId) || DEFAULT_COLLECTION_ID,
         keywords: Array.isArray(prePost.keywords) ? [...prePost.keywords] : [],
         author: prePost.author || null,
@@ -2986,6 +3153,8 @@ function restoreDeletedPost(postId) {
   entry.post.content = typeof p.content === "string" ? p.content.slice(0, POSTS_MAX_CONTENT_LEN) : entry.post.content;
   const htmlRaw = typeof p.contentHtml === "string" ? p.contentHtml.slice(0, POST_MAX_HTML_LEN) : "";
   entry.post.contentHtml = htmlRaw ? sanitizeRichHtml(htmlRaw) : "";
+  entry.post.mode = sanitizePostMode(p.mode || entry.post.mode || POST_MODE_TEXT);
+  entry.post.streamKind = sanitizePostStreamKind(entry.post.mode, p.streamKind || entry.post.streamKind || "");
   entry.post.collectionId = normalizeCollectionId(p.collectionId) || entry.post.collectionId || DEFAULT_COLLECTION_ID;
   entry.post.keywords = normalizeKeywords(p.keywords);
   entry.post.author = normalizeUsername(p.author || "") || entry.post.author || null;
@@ -4356,6 +4525,10 @@ wss.on("connection", (ws, req) => {
       collections: listCollectionsForClient(ws.user?.username || ""),
       roles: { custom: listCustomRolesForClient() },
       plugins: listPluginsForClient(),
+      stream: {
+        enabled: STREAM_ENABLED,
+        iceServers: STREAM_ICE_SERVERS
+      },
       reactions: { allowed: ALLOWED_REACTIONS, allowedPost: ALLOWED_POST_REACTIONS, allowedChat: ALLOWED_CHAT_REACTIONS },
       auth: {
         loggedIn: false,
@@ -4503,6 +4676,7 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "logout") {
       const hadUser = Boolean(ws.user?.username);
+      detachSocketFromStreams(ws, "host_logged_out");
       if (ws.sessionId) revokeSessionId(ws.sessionId);
       ws.user = null;
       ws.sessionId = "";
@@ -4675,7 +4849,8 @@ wss.on("connection", (ws, req) => {
         author: ws.user.username,
         lock,
         collectionId: selectedCollection.id,
-        mode: sanitizePostMode(msg.mode)
+        mode: sanitizePostMode(msg.mode),
+        streamKind: sanitizePostStreamKind(msg.mode, msg.streamKind)
       });
       // Send per-client serialized view (protected posts are redacted unless unlocked/author)
       for (const client of sockets) {
@@ -4806,6 +4981,197 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
+    if (msg.type === "streamHostStart") {
+      if (!STREAM_ENABLED) {
+        sendError(ws, "Streaming is disabled on this instance.");
+        return;
+      }
+      if (!ws.user?.username) {
+        sendError(ws, "Please sign in to host a stream.");
+        return;
+      }
+      const guard = enforceUserState(ws, "chat");
+      if (!guard.ok) {
+        sendError(ws, guard.message);
+        return;
+      }
+      const postId = typeof msg.postId === "string" ? msg.postId.trim() : "";
+      const entry = posts.get(postId);
+      if (!entry) {
+        sendError(ws, "Post not found.");
+        return;
+      }
+      if (!canUserSeePostByCollection(ws.user?.username || "", entry.post)) {
+        sendError(ws, "You do not have access to this collection.");
+        return;
+      }
+      if (entry.post?.protected && !hasPostAccess(ws, entry.post)) {
+        sendError(ws, "This post is password protected.");
+        return;
+      }
+      if (entry.post?.deleted) {
+        sendError(ws, "This post was deleted.");
+        return;
+      }
+      if (sanitizePostMode(entry.post.mode) !== POST_MODE_STREAM) {
+        sendError(ws, "This hive is not a stream post.");
+        return;
+      }
+      const isAuthor = Boolean(entry.post.author && entry.post.author === ws.user.username);
+      if (!isAuthor && !hasRole(ws.user.username, ROLE_MODERATOR)) {
+        sendError(ws, "Only the stream owner or a moderator can go live.");
+        return;
+      }
+      const existing = streamSessionsByPostId.get(postId);
+      if (existing && existing.hostClientId && existing.hostClientId !== ws.clientId) {
+        sendError(ws, "Another host is already live in this stream.");
+        return;
+      }
+      if (existing && existing.hostClientId === ws.clientId) {
+        endStreamSession(postId, "host_restarted");
+      }
+      entry.post.streamKind = sanitizePostStreamKind(POST_MODE_STREAM, msg.streamKind || entry.post.streamKind);
+      schedulePersist();
+      const session = {
+        postId,
+        hostClientId: ws.clientId,
+        hostUsername: ws.user.username,
+        kind: sanitizePostStreamKind(POST_MODE_STREAM, entry.post.streamKind),
+        viewers: new Set(),
+        startedAt: now()
+      };
+      streamSessionsByPostId.set(postId, session);
+      sendStreamState(postId);
+      ws.send(
+        JSON.stringify({
+          type: "streamHostStarted",
+          postId,
+          kind: session.kind
+        })
+      );
+      return;
+    }
+
+    if (msg.type === "streamHostStop") {
+      const postId = typeof msg.postId === "string" ? msg.postId.trim() : "";
+      const entry = posts.get(postId);
+      if (!entry) {
+        sendError(ws, "Post not found.");
+        return;
+      }
+      const session = streamSessionsByPostId.get(postId);
+      if (!session) {
+        ws.send(JSON.stringify({ type: "streamHostStopped", postId, alreadyStopped: true }));
+        return;
+      }
+      const canForce = Boolean(ws.user?.username && hasRole(ws.user.username, ROLE_MODERATOR));
+      if (session.hostClientId !== ws.clientId && !canForce) {
+        sendError(ws, "Only the current host can stop this stream.");
+        return;
+      }
+      endStreamSession(postId, "host_stopped");
+      ws.send(JSON.stringify({ type: "streamHostStopped", postId }));
+      return;
+    }
+
+    if (msg.type === "streamJoin") {
+      if (!STREAM_ENABLED) {
+        sendError(ws, "Streaming is disabled on this instance.");
+        return;
+      }
+      const postId = typeof msg.postId === "string" ? msg.postId.trim() : "";
+      const entry = posts.get(postId);
+      if (!entry) {
+        sendError(ws, "Post not found.");
+        return;
+      }
+      if (!canUserSeePostByCollection(ws.user?.username || "", entry.post)) {
+        sendError(ws, "You do not have access to this collection.");
+        return;
+      }
+      if (entry.post?.protected && !hasPostAccess(ws, entry.post)) {
+        sendError(ws, "This post is password protected.");
+        return;
+      }
+      if (entry.post?.deleted) {
+        sendError(ws, "This post was deleted.");
+        return;
+      }
+      if (sanitizePostMode(entry.post.mode) !== POST_MODE_STREAM) {
+        sendError(ws, "This hive is not a stream post.");
+        return;
+      }
+      const session = streamSessionsByPostId.get(postId);
+      if (!session) {
+        ws.send(JSON.stringify({ type: "streamJoinAck", postId, live: false }));
+        return;
+      }
+      if (session.hostClientId !== ws.clientId) {
+        session.viewers.add(ws.clientId);
+      }
+      ws.send(
+        JSON.stringify({
+          type: "streamJoinAck",
+          postId,
+          live: true,
+          hostClientId: session.hostClientId,
+          hostUsername: session.hostUsername,
+          kind: sanitizePostStreamKind(POST_MODE_STREAM, session.kind),
+          viewerCount: session.viewers.size
+        })
+      );
+      if (session.hostClientId !== ws.clientId) {
+        const host = findSocketByClientId(session.hostClientId);
+        if (host && host.readyState === host.OPEN) {
+          host.send(
+            JSON.stringify({
+              type: "streamViewerJoin",
+              postId,
+              viewerClientId: ws.clientId,
+              viewerUsername: normalizeUsername(ws.user?.username || "") || ""
+            })
+          );
+        }
+      }
+      sendStreamState(postId);
+      return;
+    }
+
+    if (msg.type === "streamLeave") {
+      const postId = typeof msg.postId === "string" ? msg.postId.trim() : "";
+      if (!postId) return;
+      detachViewerFromStream(postId, ws.clientId, true);
+      return;
+    }
+
+    if (msg.type === "streamSignal") {
+      const postId = typeof msg.postId === "string" ? msg.postId.trim() : "";
+      const session = streamSessionsByPostId.get(postId);
+      if (!session) return;
+      const targetClientId = typeof msg.targetClientId === "string" ? msg.targetClientId.trim() : "";
+      if (!targetClientId || targetClientId === ws.clientId) return;
+      const signal = msg.signal;
+      if (!signal || typeof signal !== "object") return;
+
+      const senderIsHost = session.hostClientId === ws.clientId;
+      const senderIsViewer = session.viewers.has(ws.clientId);
+      if (!senderIsHost && !senderIsViewer) return;
+      if (senderIsHost && !session.viewers.has(targetClientId)) return;
+      if (senderIsViewer && targetClientId !== session.hostClientId) return;
+
+      const target = findSocketByClientId(targetClientId);
+      if (!target || target.readyState !== target.OPEN) return;
+      target.send(
+        JSON.stringify({
+          type: "streamSignal",
+          postId,
+          fromClientId: ws.clientId,
+          signal
+        })
+      );
+      return;
+    }
+
     if (msg.type === "editPost") {
       if (!ws.user?.username) {
         sendError(ws, "Please sign in to edit posts.");
@@ -4856,6 +5222,7 @@ wss.on("connection", (ws, req) => {
       const hasCollectionField = Object.prototype.hasOwnProperty.call(msg, "collectionId");
       const hasKeywordsField = Object.prototype.hasOwnProperty.call(msg, "keywords");
       const hasModeField = Object.prototype.hasOwnProperty.call(msg, "mode") || Object.prototype.hasOwnProperty.call(msg, "chatMode");
+      const hasStreamKindField = Object.prototype.hasOwnProperty.call(msg, "streamKind");
 
       const beforeCollectionId = normalizeCollectionId(entry.post.collectionId || "") || DEFAULT_COLLECTION_ID;
       const beforeProtected = Boolean(entry.post.protected);
@@ -4863,6 +5230,7 @@ wss.on("connection", (ws, req) => {
       const beforeTitle = entry.post.title || "";
       const beforeContent = textPreview(entry.post.content || "");
       const beforeMode = sanitizePostMode(entry.post.mode || entry.post.chatMode || "");
+      const beforeStreamKind = sanitizePostStreamKind(beforeMode, entry.post.streamKind || "");
 
       if (hasCollectionField) {
         const requestedCollectionId = normalizeCollectionId(msg.collectionId || "");
@@ -4882,8 +5250,12 @@ wss.on("connection", (ws, req) => {
         entry.post.keywords = normalizeKeywords(msg.keywords);
       }
 
-      if (hasModeField) {
-        entry.post.mode = sanitizePostMode(msg.mode || msg.chatMode || "");
+      if (hasModeField || hasStreamKindField) {
+        const nextModeRaw = hasModeField ? msg.mode || msg.chatMode || "" : entry.post.mode || "";
+        const nextMode = sanitizePostMode(nextModeRaw || entry.post.mode || "");
+        const nextStreamKindRaw = hasStreamKindField ? msg.streamKind : entry.post.streamKind;
+        entry.post.mode = nextMode;
+        entry.post.streamKind = sanitizePostStreamKind(nextMode, nextStreamKindRaw);
       }
 
       if (hasProtectedField) {
@@ -4917,6 +5289,15 @@ wss.on("connection", (ws, req) => {
       entry.post.contentHtml = safeHtml;
       entry.post.editedAt = now();
       entry.post.editCount = Math.max(0, Number(entry.post.editCount || 0)) + 1;
+      if (beforeMode === POST_MODE_STREAM && entry.post.mode !== POST_MODE_STREAM) {
+        endStreamSession(postId, "mode_changed");
+      } else if (entry.post.mode === POST_MODE_STREAM) {
+        const session = streamSessionsByPostId.get(postId);
+        if (session) {
+          session.kind = sanitizePostStreamKind(POST_MODE_STREAM, entry.post.streamKind);
+          sendStreamState(postId);
+        }
+      }
       schedulePersist();
       const logEntry = appendModLog({
         actionType: "self_post_edit",
@@ -4936,6 +5317,8 @@ wss.on("connection", (ws, req) => {
           afterKeywords: (entry.post.keywords || []).join(", "),
           beforeMode,
           afterMode: sanitizePostMode(entry.post.mode || ""),
+          beforeStreamKind,
+          afterStreamKind: sanitizePostStreamKind(entry.post.mode || "", entry.post.streamKind || ""),
           editCount: entry.post.editCount,
           editedAt: entry.post.editedAt
         }
@@ -4946,6 +5329,9 @@ wss.on("connection", (ws, req) => {
       }
       const visibilityChanged = beforeCollectionId !== (normalizeCollectionId(entry.post.collectionId || "") || DEFAULT_COLLECTION_ID);
       const protectionChanged = beforeProtected !== Boolean(entry.post.protected);
+      if ((visibilityChanged || protectionChanged) && streamSessionsByPostId.has(postId)) {
+        endStreamSession(postId, "post_updated");
+      }
       for (const client of sockets) {
         if (client.readyState !== client.OPEN) continue;
         if (visibilityChanged || protectionChanged) {
@@ -5487,10 +5873,14 @@ wss.on("connection", (ws, req) => {
         for (const entry of posts.values()) {
           if (entry?.timer) clearTimeout(entry.timer);
         }
+        for (const [postId] of streamSessionsByPostId.entries()) {
+          endStreamSession(postId, "board_reset");
+        }
         deletedPosts = posts.size;
 
         // Clear in-memory state
         posts.clear();
+        streamSessionsByPostId.clear();
         typingByPostId.clear();
         postReactionsByPostId.clear();
         chatReactionsByMessageId.clear();
@@ -6763,6 +7153,7 @@ wss.on("connection", (ws, req) => {
         if (byUser.has(ws.user.username)) setTyping(postId, ws.user.username, false);
       }
     }
+    detachSocketFromStreams(ws, "host_disconnected");
 
     // Plugin cleanup hooks.
     try {

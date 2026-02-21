@@ -347,8 +347,20 @@
                 <input id="isProtected" type="checkbox" />
               </label>
               <label class="grow">
-                <span>Walkie Talkie</span>
-                <input id="isWalkie" type="checkbox" />
+                <span>Hive mode</span>
+                <select id="postMode">
+                  <option value="text" selected>Text</option>
+                  <option value="walkie">Walkie Talkie</option>
+                  <option value="stream">Stream</option>
+                </select>
+              </label>
+              <label id="streamKindRow" class="grow hidden">
+                <span>Stream type</span>
+                <select id="streamKind">
+                  <option value="screen">Screen share</option>
+                  <option value="webcam" selected>Webcam</option>
+                  <option value="audio">Audio only</option>
+                </select>
               </label>
               <label class="grow">
                 <span>Post password</span>
@@ -376,6 +388,16 @@
           </div>
         </div>
         <div class="uiHint">Select a hive chat or DM first, then type your message and press Send. Shortcut in Chat: <b>-</b>/<b>=</b> cycles chat list entries.</div>
+        <section id="streamStage" class="streamStage hidden" aria-label="Live stream stage">
+          <div class="streamStageHeader">
+            <div id="streamStageTitle" class="streamStageTitle">Stream</div>
+            <button id="streamStagePrimary" class="ghost smallBtn" type="button">Join stream</button>
+          </div>
+          <div id="streamStageStatus" class="small muted">Stream is offline.</div>
+          <video id="streamStageVideo" class="streamStageVideo hidden" playsinline autoplay controls muted></video>
+          <audio id="streamStageAudio" class="streamStageAudio hidden" autoplay controls></audio>
+          <div id="streamStagePlaceholder" class="streamStagePlaceholder small muted">Open a stream hive to watch, or start a stream if you own the post.</div>
+        </section>
         <div id="chatMessages" class="chatMessages"></div>
         <div id="typingIndicator" class="typingIndicator small muted"></div>
         <div id="walkieBar" class="walkieBar hidden" aria-label="Walkie talkie controls">
@@ -526,9 +548,21 @@
               <span>Password protected</span>
               <input id="editModalProtected" type="checkbox" />
             </label>
-            <label class="checkRow">
-              <span>Walkie-only</span>
-              <input id="editModalWalkie" type="checkbox" />
+            <label>
+              <span>Mode</span>
+              <select id="editModalMode">
+                <option value="text" selected>Text</option>
+                <option value="walkie">Walkie Talkie</option>
+                <option value="stream">Stream</option>
+              </select>
+            </label>
+            <label id="editModalStreamKindRow" class="hidden">
+              <span>Stream type</span>
+              <select id="editModalStreamKind">
+                <option value="screen">Screen share</option>
+                <option value="webcam" selected>Webcam</option>
+                <option value="audio">Audio only</option>
+              </select>
             </label>
             <label id="editModalPasswordRow" class="hidden">
               <span>Password</span>

@@ -101,7 +101,9 @@ const postCollectionEl = document.getElementById("postCollection");
 const keywordsEl = document.getElementById("keywords");
 const ttlMinutesEl = document.getElementById("ttlMinutes");
 const isProtectedEl = document.getElementById("isProtected");
-const isWalkieEl = document.getElementById("isWalkie");
+const postModeEl = document.getElementById("postMode");
+const streamKindRowEl = document.getElementById("streamKindRow");
+const streamKindEl = document.getElementById("streamKind");
 const postPasswordEl = document.getElementById("postPassword");
 
 const filterKeywordsEl = document.getElementById("filterKeywords");
@@ -142,6 +144,13 @@ const chatTitle = document.getElementById("chatTitle");
 const chatMeta = document.getElementById("chatMeta");
 const chatContextSelectEl = document.getElementById("chatContextSelect");
 const chatBackToListBtn = document.getElementById("chatBackToList");
+const streamStageEl = document.getElementById("streamStage");
+const streamStageTitleEl = document.getElementById("streamStageTitle");
+const streamStageStatusEl = document.getElementById("streamStageStatus");
+const streamStagePrimaryBtn = document.getElementById("streamStagePrimary");
+const streamStageVideoEl = document.getElementById("streamStageVideo");
+const streamStageAudioEl = document.getElementById("streamStageAudio");
+const streamStagePlaceholderEl = document.getElementById("streamStagePlaceholder");
 const chatMessagesEl = document.getElementById("chatMessages");
 const typingIndicator = document.getElementById("typingIndicator");
 const chatForm = document.getElementById("chatForm");
@@ -179,7 +188,9 @@ const editModalPostMeta = document.getElementById("editModalPostMeta");
 const editModalKeywordsInput = document.getElementById("editModalKeywords");
 const editModalCollectionSelect = document.getElementById("editModalCollection");
 const editModalProtectedToggle = document.getElementById("editModalProtected");
-const editModalWalkieToggle = document.getElementById("editModalWalkie");
+const editModalModeSelect = document.getElementById("editModalMode");
+const editModalStreamKindRow = document.getElementById("editModalStreamKindRow");
+const editModalStreamKindSelect = document.getElementById("editModalStreamKind");
 const editModalPasswordRow = document.getElementById("editModalPasswordRow");
 const editModalPasswordInput = document.getElementById("editModalPassword");
 const editModalToolbar = document.getElementById("editModalToolbar");
@@ -301,6 +312,17 @@ let walkieMicStream = null;
 let walkieMixNode = null;
 let walkieDestNode = null;
 let walkieDispatchBuffer = null;
+let streamEnabled = false;
+let streamIceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
+const streamLiveByPostId = new Map();
+let streamCurrentPostId = "";
+let streamCurrentRole = "idle"; // "idle" | "viewer" | "host"
+let streamCurrentHostClientId = "";
+let streamRemoteHostClientId = "";
+let streamLocalMedia = null;
+let streamRemoteMedia = null;
+let streamRemoteKind = "webcam";
+const streamPeerByClientId = new Map();
 const SESSION_TOKEN_KEY = "bzl_session_token";
 const CLIENT_IMAGE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const CLIENT_AUDIO_UPLOAD_MAX_BYTES = 150 * 1024 * 1024;
@@ -2436,7 +2458,14 @@ function renderChatPostPanelInstance(panelId, forceScroll) {
       const author = post.author ? `by @${post.author}` : "";
       const exp = formatCountdown(post.expiresAt);
       const ro = post.readOnly ? " | read-only" : "";
-      metaEl.textContent = `${author}${ro} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
+      const mode = normalizePostMode(post.mode || post.chatMode || "");
+      const modeMeta =
+        mode === "walkie"
+          ? " | walkie talkie"
+          : mode === "stream"
+            ? ` | stream (${streamKindLabel(post.streamKind || "webcam")})`
+            : "";
+      metaEl.textContent = `${author}${modeMeta}${ro} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
     }
   }
 
@@ -3775,7 +3804,9 @@ function renderChatContextSelect() {
       const unread = Number(unreadByPostId.get(postId) || 0);
       const unreadLabel = unread > 0 ? ` (${unread})` : "";
       const when = shortTimeAgo(postChatActivityAt(postId, post));
-      opt.textContent = `${postTitle(post)}${unreadLabel}${when ? ` • ${when}` : ""}${post.author ? ` - @${String(post.author || "")}` : ""}`;
+      const mode = normalizePostMode(post.mode || post.chatMode || "");
+      const streamLabel = mode === "stream" ? " [stream]" : "";
+      opt.textContent = `${postTitle(post)}${streamLabel}${unreadLabel}${when ? ` • ${when}` : ""}${post.author ? ` - @${String(post.author || "")}` : ""}`;
       postGroup.appendChild(opt);
     }
     chatContextSelectEl.appendChild(postGroup);
@@ -4042,11 +4073,21 @@ function syncProtectedUi() {
   if (!on) postPasswordEl.value = "";
 }
 
+function syncComposerModeUi() {
+  const mode = normalizePostMode(postModeEl?.value || "text");
+  if (postModeEl && postModeEl.value !== mode) postModeEl.value = mode;
+  const showStreamKind = mode === "stream";
+  if (streamKindRowEl) streamKindRowEl.classList.toggle("hidden", !showStreamKind);
+  if (streamKindEl) streamKindEl.value = normalizeStreamKind(streamKindEl.value || "webcam");
+}
+
 syncProtectedUi();
 isProtectedEl?.addEventListener("change", () => {
   syncProtectedUi();
   if (isProtectedEl?.checked) postPasswordEl?.focus();
 });
+syncComposerModeUi();
+postModeEl?.addEventListener("change", () => syncComposerModeUi());
 
 function setSidebarHidden(hidden) {
   if (!appRoot) return;
@@ -4313,7 +4354,9 @@ function setEditModalOpen(open) {
     if (editModalKeywordsInput) editModalKeywordsInput.value = "";
     if (editModalCollectionSelect) editModalCollectionSelect.innerHTML = "";
     if (editModalProtectedToggle) editModalProtectedToggle.checked = false;
-    if (editModalWalkieToggle) editModalWalkieToggle.checked = false;
+    if (editModalModeSelect) editModalModeSelect.value = "text";
+    if (editModalStreamKindSelect) editModalStreamKindSelect.value = "webcam";
+    if (editModalStreamKindRow) editModalStreamKindRow.classList.add("hidden");
     if (editModalPasswordInput) editModalPasswordInput.value = "";
     if (editModalPasswordRow) editModalPasswordRow.classList.add("hidden");
   }
@@ -4346,6 +4389,13 @@ function fillCollectionSelect(selectEl, currentId) {
   selectEl.value = current;
 }
 
+function syncEditModalModeUi() {
+  const mode = normalizePostMode(editModalModeSelect?.value || "text");
+  if (editModalModeSelect && editModalModeSelect.value !== mode) editModalModeSelect.value = mode;
+  if (editModalStreamKindRow) editModalStreamKindRow.classList.toggle("hidden", mode !== "stream");
+  if (editModalStreamKindSelect) editModalStreamKindSelect.value = normalizeStreamKind(editModalStreamKindSelect.value || "webcam");
+}
+
 function openEditModalForPost(post) {
   if (!post || post.deleted || post.locked) return;
   if (!loggedInUser || post.author !== loggedInUser) return;
@@ -4357,7 +4407,9 @@ function openEditModalForPost(post) {
   if (editModalKeywordsInput) editModalKeywordsInput.value = (post.keywords || []).join(", ");
   fillCollectionSelect(editModalCollectionSelect, String(post.collectionId || "general"));
   if (editModalProtectedToggle) editModalProtectedToggle.checked = Boolean(post.protected);
-  if (editModalWalkieToggle) editModalWalkieToggle.checked = String(post.mode || post.chatMode || "").toLowerCase() === "walkie";
+  if (editModalModeSelect) editModalModeSelect.value = normalizePostMode(post.mode || post.chatMode || "");
+  if (editModalStreamKindSelect) editModalStreamKindSelect.value = normalizeStreamKind(post.streamKind || "webcam");
+  syncEditModalModeUi();
   if (editModalPasswordRow) editModalPasswordRow.classList.toggle("hidden", !Boolean(post.protected));
   if (editModalPasswordInput) editModalPasswordInput.value = "";
   if (editModalEditor) editModalEditor.innerHTML = String(post.contentHtml || "").trim() || escapeHtml(post.content || "");
@@ -4376,7 +4428,9 @@ function openEditModalForChatMessage(message, postId) {
   if (editModalKeywordsInput) editModalKeywordsInput.value = "";
   if (editModalCollectionSelect) editModalCollectionSelect.innerHTML = "";
   if (editModalProtectedToggle) editModalProtectedToggle.checked = false;
-  if (editModalWalkieToggle) editModalWalkieToggle.checked = false;
+  if (editModalModeSelect) editModalModeSelect.value = "text";
+  if (editModalStreamKindSelect) editModalStreamKindSelect.value = "webcam";
+  syncEditModalModeUi();
   if (editModalPasswordInput) editModalPasswordInput.value = "";
   if (editModalPasswordRow) editModalPasswordRow.classList.add("hidden");
   if (editModalEditor) editModalEditor.innerHTML = String(message.html || "").trim() || escapeHtml(message.text || "");
@@ -4389,6 +4443,7 @@ editModalProtectedToggle?.addEventListener("change", () => {
   if (editModalPasswordRow) editModalPasswordRow.classList.toggle("hidden", !on);
   if (!on && editModalPasswordInput) editModalPasswordInput.value = "";
 });
+editModalModeSelect?.addEventListener("change", () => syncEditModalModeUi());
 
 function collectEditorPayload(targetEditor) {
   const html = String(targetEditor?.innerHTML || "").trim();
@@ -5633,6 +5688,30 @@ function parseKeywords(str) {
   return Array.from(new Set(parts)).slice(0, 6);
 }
 
+function normalizePostMode(mode) {
+  const m = String(mode || "").trim().toLowerCase();
+  if (m === "walkie") return "walkie";
+  if (m === "stream") return "stream";
+  return "text";
+}
+
+function normalizeStreamKind(kind) {
+  const k = String(kind || "").trim().toLowerCase();
+  if (k === "screen" || k === "audio") return k;
+  return "webcam";
+}
+
+function streamKindLabel(kind) {
+  const k = normalizeStreamKind(kind);
+  if (k === "screen") return "Screen share";
+  if (k === "audio") return "Audio only";
+  return "Webcam";
+}
+
+function isStreamPost(post) {
+  return normalizePostMode(post?.mode || post?.chatMode || "") === "stream";
+}
+
 function formatCountdown(expiresAt) {
   if (!Number(expiresAt || 0) || Number(expiresAt) <= 0) return "permanent";
   const ms = expiresAt - Date.now();
@@ -6268,6 +6347,13 @@ function renderFeed() {
 
       const canBoost = Boolean(loggedInUser && !p.locked && !p.deleted && p.author && loggedInUser !== p.author);
       const canManageOwnPost = Boolean(loggedInUser && !p.locked && !p.deleted && p.author && loggedInUser === p.author);
+      const streamMode = normalizePostMode(p.mode || p.chatMode || "");
+      const isStream = streamMode === "stream";
+      const streamLive = Boolean(streamLiveByPostId.get(p.id) ?? p.streamLive);
+      const streamKind = normalizeStreamKind(p.streamKind || "webcam");
+      const streamLine = isStream
+        ? `<div class="small muted postStreamLine">Stream · ${escapeHtml(streamKindLabel(streamKind))}${streamLive ? " · live now" : ""}</div>`
+        : "";
       const boostControls = canBoost
         ? `<div class="boostRow">
              <select data-boostsel="${p.id}">
@@ -6339,7 +6425,7 @@ function renderFeed() {
             ${boostLine}
             ${boostControls}
             <div class="postActionsRow">
-              <button type="button" data-chat="${p.id}">${p.locked ? "Unlock" : p.deleted ? "View" : "Chat"}</button>
+              <button type="button" data-chat="${p.id}">${p.locked ? "Unlock" : p.deleted ? "View" : isStream ? "Watch" : "Chat"}</button>
               ${kebabBtn}
               ${postMenu}
             </div>
@@ -6347,6 +6433,7 @@ function renderFeed() {
         </div>
         ${deletedLine}
         ${editedLine}
+        ${streamLine}
         ${contentBlock}
         ${typingLine}
         ${lastChatLine}
@@ -6403,9 +6490,12 @@ function renderMobileChatListHtml() {
     const author = p.author ? `@${escapeHtml(String(p.author || ""))}` : "anon";
     const exp = formatCountdown(p.expiresAt);
     const lock = p.locked ? " · locked" : "";
+    const mode = normalizePostMode(p.mode || p.chatMode || "");
+    const streamLive = mode === "stream" && Boolean(streamLiveByPostId.get(p.id) ?? p.streamLive);
+    const streamTag = mode === "stream" ? ` · stream${streamLive ? " live" : ""}` : "";
     return `<button type="button" class="ghost mobileChatListItem" data-mobilechatopen="${escapeHtml(p.id)}">
       <span class="mobileChatListTop">${title}</span>
-      <span class="mobileChatListMeta">${author} · ${escapeHtml(exp)}${lock}</span>
+      <span class="mobileChatListMeta">${author} · ${escapeHtml(exp)}${lock}${streamTag}</span>
     </button>`;
   };
 
@@ -7619,7 +7709,15 @@ function renderChatPanel(forceScroll = false) {
   renderChatContextSelect();
   const mobileChatScreen = isMobileChatScreenActive();
   const mediaState = captureMediaState(chatMessagesEl);
+  const activePost = activeChatPostId ? posts.get(activeChatPostId) : null;
+  if (
+    streamCurrentPostId &&
+    (activeDmThreadId || !activePost || !isStreamPost(activePost) || String(activePost.id || "") !== String(streamCurrentPostId))
+  ) {
+    leaveActiveStream(true);
+  }
   if (activeDmThreadId) {
+    renderStreamStage(null);
     const thread = dmThreadsById.get(activeDmThreadId) || null;
     if (!thread) {
       activeDmThreadId = null;
@@ -7689,8 +7787,9 @@ function renderChatPanel(forceScroll = false) {
     }
   }
 
-  const post = activeChatPostId ? posts.get(activeChatPostId) : null;
+  const post = activePost;
   if (!post) {
+    renderStreamStage(null);
     if (isMapChatActive()) {
       const mapId = String(activeMapsRoomId || "").trim().toLowerCase();
       const scope = normalizeMapChatScope(activeMapsChatScope);
@@ -7783,7 +7882,10 @@ function renderChatPanel(forceScroll = false) {
   }
 
   updateChatModToggleVisibility();
-  const isWalkie = String(post.mode || post.chatMode || "").toLowerCase() === "walkie";
+  renderStreamStage(post);
+  const mode = normalizePostMode(post.mode || post.chatMode || "");
+  const isWalkie = mode === "walkie";
+  const isStream = mode === "stream";
   if (chatPanelEl) chatPanelEl.classList.toggle("walkie", isWalkie);
   if (walkieBarEl) walkieBarEl.classList.toggle("hidden", !isWalkie);
   if (chatForm) chatForm.classList.toggle("hidden", isWalkie);
@@ -7799,7 +7901,10 @@ function renderChatPanel(forceScroll = false) {
   const author = post.author ? `by @${post.author}` : "";
   const exp = formatCountdown(post.expiresAt);
   const ro = post.readOnly ? " | read-only" : "";
-  chatMeta.textContent = `${author}${isWalkie ? " | walkie talkie" : ""}${ro} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
+  const streamMeta = isStream ? ` | stream (${streamKindLabel(post.streamKind || "webcam")})` : "";
+  chatMeta.textContent = `${author}${isWalkie ? " | walkie talkie" : ""}${streamMeta}${ro} | ${
+    exp === "permanent" ? "permanent" : `expires in ${exp}`
+  } | ${tags}`.trim();
   const canChatWrite = Boolean(loggedInRole === "owner" || loggedInRole === "moderator" || !post.readOnly);
   if (chatEditor) chatEditor.contentEditable = String(Boolean(canChatWrite && !isWalkie));
   const chatSendBtn = chatForm?.querySelector?.("button[type='submit']") || null;
@@ -8090,7 +8195,10 @@ function updateActiveChatMeta() {
   const tags = (post.keywords || []).map((k) => `#${k}`).join(" ");
   const author = post.author ? `by @${post.author}` : "";
   const exp = formatCountdown(post.expiresAt);
-  chatMeta.textContent = `${author} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
+  const mode = normalizePostMode(post.mode || post.chatMode || "");
+  const modeMeta =
+    mode === "walkie" ? " | walkie talkie" : mode === "stream" ? ` | stream (${streamKindLabel(post.streamKind || "webcam")})` : "";
+  chatMeta.textContent = `${author}${modeMeta} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
 }
 
 function openDmThread(threadId, opts = null) {
@@ -8170,7 +8278,7 @@ function openChat(postId, opts = null) {
   }
 
   // Rack mode: switch the nearest visible chat panel when possible; otherwise use main chat.
-  if (rackLayoutEnabled) {
+  if (rackLayoutEnabled && !isStreamPost(post)) {
     const nearestInstanceId = nearestVisibleChatInstancePanelId(sourceEl);
     if (nearestInstanceId) {
       touchRecentHiveChat(postId);
@@ -8597,6 +8705,371 @@ function cycleChatContextBy(step) {
   return false;
 }
 
+function streamIceConfig() {
+  if (!Array.isArray(streamIceServers) || !streamIceServers.length) return [];
+  return streamIceServers.map((row) => {
+    const urls = Array.isArray(row?.urls)
+      ? row.urls.map((x) => String(x || "").trim()).filter(Boolean)
+      : typeof row?.urls === "string" && row.urls.trim()
+        ? [row.urls.trim()]
+        : [];
+    const out = { urls };
+    if (typeof row?.username === "string" && row.username.trim()) out.username = row.username.trim();
+    if (typeof row?.credential === "string" && row.credential.trim()) out.credential = row.credential.trim();
+    return out;
+  });
+}
+
+function stopStreamTracks(stream) {
+  const tracks = stream && typeof stream.getTracks === "function" ? stream.getTracks() : [];
+  for (const track of tracks) {
+    try {
+      track.onended = null;
+      track.stop();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function closeStreamPeer(clientId) {
+  const id = String(clientId || "").trim();
+  if (!id) return;
+  const pc = streamPeerByClientId.get(id);
+  if (!pc) return;
+  streamPeerByClientId.delete(id);
+  try {
+    pc.onicecandidate = null;
+    pc.onconnectionstatechange = null;
+    pc.ontrack = null;
+    pc.close();
+  } catch {
+    // ignore
+  }
+}
+
+function closeAllStreamPeers() {
+  for (const id of Array.from(streamPeerByClientId.keys())) closeStreamPeer(id);
+}
+
+function clearStreamMediaPreview() {
+  if (streamStageVideoEl) {
+    try {
+      streamStageVideoEl.pause();
+    } catch {
+      // ignore
+    }
+    streamStageVideoEl.srcObject = null;
+    streamStageVideoEl.classList.add("hidden");
+    streamStageVideoEl.muted = false;
+  }
+  if (streamStageAudioEl) {
+    try {
+      streamStageAudioEl.pause();
+    } catch {
+      // ignore
+    }
+    streamStageAudioEl.srcObject = null;
+    streamStageAudioEl.classList.add("hidden");
+    streamStageAudioEl.muted = false;
+  }
+  streamRemoteMedia = null;
+}
+
+function attachStreamPreview(stream, kind, local = false) {
+  const streamObj = stream && typeof stream.getTracks === "function" ? stream : null;
+  if (!streamObj) {
+    clearStreamMediaPreview();
+    return;
+  }
+  const k = normalizeStreamKind(kind);
+  const hasVideo = streamObj.getVideoTracks().length > 0;
+  if (k === "audio" || !hasVideo) {
+    if (streamStageVideoEl) {
+      streamStageVideoEl.srcObject = null;
+      streamStageVideoEl.classList.add("hidden");
+    }
+    if (streamStageAudioEl) {
+      streamStageAudioEl.srcObject = streamObj;
+      streamStageAudioEl.classList.remove("hidden");
+      streamStageAudioEl.muted = Boolean(local);
+      streamStageAudioEl.play?.().catch(() => {});
+    }
+    return;
+  }
+  if (streamStageAudioEl) {
+    streamStageAudioEl.srcObject = null;
+    streamStageAudioEl.classList.add("hidden");
+  }
+  if (streamStageVideoEl) {
+    streamStageVideoEl.srcObject = streamObj;
+    streamStageVideoEl.classList.remove("hidden");
+    streamStageVideoEl.muted = Boolean(local);
+    streamStageVideoEl.play?.().catch(() => {});
+  }
+}
+
+function streamCanHostPost(post) {
+  if (!post || !loggedInUser) return false;
+  if (String(post.author || "") === String(loggedInUser || "")) return true;
+  return loggedInRole === "owner" || loggedInRole === "moderator";
+}
+
+function streamResetState(keepPostId = false) {
+  closeAllStreamPeers();
+  stopStreamTracks(streamLocalMedia);
+  streamLocalMedia = null;
+  streamRemoteMedia = null;
+  streamRemoteHostClientId = "";
+  streamCurrentHostClientId = "";
+  streamCurrentRole = "idle";
+  if (!keepPostId) streamCurrentPostId = "";
+  clearStreamMediaPreview();
+}
+
+function leaveActiveStream(sendSignal = true) {
+  const postId = String(streamCurrentPostId || "").trim();
+  const wasRole = streamCurrentRole;
+  if (sendSignal && ws?.readyState === WebSocket.OPEN && postId) {
+    if (wasRole === "host") ws.send(JSON.stringify({ type: "streamHostStop", postId }));
+    else if (wasRole === "viewer") ws.send(JSON.stringify({ type: "streamLeave", postId }));
+  }
+  streamResetState(false);
+}
+
+function streamStageCurrentPost() {
+  if (activeDmThreadId) return null;
+  const post = activeChatPostId ? posts.get(activeChatPostId) : null;
+  if (!post || post.deleted || !isStreamPost(post)) return null;
+  return post;
+}
+
+function createStreamPeer(targetClientId) {
+  const target = String(targetClientId || "").trim();
+  if (!target) return null;
+  if (typeof RTCPeerConnection !== "function") {
+    toast("Stream", "WebRTC is not available in this browser.");
+    return null;
+  }
+  const existing = streamPeerByClientId.get(target);
+  if (existing) return existing;
+  const pc = new RTCPeerConnection({ iceServers: streamIceConfig() });
+  streamPeerByClientId.set(target, pc);
+  pc.onicecandidate = (evt) => {
+    if (!evt.candidate || !ws || ws.readyState !== WebSocket.OPEN || !streamCurrentPostId) return;
+    ws.send(
+      JSON.stringify({
+        type: "streamSignal",
+        postId: streamCurrentPostId,
+        targetClientId: target,
+        signal: { type: "candidate", candidate: evt.candidate },
+      })
+    );
+  };
+  pc.ontrack = (evt) => {
+    if (streamCurrentRole !== "viewer") return;
+    const remote = evt.streams && evt.streams[0] ? evt.streams[0] : null;
+    if (!remote) return;
+    streamRemoteMedia = remote;
+    attachStreamPreview(remote, streamRemoteKind, false);
+    if (streamStagePlaceholderEl) streamStagePlaceholderEl.classList.add("hidden");
+  };
+  pc.onconnectionstatechange = () => {
+    const state = String(pc.connectionState || "");
+    if (state === "failed" || state === "closed" || state === "disconnected") closeStreamPeer(target);
+  };
+  if (streamCurrentRole === "host" && streamLocalMedia) {
+    for (const track of streamLocalMedia.getTracks()) {
+      try {
+        pc.addTrack(track, streamLocalMedia);
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return pc;
+}
+
+async function handleStreamSignalMessage(msg) {
+  const postId = String(msg.postId || "").trim();
+  const fromClientId = String(msg.fromClientId || "").trim();
+  const signal = msg.signal && typeof msg.signal === "object" ? msg.signal : null;
+  if (!postId || !fromClientId || !signal) return;
+  if (!streamCurrentPostId || streamCurrentPostId !== postId) return;
+  const type = String(signal.type || "").trim().toLowerCase();
+  if (!type) return;
+  const pc = createStreamPeer(fromClientId);
+  if (!pc) return;
+  try {
+    if (type === "offer") {
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: String(signal.sdp || "") }));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws?.send(
+        JSON.stringify({
+          type: "streamSignal",
+          postId,
+          targetClientId: fromClientId,
+          signal: { type: "answer", sdp: String(answer.sdp || "") },
+        })
+      );
+      return;
+    }
+    if (type === "answer") {
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: String(signal.sdp || "") }));
+      return;
+    }
+    if (type === "candidate" && signal.candidate) {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  } catch (e) {
+    console.warn("stream signal failed:", e?.message || e);
+  }
+}
+
+async function handleStreamViewerJoinMessage(msg) {
+  const postId = String(msg.postId || "").trim();
+  const viewerClientId = String(msg.viewerClientId || "").trim();
+  if (!postId || !viewerClientId) return;
+  if (streamCurrentRole !== "host" || streamCurrentPostId !== postId) return;
+  const pc = createStreamPeer(viewerClientId);
+  if (!pc) return;
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    ws?.send(
+      JSON.stringify({
+        type: "streamSignal",
+        postId,
+        targetClientId: viewerClientId,
+        signal: { type: "offer", sdp: String(offer.sdp || "") },
+      })
+    );
+  } catch (e) {
+    console.warn("stream offer failed:", e?.message || e);
+    closeStreamPeer(viewerClientId);
+  }
+}
+
+async function startStreamHost(post) {
+  if (!post || !isStreamPost(post)) return;
+  if (!streamEnabled) {
+    toast("Stream", "Streaming is disabled on this instance.");
+    return;
+  }
+  if (!loggedInUser) {
+    toast("Stream", "Sign in to start a stream.");
+    return;
+  }
+  if (!streamCanHostPost(post)) {
+    toast("Stream", "Only the hive owner or a moderator can host this stream.");
+    return;
+  }
+  const kind = normalizeStreamKind(post.streamKind || "webcam");
+  try {
+    if (!navigator.mediaDevices) throw new Error("Media devices are unavailable in this browser.");
+    let media = null;
+    if (kind === "screen") {
+      media = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } else if (kind === "audio") {
+      media = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } else {
+      media = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    }
+    if (!media) throw new Error("No stream media available.");
+
+    leaveActiveStream(false);
+    streamCurrentPostId = String(post.id || "");
+    streamCurrentRole = "host";
+    streamRemoteKind = kind;
+    streamCurrentHostClientId = String(clientId || "");
+    streamLocalMedia = media;
+    for (const track of media.getTracks()) {
+      track.onended = () => {
+        if (streamCurrentRole === "host" && streamCurrentPostId === String(post.id || "")) leaveActiveStream(true);
+      };
+    }
+    attachStreamPreview(media, kind, true);
+    if (streamStagePlaceholderEl) streamStagePlaceholderEl.classList.add("hidden");
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "streamHostStart", postId: post.id, streamKind: kind }));
+    }
+    renderChatPanel(false);
+  } catch (e) {
+    toast("Stream", String(e?.message || "Unable to start stream."));
+  }
+}
+
+function joinStream(post) {
+  if (!post || !isStreamPost(post)) return;
+  if (!streamEnabled) {
+    toast("Stream", "Streaming is disabled on this instance.");
+    return;
+  }
+  if (typeof RTCPeerConnection !== "function") {
+    toast("Stream", "WebRTC is not available in this browser.");
+    return;
+  }
+  leaveActiveStream(false);
+  streamCurrentPostId = String(post.id || "");
+  streamCurrentRole = "viewer";
+  streamRemoteKind = normalizeStreamKind(post.streamKind || "webcam");
+  streamCurrentHostClientId = "";
+  streamRemoteHostClientId = "";
+  if (streamStagePlaceholderEl) {
+    streamStagePlaceholderEl.classList.remove("hidden");
+    streamStagePlaceholderEl.textContent = "Connecting to stream...";
+  }
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "streamJoin", postId: post.id }));
+  renderChatPanel(false);
+}
+
+function renderStreamStage(post) {
+  const streamPost = post && isStreamPost(post) ? post : null;
+  if (!streamPost) {
+    if (streamStageEl) streamStageEl.classList.add("hidden");
+    return;
+  }
+  if (streamStageEl) streamStageEl.classList.remove("hidden");
+  const postId = String(streamPost.id || "");
+  const live = Boolean(streamLiveByPostId.get(postId) ?? streamPost.streamLive);
+  const kind = normalizeStreamKind(streamPost.streamKind || "webcam");
+  const canHost = streamCanHostPost(streamPost);
+  const isHosting = streamCurrentRole === "host" && streamCurrentPostId === postId;
+  const isViewing = streamCurrentRole === "viewer" && streamCurrentPostId === postId;
+  if (streamStageTitleEl) {
+    streamStageTitleEl.textContent = `${streamKindLabel(kind)} stream`;
+  }
+  if (streamStageStatusEl) {
+    if (isHosting) streamStageStatusEl.textContent = "You are live.";
+    else if (isViewing) streamStageStatusEl.textContent = streamRemoteMedia ? "Watching live stream." : "Connecting...";
+    else if (live) streamStageStatusEl.textContent = "Live now. Join to watch.";
+    else if (canHost) streamStageStatusEl.textContent = "Offline. Start a stream for this hive.";
+    else streamStageStatusEl.textContent = "Stream is offline.";
+  }
+  if (streamStagePrimaryBtn) {
+    let label = "Join stream";
+    let disabled = false;
+    if (isHosting) label = "Stop stream";
+    else if (isViewing) label = "Leave stream";
+    else if (!live && canHost) label = `Go live (${streamKindLabel(kind)})`;
+    else if (!live && !canHost) {
+      label = "Offline";
+      disabled = true;
+    }
+    streamStagePrimaryBtn.textContent = label;
+    streamStagePrimaryBtn.disabled = disabled;
+  }
+  if (streamStagePlaceholderEl && !isHosting && !isViewing) {
+    streamStagePlaceholderEl.classList.remove("hidden");
+    streamStagePlaceholderEl.textContent = live
+      ? "Join this stream to watch live with chat."
+      : canHost
+        ? "Tap Go live to start screen share, webcam, or audio stream."
+        : "Waiting for the stream owner to go live.";
+  }
+}
+
 function canWalkieTalkNow() {
   if (!loggedInUser || !ws || ws.readyState !== WebSocket.OPEN) return false;
   if (!activeChatPostId) return false;
@@ -8948,7 +9421,8 @@ editModalSaveBtn?.addEventListener("click", () => {
     }
     const keywords = parseKeywordsInput(editModalKeywordsInput?.value || "");
     const collectionId = String(editModalCollectionSelect?.value || post?.collectionId || "general");
-    const mode = Boolean(editModalWalkieToggle?.checked) ? "walkie" : "text";
+    const mode = normalizePostMode(editModalModeSelect?.value || post?.mode || "text");
+    const streamKind = normalizeStreamKind(editModalStreamKindSelect?.value || post?.streamKind || "webcam");
     ws.send(
       JSON.stringify({
         type: "editPost",
@@ -8960,7 +9434,8 @@ editModalSaveBtn?.addEventListener("click", () => {
         collectionId,
         protected: wantsProtected,
         password: password.trim(),
-        mode
+        mode,
+        streamKind
       })
     );
     setEditModalOpen(false);
@@ -9132,15 +9607,30 @@ newPostForm.addEventListener("submit", (e) => {
     toast("Protected post", "Password must be at least 4 characters.");
     return;
   }
-  const mode = Boolean(isWalkieEl?.checked) ? "walkie" : "text";
+  const mode = normalizePostMode(postModeEl?.value || "text");
+  const streamKind = normalizeStreamKind(streamKindEl?.value || "webcam");
   ws.send(
-    JSON.stringify({ type: "newPost", title, collectionId, contentHtml: html, content: text, keywords, ttl, protected: isProtected, password, mode })
+    JSON.stringify({
+      type: "newPost",
+      title,
+      collectionId,
+      contentHtml: html,
+      content: text,
+      keywords,
+      ttl,
+      protected: isProtected,
+      password,
+      mode,
+      streamKind,
+    })
   );
   if (postTitleInput) postTitleInput.value = "";
   editor.innerHTML = "";
   if (postPasswordEl) postPasswordEl.value = "";
   if (isProtectedEl) isProtectedEl.checked = false;
-  if (isWalkieEl) isWalkieEl.checked = false;
+  if (postModeEl) postModeEl.value = "text";
+  if (streamKindEl) streamKindEl.value = "webcam";
+  syncComposerModeUi();
   if (isMobileSwipeMode()) setComposerOpen(false);
 });
 
@@ -10616,6 +11106,7 @@ function connectWs() {
 
   sock.addEventListener("close", () => {
     if (sock !== ws) return;
+    leaveActiveStream(false);
     setConn("closed");
     clearWsKeepalive();
     scheduleWsReconnect();
@@ -10639,6 +11130,7 @@ function onWsMessage(evt) {
   if (!msg || typeof msg !== "object") return;
 
   if (msg.type === "init") {
+    leaveActiveStream(false);
     clientId = msg.clientId || null;
     canRegisterFirstUser = Boolean(msg.auth?.canRegisterFirstUser);
     registrationEnabled = Boolean(msg.auth?.registrationEnabled);
@@ -10661,6 +11153,8 @@ function onWsMessage(evt) {
     collections = normalizeCollections(msg.collections);
     customRoles = normalizeRoleDefs(msg.roles?.custom);
     setPlugins(msg.plugins);
+    streamEnabled = Boolean(msg.stream?.enabled);
+    streamIceServers = Array.isArray(msg.stream?.iceServers) && msg.stream.iceServers.length ? msg.stream.iceServers : streamIceServers;
     renderCollectionSelect();
     peopleMembers = Array.isArray(msg.people?.members) ? msg.people.members : [];
     if (!peopleMembers.length && ws.readyState === WebSocket.OPEN) {
@@ -10671,8 +11165,12 @@ function onWsMessage(evt) {
     if (msg.reactions?.allowedChat && Array.isArray(msg.reactions.allowedChat)) allowedChatReactions = msg.reactions.allowedChat;
     setUserPrefs({ starredPostIds: [], hiddenPostIds: [] });
     unreadByPostId.clear();
+    streamLiveByPostId.clear();
     posts.clear();
-    for (const p of msg.posts || []) posts.set(p.id, p);
+    for (const p of msg.posts || []) {
+      posts.set(p.id, p);
+      if (p && typeof p.id === "string") streamLiveByPostId.set(p.id, Boolean(p.streamLive));
+    }
     setAuthUi();
     renderFeed();
     renderChatPanel();
@@ -10771,6 +11269,80 @@ function onWsMessage(evt) {
     return;
   }
 
+  if (msg.type === "streamState") {
+    const postId = String(msg.postId || "").trim();
+    if (!postId) return;
+    const live = Boolean(msg.live);
+    streamLiveByPostId.set(postId, live);
+    const post = posts.get(postId);
+    if (post) {
+      post.streamLive = live;
+      post.streamKind = normalizeStreamKind(msg.kind || post.streamKind || "webcam");
+      post.streamHost = String(msg.host || "");
+      post.streamHostClientId = String(msg.hostClientId || "");
+      post.streamViewerCount = Math.max(0, Number(msg.viewerCount || 0) || 0);
+    }
+    if (live && streamCurrentRole === "viewer" && streamCurrentPostId === postId && !streamCurrentHostClientId) {
+      streamCurrentHostClientId = String(msg.hostClientId || "");
+      streamRemoteHostClientId = streamCurrentHostClientId;
+    }
+    if (!live && streamCurrentPostId === postId && streamCurrentRole !== "idle") {
+      leaveActiveStream(false);
+    }
+    renderFeed();
+    if (activeChatPostId === postId || streamCurrentPostId === postId) renderChatPanel(false);
+    return;
+  }
+
+  if (msg.type === "streamEnded") {
+    const postId = String(msg.postId || "").trim();
+    if (!postId) return;
+    streamLiveByPostId.set(postId, false);
+    const post = posts.get(postId);
+    if (post) post.streamLive = false;
+    if (streamCurrentPostId === postId && streamCurrentRole !== "idle") {
+      leaveActiveStream(false);
+      if (activeChatPostId === postId) toast("Stream", "Live stream ended.");
+    }
+    renderFeed();
+    if (activeChatPostId === postId) renderChatPanel(false);
+    return;
+  }
+
+  if (msg.type === "streamJoinAck") {
+    const postId = String(msg.postId || "").trim();
+    if (!postId || streamCurrentRole !== "viewer" || streamCurrentPostId !== postId) return;
+    if (!Boolean(msg.live)) {
+      leaveActiveStream(false);
+      toast("Stream", "This stream is offline.");
+      renderChatPanel(false);
+      return;
+    }
+    streamCurrentHostClientId = String(msg.hostClientId || "");
+    streamRemoteHostClientId = streamCurrentHostClientId;
+    streamRemoteKind = normalizeStreamKind(msg.kind || "webcam");
+    renderChatPanel(false);
+    return;
+  }
+
+  if (msg.type === "streamViewerJoin") {
+    handleStreamViewerJoinMessage(msg);
+    return;
+  }
+
+  if (msg.type === "streamViewerLeave") {
+    const postId = String(msg.postId || "").trim();
+    const viewerClientId = String(msg.viewerClientId || "").trim();
+    if (!postId || !viewerClientId) return;
+    if (streamCurrentRole === "host" && streamCurrentPostId === postId) closeStreamPeer(viewerClientId);
+    return;
+  }
+
+  if (msg.type === "streamSignal") {
+    handleStreamSignalMessage(msg);
+    return;
+  }
+
   if (msg.type === "collectionsUpdated") {
     const prevView = activeHiveView;
     collections = normalizeCollections(msg.collections);
@@ -10803,8 +11375,12 @@ function onWsMessage(evt) {
   }
 
   if (msg.type === "postsSnapshot") {
+    streamLiveByPostId.clear();
     posts.clear();
-    for (const post of Array.isArray(msg.posts) ? msg.posts : []) posts.set(post.id, post);
+    for (const post of Array.isArray(msg.posts) ? msg.posts : []) {
+      posts.set(post.id, post);
+      if (post && typeof post.id === "string") streamLiveByPostId.set(post.id, Boolean(post.streamLive));
+    }
     if (activeChatPostId && !posts.has(activeChatPostId)) {
       activeChatPostId = null;
     }
@@ -10815,6 +11391,7 @@ function onWsMessage(evt) {
 
   if (msg.type === "boardReset") {
     posts.clear();
+    streamLiveByPostId.clear();
     chatByPost.clear();
     unreadByPostId.clear();
     typingUsersByPostId.clear();
@@ -10883,6 +11460,7 @@ function onWsMessage(evt) {
   if (msg.type === "newPost" && msg.post) {
     const isNewId = !posts.has(msg.post.id);
     posts.set(msg.post.id, msg.post);
+    streamLiveByPostId.set(msg.post.id, Boolean(msg.post.streamLive));
     renderFeed();
     if (isNewId) {
       newPostAnimIds.add(msg.post.id);
@@ -10913,6 +11491,7 @@ function onWsMessage(evt) {
 
   if (msg.type === "postUpdated" && msg.post) {
     posts.set(msg.post.id, msg.post);
+    streamLiveByPostId.set(msg.post.id, Boolean(msg.post.streamLive));
     renderFeed();
     renderChatPanel();
     return;
@@ -10921,7 +11500,9 @@ function onWsMessage(evt) {
   if (msg.type === "deletePost") {
     if (userPrefs?.starredPostIds) userPrefs.starredPostIds = userPrefs.starredPostIds.filter((id) => id !== msg.id);
     if (userPrefs?.hiddenPostIds) userPrefs.hiddenPostIds = userPrefs.hiddenPostIds.filter((id) => id !== msg.id);
+    if (streamCurrentPostId && String(streamCurrentPostId) === String(msg.id || "")) leaveActiveStream(false);
     posts.delete(msg.id);
+    streamLiveByPostId.delete(msg.id);
     chatByPost.delete(msg.id);
     unreadByPostId.delete(msg.id);
     typingUsersByPostId.delete(msg.id);
@@ -10972,6 +11553,7 @@ function onWsMessage(evt) {
 
   if (msg.type === "logoutOk") {
     setSessionToken("");
+    leaveActiveStream(false);
     loggedInUser = null;
     loggedInRole = "member";
     canModerate = false;
@@ -10982,6 +11564,7 @@ function onWsMessage(evt) {
     activeDmThreadId = null;
     pendingOpenDmThreadId = "";
     stopWalkieRecording();
+    streamLiveByPostId.clear();
     lanUrls = [];
     modReports = [];
     modUsers = [];
@@ -11221,6 +11804,7 @@ function onWsMessage(evt) {
     const postId = msg.postId || "";
     if (!postId || !msg.post) return;
     posts.set(postId, msg.post);
+    streamLiveByPostId.set(postId, Boolean(msg.post.streamLive));
     if (Array.isArray(msg.messages)) chatByPost.set(postId, msg.messages);
     renderFeed();
     renderChatPanel();
@@ -11874,6 +12458,26 @@ mobileMoreSheetEl?.addEventListener("click", (e) => {
   const target = e.target;
   if (!target) return;
   if (target.closest?.("[data-mobilemoreclose]")) setMobileMoreOpen(false);
+});
+
+streamStagePrimaryBtn?.addEventListener("click", () => {
+  const post = streamStageCurrentPost();
+  if (!post) return;
+  const postId = String(post.id || "");
+  if (!postId) return;
+  if (streamCurrentRole === "host" && streamCurrentPostId === postId) {
+    leaveActiveStream(true);
+    renderChatPanel(false);
+    return;
+  }
+  if (streamCurrentRole === "viewer" && streamCurrentPostId === postId) {
+    leaveActiveStream(true);
+    renderChatPanel(false);
+    return;
+  }
+  const live = Boolean(streamLiveByPostId.get(postId) ?? post.streamLive);
+  if (live) joinStream(post);
+  else startStreamHost(post);
 });
 
 walkieRecordBtn?.addEventListener("pointerdown", (e) => {
