@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=126" />
+    <link rel="stylesheet" href="/styles.css?v=130" />
   </head>
   <body>
       <div class="app">
@@ -28,7 +28,7 @@
 
         <section id="viewPanel" class="panel">
           <div class="panelTitle">View</div>
-          <div class="uiHint">Use layout presets for quick panel setups. Shortcuts: <b>[</b>/<b>]</b> cycle presets, <b>-</b>/<b>=</b> cycle hives/chats in the active panel.</div>
+          <div class="uiHint">Use layout presets for quick panel setups. Shortcuts: <b>[</b>/<b>]</b> cycle presets, <b>-</b>/<b>=</b> cycle hives/chats in the active panel, <b>?</b> opens shortcut help.</div>
           <label class="checkRow" style="margin-top:8px;">
             <span>Rack layout (experimental)</span>
             <input id="toggleRackLayout" type="checkbox" />
@@ -66,6 +66,17 @@
             <span>Enable hints</span>
             <input id="enableHints" type="checkbox" />
           </label>
+          <label style="margin-top:10px;">
+            <span>Chat send key</span>
+            <select id="chatEnterMode">
+              <option value="ctrlEnter">Ctrl/Cmd + Enter sends</option>
+              <option value="enter">Enter sends (Shift+Enter newline)</option>
+            </select>
+          </label>
+          <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap;">
+            <button id="openShortcutHelp" class="ghost smallBtn" type="button">Shortcut help</button>
+            <button id="resetCurrentLayout" class="ghost smallBtn" type="button">Reset layout</button>
+          </div>
 
           <details style="margin-top:10px;">
             <summary class="small muted" style="cursor:pointer;user-select:none;">Advanced display</summary>
@@ -196,7 +207,7 @@
               <button id="toggleComposer" class="mobileComposerToggle" type="button">New Hive</button>
             </div>
           </div>
-          <div class="uiHint">Use filters to narrow posts, then tap <b>Chat</b> on a hive card. Shortcut in Hives: <b>-</b>/<b>=</b> cycles collections/views.</div>
+          <div class="uiHint">Use filters to narrow posts, then tap <b>Chat</b> on a hive card. Cards now show latest chat/typing. Shortcut: <b>-</b>/<b>=</b> cycles collections/views.</div>
           <div class="hiveTabs" id="hiveTabs">
             <button type="button" data-hiveview="all" class="primary">All</button>
             <button type="button" data-hiveview="starred" class="ghost">Starred</button>
@@ -451,14 +462,14 @@
         <button id="peopleDmsTab" class="ghost" type="button">DMs</button>
       </div>
       <div id="peopleMembersView">
-        <div class="uiHint">Members list lets you open profiles and start DMs. Search filters by username.</div>
+        <div class="uiHint">Members list lets you open profiles and start DMs. Mods can also send <b>Mod DM</b> from member/profile actions.</div>
         <div class="peopleFilters">
           <input id="peopleSearch" placeholder="Search members" />
         </div>
         <div id="peopleList" class="peopleList small"></div>
       </div>
       <div id="peopleDmsView" class="peopleDms small hidden">
-        <div class="uiHint">DM requests must be accepted before chat opens. Active threads show an <b>Open</b> button.</div>
+        <div class="uiHint">DM requests must be accepted before chat opens. Active threads show <b>Open</b>, and mods get a <b>Mod DM</b> action.</div>
         DMs coming soon.
       </div>
     </aside>
@@ -599,7 +610,26 @@
       </div>
     </div>
 
+    <div id="shortcutHelpModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div class="modalBackdrop" data-shortcutclose="1"></div>
+      <div class="modalCard panel">
+        <div class="panelHeader">
+          <div class="panelTitle">Keyboard Shortcuts</div>
+          <div class="row">
+            <button id="shortcutHelpClose" class="ghost smallBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div class="modalBody shortcutHelpBody">
+          <div><span class="tag">[ / ]</span> Cycle layout presets</div>
+          <div><span class="tag">- / =</span> Cycle hives or chats in active panel</div>
+          <div><span class="tag">?</span> Open this shortcut help</div>
+          <div><span class="tag">`</span> Hold for walkie talkie (when enabled)</div>
+          <div><span class="tag">Esc</span> Close menus/modals</div>
+        </div>
+      </div>
+    </div>
+
     <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
-    <script src="/app.js?v=146"></script>
+    <script src="/app.js?v=152"></script>
   </body>
 </html>

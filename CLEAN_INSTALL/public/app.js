@@ -34,6 +34,9 @@ const uiScaleEl = document.getElementById("uiScale");
 const deviceLayoutEl = document.getElementById("deviceLayout");
 const stayConnectedEl = document.getElementById("stayConnected");
 const enableHintsEl = document.getElementById("enableHints");
+const chatEnterModeEl = document.getElementById("chatEnterMode");
+const openShortcutHelpBtn = document.getElementById("openShortcutHelp");
+const resetCurrentLayoutBtn = document.getElementById("resetCurrentLayout");
 const dockHotbarEl = document.getElementById("dockHotbar");
 const showSideRackBtn = document.getElementById("showSideRack");
 const showRightRackBtn = document.getElementById("showRightRack");
@@ -79,6 +82,8 @@ const mediaModalOpenLink = document.getElementById("mediaModalOpenLink");
 const mediaModalCopyLink = document.getElementById("mediaModalCopyLink");
 const mediaModalClose = document.getElementById("mediaModalClose");
 const mediaModalStatus = document.getElementById("mediaModalStatus");
+const shortcutHelpModal = document.getElementById("shortcutHelpModal");
+const shortcutHelpCloseBtn = document.getElementById("shortcutHelpClose");
 
 const newPostForm = document.getElementById("newPostForm");
 const pollinatePanel = document.getElementById("pollinatePanel");
@@ -1288,6 +1293,20 @@ function rackIdForPanelElement(panelEl) {
   return "";
 }
 
+function updateSkinnyChatPanels() {
+  const applySkinnyState = (panelEl) => {
+    if (!(panelEl instanceof HTMLElement)) return;
+    const rackId = rackIdForPanelElement(panelEl);
+    const inSkinnyRack = rackId === "mainSideRack" || rackId === "rightRack";
+    panelEl.classList.toggle("isSkinnyChat", Boolean(rackLayoutEnabled && inSkinnyRack));
+  };
+
+  applySkinnyState(chatPanelEl);
+  for (const panelId of chatPanelInstances.keys()) {
+    applySkinnyState(getPanelElement(panelId));
+  }
+}
+
 function rememberPanelLastRack(panelId, rackId) {
   const id = String(panelId || "").trim();
   const rack = String(rackId || "").trim();
@@ -1396,6 +1415,7 @@ function showHotbar(show) {
   if (!show && dockHotbarEl.dataset.lockVisible === "1") return;
   dockHotbarEl.classList.toggle("hidden", !show);
   dockHotbarEl.classList.toggle("show", Boolean(show));
+  if (appRoot) appRoot.classList.toggle("hotbarVisible", Boolean(show));
 }
 
 function renderHotbar() {
@@ -1406,6 +1426,7 @@ function renderHotbar() {
     dockHotbarEl.classList.add("hidden");
     dockHotbarEl.classList.remove("show");
     dockHotbarEl.innerHTML = "";
+    if (appRoot) appRoot.classList.remove("hotbarVisible");
     return;
   }
 
@@ -1435,6 +1456,7 @@ function renderHotbar() {
 }
 
 let hotbarPlusMenuEl = null;
+let workspaceAddMenuEl = null;
 
 function closeHotbarPlusMenu() {
   if (!hotbarPlusMenuEl) return;
@@ -1444,6 +1466,84 @@ function closeHotbarPlusMenu() {
     // ignore
   }
   hotbarPlusMenuEl = null;
+}
+
+function closeWorkspaceAddMenu() {
+  if (!workspaceAddMenuEl) return;
+  try {
+    workspaceAddMenuEl.remove();
+  } catch {
+    // ignore
+  }
+  workspaceAddMenuEl = null;
+}
+
+function workspaceAddCandidates() {
+  return Array.from(panelRegistry.keys())
+    .filter((id) => Boolean(getPanelElement(id)))
+    .filter((id) => !id.startsWith("chat:post:"))
+    .filter((id) => id !== "profile")
+    .filter((id) => !(id === "moderation" && !canModerate))
+    .map((id) => ({
+      id,
+      title: panelTitle(id),
+      icon: panelIcon(id),
+      docked: isDocked(id),
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+function restorePanelToWorkspaceSlot(panelId, slotId) {
+  const id = String(panelId || "").trim();
+  const slot = String(slotId || "").trim();
+  if (!id || !slot) return;
+  const target = slot === "workspaceRightSlot" ? ensureWorkspaceRightRack() : ensureWorkspaceLeftRack();
+  if (!(target instanceof HTMLElement)) return;
+  const panelEl = getPanelElement(id);
+  if (!(panelEl instanceof HTMLElement)) return;
+  if (isDocked(id)) undockPanel(id);
+  const existing = target.querySelector?.(":scope > .rackPanel:not(.hidden)");
+  if (existing instanceof HTMLElement && existing !== panelEl) {
+    const existingId = String(existing.dataset.panelId || "").trim();
+    if (existingId) dockPanel(existingId);
+  }
+  target.appendChild(panelEl);
+  rememberPanelLastRack(id, target.id);
+  saveRackLayoutState();
+  applyDockState();
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+}
+
+function openWorkspaceAddMenu(anchorEl, slotId) {
+  closeWorkspaceAddMenu();
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const slot = String(slotId || "").trim();
+  if (!slot) return;
+  const items = workspaceAddCandidates()
+    .map(
+      (p) => `<button type="button" class="ghost smallBtn" data-workspaceaddpanel="${escapeHtml(p.id)}" data-workspaceaddslot="${escapeHtml(slot)}">
+        ${escapeHtml(p.icon)} ${escapeHtml(p.title)}${p.docked ? " (docked)" : ""}
+      </button>`
+    )
+    .join("");
+  const menu = document.createElement("div");
+  menu.className = "hotbarAddMenu";
+  menu.innerHTML = `<div class="hotbarAddMenuList">${items || `<div class="small muted" style="padding:6px 8px;">No panels available.</div>`}</div>`;
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = `${Math.max(12, Math.min(window.innerWidth - 272, rect.left - 10))}px`;
+  menu.style.top = `${Math.max(12, rect.bottom + 8)}px`;
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest?.("[data-workspaceaddpanel][data-workspaceaddslot]");
+    if (!btn) return;
+    const id = String(btn.getAttribute("data-workspaceaddpanel") || "").trim();
+    const slotIdNext = String(btn.getAttribute("data-workspaceaddslot") || "").trim();
+    if (!id || !slotIdNext) return;
+    restorePanelToWorkspaceSlot(id, slotIdNext);
+    closeWorkspaceAddMenu();
+  });
+  document.body.appendChild(menu);
+  workspaceAddMenuEl = menu;
 }
 
 function openHotbarPlusMenu(anchorEl) {
@@ -1508,6 +1608,31 @@ function applyDockState() {
 
   renderHotbar();
   updateSideRackEmptyState();
+  updateSkinnyChatPanels();
+  renderWorkspaceSlotAffordances();
+}
+
+function renderWorkspaceSlotAffordances() {
+  if (!rackLayoutEnabled) return;
+  const left = ensureWorkspaceLeftRack();
+  const right = ensureWorkspaceRightRack();
+  for (const slot of [left, right]) {
+    if (!(slot instanceof HTMLElement)) continue;
+    const hasVisible = Boolean(slot.querySelector?.(":scope > .rackPanel:not(.hidden)"));
+    slot.classList.toggle("workspaceSlotEmpty", !hasVisible);
+    const existing = slot.querySelector?.(":scope > .workspaceEmptyAdd");
+    if (hasVisible) {
+      if (existing) existing.remove();
+      continue;
+    }
+    if (existing) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "workspaceEmptyAdd ghost";
+    btn.setAttribute("data-workspaceadd", slot.id || "");
+    btn.innerHTML = `<span class="workspaceEmptyAddPlus">+</span><span>Add panel</span>`;
+    slot.appendChild(btn);
+  }
 }
 
 function readRackOrder(rackEl) {
@@ -1687,6 +1812,8 @@ function enforceWorkspaceRules() {
     el.dataset.panelDisplay = "collapsed";
   }
 
+  updateSkinnyChatPanels();
+  renderWorkspaceSlotAffordances();
   syncRackStateFromDom();
 }
 
@@ -1699,6 +1826,14 @@ function installWorkspaceInteractions() {
   appRoot.addEventListener("click", (e) => {
     if (!rackLayoutEnabled) return;
     const target = e.target;
+    const addBtn = target?.closest?.("[data-workspaceadd]");
+    if (addBtn instanceof HTMLElement) {
+      const slotId = String(addBtn.getAttribute("data-workspaceadd") || "").trim();
+      if (!slotId) return;
+      if (workspaceAddMenuEl) closeWorkspaceAddMenu();
+      else openWorkspaceAddMenu(addBtn, slotId);
+      return;
+    }
     const interactive = target?.closest?.("button,a,input,select,textarea,label");
     if (interactive) return;
     const panel = target?.closest?.(".rackPanel");
@@ -2214,8 +2349,7 @@ function ensureChatPostPanelInstance(postId, opts) {
     });
 
     editorEl.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      if (!(e.ctrlKey || e.metaKey)) return;
+      if (!shouldSubmitChatOnEnter(e)) return;
       e.preventDefault();
       formEl.requestSubmit();
     });
@@ -2825,15 +2959,18 @@ function initRackLayout() {
   if (appRoot && appRoot.dataset.hotbarPlusClose !== "1") {
     appRoot.dataset.hotbarPlusClose = "1";
     document.addEventListener("pointerdown", (e) => {
-      if (!hotbarPlusMenuEl && !pluginRackAddMenuEl) return;
+      if (!hotbarPlusMenuEl && !pluginRackAddMenuEl && !workspaceAddMenuEl) return;
       const t = e.target;
       if (t) {
         if (hotbarPlusMenuEl && hotbarPlusMenuEl.contains(t)) return;
         if (pluginRackAddMenuEl && pluginRackAddMenuEl.contains(t)) return;
+        if (workspaceAddMenuEl && workspaceAddMenuEl.contains(t)) return;
         if (dockHotbarEl && dockHotbarEl.contains(t)) return;
+        if (t.closest?.("[data-workspaceadd]")) return;
       }
       closeHotbarPlusMenu();
       closePluginRackAddMenu();
+      closeWorkspaceAddMenu();
     });
   }
 
@@ -3089,6 +3226,7 @@ function writeStayConnectedPref(on) {
   writeBoolPref(STAY_CONNECTED_KEY, Boolean(on));
 }
 const ENABLE_HINTS_KEY = "bzl_enableHints";
+const CHAT_ENTER_MODE_KEY = "bzl_chatEnterMode"; // "ctrlEnter" | "enter"
 function readHintsEnabledPref() {
   const raw = localStorage.getItem(ENABLE_HINTS_KEY);
   if (raw == null) return true;
@@ -3098,6 +3236,16 @@ function writeHintsEnabledPref(on) {
   const enabled = Boolean(on);
   localStorage.setItem(ENABLE_HINTS_KEY, enabled ? "1" : "0");
   appRoot?.classList.toggle("hintsEnabled", enabled);
+}
+
+function readChatEnterModePref() {
+  const raw = readStringPref(CHAT_ENTER_MODE_KEY, "ctrlEnter");
+  return raw === "enter" ? "enter" : "ctrlEnter";
+}
+
+function writeChatEnterModePref(mode) {
+  const next = String(mode || "").trim().toLowerCase();
+  writeStringPref(CHAT_ENTER_MODE_KEY, next === "enter" ? "enter" : "ctrlEnter");
 }
 
 let instanceBranding = { title: "Bzl", subtitle: "Ephemeral hives + chat", allowMemberPermanentPosts: false, appearance: {} };
@@ -3482,6 +3630,31 @@ function dmActivityAt(thread) {
   return Math.max(Number(thread.lastMessageAt || 0), Number(thread.updatedAt || 0), Number(thread.createdAt || 0));
 }
 
+function shortTimeAgo(ts) {
+  const t = Number(ts || 0);
+  if (!Number.isFinite(t) || t <= 0) return "";
+  const deltaMs = Math.max(0, Date.now() - t);
+  const mins = Math.floor(deltaMs / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+function postChatActivityAt(postId, post) {
+  const id = String(postId || "").trim();
+  const list = id ? chatByPost.get(id) : null;
+  const lastChatAt =
+    Array.isArray(list) && list.length
+      ? Math.max(
+          ...list.map((m) => Math.max(Number(m?.createdAt || 0), Number(m?.editedAt || 0), Number(m?.deletedAt || 0)))
+        )
+      : 0;
+  return Math.max(lastChatAt, Number(post?.createdAt || 0), Number(post?.updatedAt || 0));
+}
+
 function pushRecentUnique(list, id, limit = CHAT_RECENTS_LIMIT) {
   const value = String(id || "").trim();
   if (!value) return list;
@@ -3508,8 +3681,35 @@ function activeDmThreadsSorted() {
     .sort((a, b) => dmActivityAt(b) - dmActivityAt(a));
 }
 
+function blurFocusedChatComposer() {
+  const activeEl = document.activeElement;
+  if (!(activeEl instanceof HTMLElement)) return;
+  if (activeEl === chatEditor || activeEl.closest?.(".chatEditor")) activeEl.blur();
+}
+
+function openChatContextValue(rawValue, opts = null) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return false;
+  const options = opts && typeof opts === "object" ? opts : {};
+  const preserveFocus = Boolean(options.preserveFocus);
+  if (raw.startsWith("dm:")) {
+    const id = raw.slice(3);
+    if (!id) return false;
+    openDmThread(id, { preserveFocus });
+    return true;
+  }
+  if (raw.startsWith("post:")) {
+    const id = raw.slice(5);
+    if (!id) return false;
+    openChat(id, { preserveFocus });
+    return true;
+  }
+  return false;
+}
+
 function renderChatContextSelect() {
   if (!(chatContextSelectEl instanceof HTMLSelectElement)) return;
+  const prevValue = String(chatContextSelectEl.value || "").trim();
   const dmThreadsActive = activeDmThreadsSorted();
   const dmById = new Map(dmThreadsActive.map((t) => [t.id, t]));
   recentDmChatThreadIds = recentDmChatThreadIds.filter((id) => dmById.has(id));
@@ -3526,7 +3726,8 @@ function renderChatContextSelect() {
     const p = postsById.get(String(id));
     return Boolean(p && !p.deleted);
   });
-  const postRecent = [activeChatPostId, ...openPanelPostIds, ...recentHiveChatIds]
+  const knownChatPostIds = Array.from(chatByPost.keys()).map((id) => String(id || "").trim()).filter(Boolean);
+  const postRecent = [activeChatPostId, ...openPanelPostIds, ...recentHiveChatIds, ...knownChatPostIds]
     .map((id) => postsById.get(String(id || "")))
     .filter((p) => p && !p.deleted)
     .filter((p, i, arr) => arr.findIndex((x) => String(x.id) === String(p.id)) === i);
@@ -3540,30 +3741,48 @@ function renderChatContextSelect() {
 
   const activeDmValue = activeDmThreadId ? `dm:${activeDmThreadId}` : "";
   const activePostValue = activeChatPostId ? `post:${activeChatPostId}` : "";
-  const selected = activeDmValue || activePostValue || "";
-
-  const dmOptions = dmRecent
-    .map((t) => {
-      const other = `@${escapeHtml(t.other || "unknown")}`;
-      return `<option value="dm:${escapeHtml(t.id)}">${other}</option>`;
-    })
-    .join("");
-
-  const postOptions = postRecent
-    .map((p) => {
-      const label = `${escapeHtml(postTitle(p))}${p.author ? ` - @${escapeHtml(String(p.author || ""))}` : ""}`;
-      return `<option value="post:${escapeHtml(String(p.id))}">${label}</option>`;
-    })
-    .join("");
-
-  const topPlaceholder = `<option value="">Open chats...</option>`;
-  const dmGroup = dmOptions ? `<optgroup label="DMs">${dmOptions}</optgroup>` : "";
-  const postGroup = postOptions ? `<optgroup label="Hive Chats">${postOptions}</optgroup>` : "";
+  const selected = activeDmValue || activePostValue || prevValue;
 
   syncingChatContextSelect = true;
   chatContextSelectEl.classList.remove("hidden");
-  chatContextSelectEl.innerHTML = `${topPlaceholder}${dmGroup}${postGroup}`;
-  chatContextSelectEl.value = selected && chatContextSelectEl.querySelector(`option[value="${cssEscape(selected)}"]`) ? selected : "";
+  chatContextSelectEl.replaceChildren();
+  const topPlaceholder = document.createElement("option");
+  topPlaceholder.value = "";
+  topPlaceholder.textContent = "Open chats...";
+  chatContextSelectEl.appendChild(topPlaceholder);
+
+  if (dmRecent.length) {
+    const dmGroup = document.createElement("optgroup");
+    dmGroup.label = "DMs";
+    for (const thread of dmRecent) {
+      const opt = document.createElement("option");
+      opt.value = `dm:${String(thread.id || "").trim()}`;
+      const when = shortTimeAgo(dmActivityAt(thread));
+      opt.textContent = `@${String(thread.other || "unknown")}${when ? ` • ${when}` : ""}`;
+      dmGroup.appendChild(opt);
+    }
+    chatContextSelectEl.appendChild(dmGroup);
+  }
+
+  if (postRecent.length) {
+    const postGroup = document.createElement("optgroup");
+    postGroup.label = "Hive Chats";
+    for (const post of postRecent) {
+      const postId = String(post.id || "").trim();
+      if (!postId) continue;
+      const opt = document.createElement("option");
+      opt.value = `post:${postId}`;
+      const unread = Number(unreadByPostId.get(postId) || 0);
+      const unreadLabel = unread > 0 ? ` (${unread})` : "";
+      const when = shortTimeAgo(postChatActivityAt(postId, post));
+      opt.textContent = `${postTitle(post)}${unreadLabel}${when ? ` • ${when}` : ""}${post.author ? ` - @${String(post.author || "")}` : ""}`;
+      postGroup.appendChild(opt);
+    }
+    chatContextSelectEl.appendChild(postGroup);
+  }
+
+  chatContextSelectEl.value =
+    selected && chatContextSelectEl.querySelector(`option[value="${cssEscape(selected)}"]`) ? selected : "";
   syncingChatContextSelect = false;
 }
 
@@ -3619,6 +3838,11 @@ function setMediaModalOpen(open) {
     if (mediaModalStatus) mediaModalStatus.textContent = "";
     if (mediaModalTitle) mediaModalTitle.textContent = "Media";
   }
+}
+
+function setShortcutHelpOpen(open) {
+  if (!shortcutHelpModal) return;
+  shortcutHelpModal.classList.toggle("hidden", !open);
 }
 
 function openMediaModal(url) {
@@ -4244,6 +4468,9 @@ function renderProfileCard() {
   const dmBtn = canDm
     ? `<button type="button" class="primary smallBtn" data-dmrequest="${escapeHtml(p.username)}" ${blocked ? "disabled" : ""}>DM</button>`
     : "";
+  const modDmBtn = canModerate && canDm
+    ? `<button type="button" class="ghost smallBtn" data-moddm="${escapeHtml(p.username)}">Mod DM</button>`
+    : "";
   const member = peopleMembers.find((m) => String(m.username || "").toLowerCase() === usernameLower) || null;
   const role = roleLabel(member?.role);
   const isStaff = role === "owner" || role === "moderator";
@@ -4275,7 +4502,7 @@ function renderProfileCard() {
       <div class="profileHandle" ${p.color ? `style="color:${escapeHtml(safeTextColorFromHex(p.color))}"` : ""}>@${escapeHtml(p.username)}</div>
       ${pronouns}
     </div>
-    ${dmBtn || ignoreBtn || blockBtn ? `<div class="profileActions">${dmBtn}${ignoreBtn}${blockBtn}</div>` : ""}
+    ${dmBtn || modDmBtn || ignoreBtn || blockBtn ? `<div class="profileActions">${dmBtn}${modDmBtn}${ignoreBtn}${blockBtn}</div>` : ""}
   </div>
   ${blockNote}
   <div class="profileSection">
@@ -6077,6 +6304,21 @@ function renderFeed() {
       const contentText = typeof p.content === "string" && p.content.trim() ? escapeHtml(p.content) : "";
       const content = contentHtml ? contentHtml : contentText ? `<div class="muted">${contentText}</div>` : "";
       const contentBlock = content ? `<div class="postContent">${content}</div>` : "";
+      const lastChat = (chatByPost.get(p.id) || []).filter((m) => !m?.deleted).slice(-1)[0] || null;
+      const lastChatFrom = lastChat ? String(lastChat.fromUser || "").trim() : "";
+      const lastChatText = lastChat ? String(lastChat.text || "").replace(/\s+/g, " ").trim().slice(0, 92) : "";
+      const lastChatWho = lastChat
+        ? (lastChatFrom && lastChatFrom.toLowerCase() === "mod" ? "MOD" : `@${escapeHtml(lastChatFrom || "unknown")}`)
+        : "";
+      const lastChatLine = lastChat
+        ? `<div class="small muted postLastChat">Last chat: ${lastChatWho}${lastChatText ? ` — ${escapeHtml(lastChatText)}` : ""}</div>`
+        : "";
+      const typersSet = typingUsersByPostId.get(p.id);
+      const typingUsers = typersSet ? Array.from(typersSet.values()).slice(0, 2) : [];
+      const typingMore = typersSet && typersSet.size > typingUsers.length ? ` +${typersSet.size - typingUsers.length}` : "";
+      const typingLine = typingUsers.length
+        ? `<div class="small muted postTypingLine">${typingUsers.map((u) => `@${escapeHtml(u)}`).join(", ")}${typingMore} typing...</div>`
+        : "";
 
       return `
       <article class="post${unreadClass}${newClass}${buzzClass}" data-id="${p.id}" ${cardTint}>
@@ -6102,6 +6344,8 @@ function renderFeed() {
         ${deletedLine}
         ${editedLine}
         ${contentBlock}
+        ${typingLine}
+        ${lastChatLine}
         <div class="postMeta">${collectionTag}${tags ? ` ${tags}` : ""}</div>
         ${reactionsHtml}
       </article>`;
@@ -6506,6 +6750,9 @@ function renderPeoplePanel() {
                   ? `<button type="button" class="primary smallBtn" data-dmopen="${escapeHtml(t.id)}" disabled>Open</button>`
                   : `<span class="muted small">Blocked</span>`;
             }
+            if (canModerate && other) {
+              actions += ` <button type="button" class="ghost smallBtn" data-moddm="${escapeHtml(other)}">Mod DM</button>`;
+            }
 
             return `<div class="dmThreadCard">
               <div class="dmThreadTop">
@@ -6549,6 +6796,7 @@ function renderPeoplePanel() {
       const statusText = `${status}${m.online ? "" : ""}`;
       const cardStyle = peopleOnlineCardStyle(m);
       const canDm = Boolean(loggedInUser && username && String(username).toLowerCase() !== String(loggedInUser).toLowerCase());
+      const canModDm = Boolean(canModerate && username && String(username).toLowerCase() !== String(loggedInUser || "").toLowerCase());
       return `<div class="peopleCard" data-viewprofile="${escapeHtml(username)}" ${cardStyle}>
         <div class="peopleCardTop">
           <div>${renderUserPill(username)} <span class="modStatus">${escapeHtml(role)}</span></div>
@@ -6557,6 +6805,7 @@ function renderPeoplePanel() {
         <div class="peopleCardActions">
           <button type="button" class="ghost smallBtn" data-viewprofile="${escapeHtml(username)}">Profile</button>
           <button type="button" class="ghost smallBtn" data-dmrequest="${escapeHtml(username)}" ${canDm ? "" : "disabled"}>DM</button>
+          ${canModDm ? `<button type="button" class="ghost smallBtn" data-moddm="${escapeHtml(username)}">Mod DM</button>` : ""}
         </div>
       </div>`;
     })
@@ -7518,7 +7767,12 @@ function renderChatPanel(forceScroll = false) {
     if (chatPanelEl) chatPanelEl.classList.remove("walkie");
     if (walkieBarEl) walkieBarEl.classList.add("hidden");
     if (chatForm) chatForm.classList.remove("hidden");
-    chatMessagesEl.innerHTML = `<div class="small muted">No chat selected.</div><div class="uiHint">Open a hive and press <b>Chat</b>, or use People -> DMs to open a private thread.</div>`;
+    chatMessagesEl.innerHTML = `<div class="small muted">No chat selected.</div>
+      <div class="uiHint">Open a hive and press <b>Chat</b>, or use People -> DMs to open a private thread.</div>
+      <div class="row" style="gap:8px;justify-content:flex-start;margin-top:8px;">
+        <button type="button" class="ghost smallBtn" data-chatemptyopen="hives">Open Hives</button>
+        <button type="button" class="ghost smallBtn" data-chatemptyopen="people">Open People</button>
+      </div>`;
     restoreMediaState(chatMessagesEl, mediaState);
     setReplyToMessage(null);
     return;
@@ -7835,9 +8089,11 @@ function updateActiveChatMeta() {
   chatMeta.textContent = `${author} | ${exp === "permanent" ? "permanent" : `expires in ${exp}`} | ${tags}`.trim();
 }
 
-function openDmThread(threadId) {
+function openDmThread(threadId, opts = null) {
   const id = String(threadId || "").trim();
   if (!id) return;
+  const options = opts && typeof opts === "object" ? opts : {};
+  if (!options.preserveFocus) blurFocusedChatComposer();
   const thread = dmThreadsById.get(id) || null;
   if (!thread) {
     pendingOpenDmThreadId = id;
@@ -7865,10 +8121,35 @@ function openDmThread(threadId) {
   }
 }
 
+function sendModDmPrompt(rawUsername) {
+  const to = String(rawUsername || "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+  if (!to) return;
+  if (!loggedInUser) {
+    toast("Sign in required", "Sign in to send moderator DMs.");
+    return;
+  }
+  if (!canModerate) {
+    toast("Moderator only", "You need moderator permissions.");
+    return;
+  }
+  if (to === String(loggedInUser).toLowerCase()) {
+    toast("Unavailable", "Can't send a moderator DM to yourself.");
+    return;
+  }
+  const text = String(prompt(`Send moderator DM to @${to}:`) || "").trim();
+  if (!text) return;
+  ws.send(JSON.stringify({ type: "dmSendMod", to, text }));
+  toast("Moderator DM", `Sent to @${to}.`);
+}
+
 function openChat(postId, opts = null) {
   activeDmThreadId = null;
   stopWalkieRecording();
   const options = opts && typeof opts === "object" ? opts : {};
+  if (!options.preserveFocus) blurFocusedChatComposer();
   const sourceEl = options.sourceEl instanceof HTMLElement ? options.sourceEl : null;
   const post = posts.get(postId);
   if (!post) return;
@@ -8211,6 +8492,13 @@ function isTextEntryFocused() {
   return Boolean(el.isContentEditable);
 }
 
+function shouldSubmitChatOnEnter(evt) {
+  if (!evt || evt.key !== "Enter") return false;
+  const mode = readChatEnterModePref();
+  if (mode === "enter") return !(evt.shiftKey || evt.altKey || evt.ctrlKey || evt.metaKey);
+  return Boolean(evt.ctrlKey || evt.metaKey);
+}
+
 function cycleLayoutPresetBy(step) {
   if (!layoutPresetEl || !rackLayoutEnabled || layoutPresetEl.disabled) return;
   const options = Array.from(layoutPresetEl.options || [])
@@ -8297,12 +8585,10 @@ function cycleChatContextBy(step) {
     return true;
   }
   if (next.startsWith("dm:")) {
-    openDmThread(next.slice(3));
-    return true;
+    return openChatContextValue(next, { preserveFocus: false });
   }
   if (next.startsWith("post:")) {
-    openChat(next.slice(5));
-    return true;
+    return openChatContextValue(next, { preserveFocus: false });
   }
   return false;
 }
@@ -9156,6 +9442,11 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
   if (e.repeat) return;
+  if (e.key === "?" && !isTextEntryFocused()) {
+    e.preventDefault();
+    setShortcutHelpOpen(true);
+    return;
+  }
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   if (isTextEntryFocused()) return;
   const ctx = activePanelContextForHotkeys();
@@ -9201,6 +9492,26 @@ window.addEventListener("click", (e) => {
 });
 
 chatMessagesEl.addEventListener("click", (e) => {
+  const emptyActionBtn = e.target.closest("button[data-chatemptyopen]");
+  if (emptyActionBtn) {
+    const target = String(emptyActionBtn.getAttribute("data-chatemptyopen") || "").trim().toLowerCase();
+    if (target === "hives") {
+      if (isMobileSwipeMode()) {
+        setMobilePanel("hives");
+      } else {
+        const hivesHeader = hivesPanelEl?.querySelector?.(".panelHeader");
+        hivesHeader?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+      }
+      return;
+    }
+    if (target === "people") {
+      const peopleEl = getPanelElement("people") || peopleDrawerEl;
+      if (peopleEl && typeof undockPanel === "function" && isDocked("people")) undockPanel("people");
+      peopleEl?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+      return;
+    }
+  }
+
   const mobileChatOpenBtn = e.target.closest("button[data-mobilechatopen]");
   if (mobileChatOpenBtn) {
     const postId = mobileChatOpenBtn.getAttribute("data-mobilechatopen") || "";
@@ -9333,15 +9644,7 @@ chatContextSelectEl?.addEventListener("change", () => {
   if (syncingChatContextSelect) return;
   const raw = String(chatContextSelectEl.value || "").trim();
   if (!raw) return;
-  if (raw.startsWith("dm:")) {
-    const id = raw.slice(3);
-    if (id) openDmThread(id);
-    return;
-  }
-  if (raw.startsWith("post:")) {
-    const id = raw.slice(5);
-    if (id) openChat(id);
-  }
+  openChatContextValue(raw, { preserveFocus: false });
 });
 
 modPanelEl?.addEventListener("click", (e) => {
@@ -10088,7 +10391,7 @@ chatEditor.addEventListener("keydown", (e) => {
     }
   }
   if (e.key !== "Enter") return;
-  if (!(e.ctrlKey || e.metaKey)) return;
+  if (!shouldSubmitChatOnEnter(e)) return;
   e.preventDefault();
   submitChat();
 });
@@ -11130,6 +11433,20 @@ if (enableHintsEl) {
     writeHintsEnabledPref(Boolean(enableHintsEl.checked));
   });
 }
+if (chatEnterModeEl) {
+  chatEnterModeEl.value = readChatEnterModePref();
+  chatEnterModeEl.addEventListener("change", () => {
+    writeChatEnterModePref(chatEnterModeEl.value);
+  });
+}
+if (resetCurrentLayoutBtn) {
+  resetCurrentLayoutBtn.addEventListener("click", () => {
+    if (!rackLayoutEnabled) return;
+    const currentPreset = String(rackLayoutState?.presetId || layoutPresetEl?.value || "defaultSocial");
+    applyPreset(currentPreset);
+    toast("Layout", "Current preset layout reset.");
+  });
+}
 renderPeoplePanel();
 setPeopleOpen(getPeopleOpen());
 composerOpen = getComposerOpen();
@@ -11218,8 +11535,18 @@ mediaModalCopyLink?.addEventListener("click", async () => {
     if (mediaModalStatus) mediaModalStatus.textContent = "Copy failed (clipboard blocked).";
   }
 });
+shortcutHelpModal?.addEventListener("click", (e) => {
+  if (e.target?.getAttribute?.("data-shortcutclose")) setShortcutHelpOpen(false);
+});
+shortcutHelpCloseBtn?.addEventListener("click", () => setShortcutHelpOpen(false));
+openShortcutHelpBtn?.addEventListener("click", () => setShortcutHelpOpen(true));
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && mediaModal && !mediaModal.classList.contains("hidden")) setMediaModalOpen(false);
+  if (e.key !== "Escape") return;
+  if (mediaModal && !mediaModal.classList.contains("hidden")) {
+    setMediaModalOpen(false);
+    return;
+  }
+  if (shortcutHelpModal && !shortcutHelpModal.classList.contains("hidden")) setShortcutHelpOpen(false);
 });
 document.body.addEventListener("click", (e) => {
   const img = e.target?.closest?.("img");
@@ -11253,6 +11580,11 @@ peopleDmsTabBtn?.addEventListener("click", () => {
 });
 peopleSearchEl?.addEventListener("input", () => renderPeoplePanel());
 peopleListEl?.addEventListener("click", (e) => {
+  const modDmBtn = e.target.closest("button[data-moddm]");
+  if (modDmBtn) {
+    sendModDmPrompt(modDmBtn.getAttribute("data-moddm") || "");
+    return;
+  }
   const dmBtn = e.target.closest("button[data-dmrequest]");
   if (dmBtn) {
     const to = String(dmBtn.getAttribute("data-dmrequest") || "")
@@ -11277,6 +11609,11 @@ peopleListEl?.addEventListener("click", (e) => {
 });
 
 peopleDmsViewEl?.addEventListener("click", (e) => {
+  const modDmBtn = e.target.closest("button[data-moddm]");
+  if (modDmBtn) {
+    sendModDmPrompt(modDmBtn.getAttribute("data-moddm") || "");
+    return;
+  }
   const profileLink = e.target.closest("[data-viewprofile]");
   if (profileLink) {
     const username = profileLink.getAttribute("data-viewprofile") || "";
@@ -11374,6 +11711,11 @@ onboardingPanelBodyEl?.addEventListener("click", (e) => {
 });
 
 profileCard?.addEventListener("click", (e) => {
+  const modDmBtn = e.target.closest("button[data-moddm]");
+  if (modDmBtn) {
+    sendModDmPrompt(modDmBtn.getAttribute("data-moddm") || "");
+    return;
+  }
   const dmBtn = e.target.closest("button[data-dmrequest]");
   if (!dmBtn) return;
   const to = String(dmBtn.getAttribute("data-dmrequest") || "")

@@ -773,6 +773,35 @@ body {
   overflow: hidden;
 }
 
+.workspaceSlot.workspaceSlotEmpty {
+  border: 1px dashed color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  align-items: center;
+  justify-content: center;
+}
+
+.workspaceEmptyAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 10px 14px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.workspaceEmptyAddPlus {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  font-weight: 900;
+}
+
 .workspaceSlot > .rackPanel {
   flex: 1;
   min-height: 0;
@@ -1084,6 +1113,12 @@ body {
 
 .modalActions {
   justify-content: flex-end;
+}
+
+.shortcutHelpBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .editMetaGrid {
@@ -2207,6 +2242,11 @@ button:disabled {
   margin-top: 10px;
 }
 
+.postLastChat,
+.postTypingLine {
+  margin-top: 6px;
+}
+
 .reactionsRow {
   display: flex;
   gap: 6px;
@@ -2777,8 +2817,89 @@ button:disabled {
   border-top: 1px solid var(--line);
 }
 
+.app.hotbarVisible .chatForm {
+  padding-bottom: 76px;
+}
+
 .chatForm > .primary[type="submit"] {
   align-self: flex-end;
+}
+
+.chat.isSkinnyChat .chatMessages {
+  padding: 8px;
+}
+
+.chat.isSkinnyChat .chatMsg {
+  width: auto;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.chat.isSkinnyChat .chatMsg.railLeft,
+.chat.isSkinnyChat .chatMsg.railCenter,
+.chat.isSkinnyChat .chatMsg.railRight {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: 100%;
+}
+
+.chat.isSkinnyChat .chatMsg .meta {
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.chat.isSkinnyChat .chatMsg .content {
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat.isSkinnyChat .chatMsg .content img,
+.chat.isSkinnyChat .chatMsg .content audio,
+.chat.isSkinnyChat .chatMsg .content video,
+.chat.isSkinnyChat .chatReplyRef,
+.chat.isSkinnyChat .chatReactions {
+  display: none !important;
+}
+
+.chat.isSkinnyChat .chatActionsRow {
+  margin-top: 4px;
+  gap: 6px;
+}
+
+.chat.isSkinnyChat .chatTools {
+  margin-top: 0;
+  gap: 4px;
+  justify-content: flex-start;
+}
+
+.chat.isSkinnyChat .chatTools .smallBtn {
+  padding: 3px 8px;
+}
+
+.chat.isSkinnyChat .toolbar {
+  padding: 6px;
+  gap: 4px;
+}
+
+.chat.isSkinnyChat .toolbar .sep,
+.chat.isSkinnyChat .toolbar button[data-chatcmd],
+.chat.isSkinnyChat .toolbar button[data-chatemoji] {
+  display: none;
+}
+
+.chat.isSkinnyChat .chatEditor {
+  min-height: 64px;
+}
+
+.chat.isSkinnyChat .chatForm {
+  gap: 8px;
+  padding: 8px;
 }
 
 .chatReplyBanner {
