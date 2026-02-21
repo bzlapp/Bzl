@@ -10,10 +10,15 @@ List discovered Bzl instances:
 npm run instances:scan -- --roots=/ --max-depth=4
 ```
 
-By default, detection looks for folders containing:
-- `package.json` with `"name": "bzl"`
-- `server.js`
-- one compose file (`compose.yaml`, `compose.yml`, or `docker-compose.yml`)
+By default, detection combines:
+- filesystem scan for compose projects with Bzl-like signals (`bzl` in path/name or Bzl source markers)
+- Docker label scan (`com.docker.compose.project.working_dir`) so running instances are found even if the folder is compose-only
+
+Supported compose filenames include:
+- `compose.yaml`
+- `compose.yml`
+- `docker-compose.yml`
+- `docker-compose.yaml`
 
 ## 2) Update all discovered instances
 

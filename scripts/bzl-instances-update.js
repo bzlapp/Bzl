@@ -2,8 +2,34 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const BZL_COMPOSE_FILES = ["compose.yaml", "compose.yml", "docker-compose.yml"];
+const BZL_COMPOSE_FILES = ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"];
 const DEFAULT_MAX_DEPTH = 4;
+const SKIP_DIR_NAMES = new Set([
+  ".git",
+  "node_modules",
+  "data",
+  "dist",
+  "clean_install",
+  "multi_instance",
+  "tmp",
+  "temp",
+  "proc",
+  "sys",
+  "dev",
+  "run",
+  "usr",
+  "lib",
+  "lib64",
+  "bin",
+  "sbin",
+  "etc",
+  "boot",
+  "mnt",
+  "media",
+  "snap",
+  "lost+found",
+  "__pycache__"
+]);
 
 function log(msg) {
   console.log(`[instances] ${msg}`);
@@ -59,62 +85,121 @@ function splitList(raw, fallback) {
 function shouldSkipDir(name) {
   const n = String(name || "").trim().toLowerCase();
   if (!n) return true;
-  return new Set([
-    ".git",
-    "node_modules",
-    "data",
-    "dist",
-    "clean_install",
-    "multi_instance",
-    "tmp",
-    "temp",
-    "proc",
-    "sys",
-    "dev",
-    "run",
-    "usr",
-    "lib",
-    "lib64",
-    "bin",
-    "sbin",
-    "etc",
-    "boot",
-    "mnt",
-    "media",
-    "snap",
-    "lost+found",
-    "__pycache__"
-  ]).has(n);
+  return SKIP_DIR_NAMES.has(n);
 }
 
-function readPackageName(dir) {
+function isExistingFile(filePath) {
+  try {
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isExistingDir(dirPath) {
+  try {
+    return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function readPackageJson(dir) {
   try {
     const pkgPath = path.join(dir, "package.json");
-    const raw = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-    return String(raw?.name || "").trim().toLowerCase();
+    return JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   } catch {
-    return "";
+    return null;
   }
+}
+
+function looksLikeBzlProject(pkg) {
+  const p = pkg && typeof pkg === "object" ? pkg : null;
+  if (!p) return false;
+  const name = String(p?.name || "").trim().toLowerCase();
+  if (name.includes("bzl")) return true;
+  const scripts = p?.scripts && typeof p.scripts === "object" ? p.scripts : {};
+  const startScript = String(scripts.start || "").trim().toLowerCase();
+  if (startScript.includes("server.js")) return true;
+  if (Object.prototype.hasOwnProperty.call(scripts, "create-user")) return true;
+  const deps = p?.dependencies && typeof p.dependencies === "object" ? p.dependencies : {};
+  if (Object.prototype.hasOwnProperty.call(deps, "ws") && Object.prototype.hasOwnProperty.call(deps, "sanitize-html")) {
+    return true;
+  }
+  return false;
+}
+
+function looksLikeBzlText(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return text.includes("bzl");
+}
+
+function sourcePriority(source) {
+  const s = String(source || "").trim().toLowerCase();
+  if (s === "docker-label") return 2;
+  return 1;
+}
+
+function normalizeDockerValue(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "<no value>" || text === "<nil>") return "";
+  return text;
+}
+
+function composeCandidatesFromLabel(workingDir, rawConfigFiles) {
+  const cfg = String(rawConfigFiles || "").trim();
+  if (!cfg) return [];
+  const candidates = [];
+  const tokens = cfg
+    .split(/[;,]/)
+    .map((x) => normalizeDockerValue(x))
+    .filter(Boolean);
+  for (const token of tokens) {
+    const full = path.isAbsolute(token) ? token : path.resolve(workingDir, token);
+    if (isExistingFile(full) && !candidates.includes(full)) candidates.push(full);
+  }
+  return candidates;
 }
 
 function findComposeFile(dir) {
   for (const name of BZL_COMPOSE_FILES) {
     const full = path.join(dir, name);
-    if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+    if (isExistingFile(full)) return full;
   }
   return "";
 }
 
-function detectBzlInstance(dir) {
+function detectBzlInstance(dir, options = {}) {
   try {
-    const hasServer = fs.existsSync(path.join(dir, "server.js"));
-    const hasPkg = fs.existsSync(path.join(dir, "package.json"));
-    if (!hasServer || !hasPkg) return null;
-    const pkgName = readPackageName(dir);
-    if (pkgName !== "bzl") return null;
-    const composeFile = findComposeFile(dir);
+    const absDir = path.resolve(dir);
+    let composeFile = String(options.preferredComposeFile || "").trim();
+    if (composeFile) composeFile = path.resolve(absDir, composeFile);
+    if (!isExistingFile(composeFile)) composeFile = "";
+    if (!composeFile) composeFile = findComposeFile(absDir);
     if (!composeFile) return null;
-    return { rootDir: dir, composeFile };
+
+    const source = String(options.source || "filesystem").trim() || "filesystem";
+    const allowComposeOnly = options.allowComposeOnly === true;
+    const hints = Array.isArray(options.hints) ? options.hints : [];
+
+    const hasServer = isExistingFile(path.join(absDir, "server.js"));
+    const hasPkg = isExistingFile(path.join(absDir, "package.json"));
+    const pkg = hasPkg ? readPackageJson(absDir) : null;
+
+    const packageHint = hasPkg && looksLikeBzlProject(pkg);
+    const pathHint = looksLikeBzlText(absDir) || looksLikeBzlText(path.basename(absDir));
+    const externalHint = hints.some((hint) => looksLikeBzlText(hint));
+    const hasSource = hasServer && hasPkg;
+    const allowBySource = hasSource && (packageHint || pathHint || externalHint);
+    const allowByComposeOnly = allowComposeOnly && (pathHint || externalHint);
+    if (!allowBySource && !allowByComposeOnly) return null;
+
+    return {
+      rootDir: absDir,
+      composeFile: path.resolve(composeFile),
+      source,
+      hasSource
+    };
   } catch {
     return null;
   }
@@ -130,7 +215,11 @@ function discoverFromRoot(rootDir, maxDepth) {
     if (seen.has(abs)) continue;
     seen.add(abs);
 
-    const instance = detectBzlInstance(abs);
+    const instance = detectBzlInstance(abs, {
+      source: "filesystem",
+      allowComposeOnly: true,
+      hints: [abs]
+    });
     if (instance) {
       found.push(instance);
       continue;
@@ -151,6 +240,62 @@ function discoverFromRoot(rootDir, maxDepth) {
     }
   }
   return found;
+}
+
+function discoverFromDockerLabels() {
+  try {
+    const format = [
+      "{{.Names}}",
+      "{{.Image}}",
+      '{{.Label "com.docker.compose.project"}}',
+      '{{.Label "com.docker.compose.service"}}',
+      '{{.Label "com.docker.compose.project.working_dir"}}',
+      '{{.Label "com.docker.compose.project.config_files"}}'
+    ].join("|");
+    const psRes = spawnSync("docker", ["ps", "-a", "--format", format], {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+      shell: false
+    });
+    if (psRes.error || (psRes.status || 0) !== 0) return [];
+
+    const found = [];
+    const lines = String(psRes.stdout || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+
+    for (const line of lines) {
+      const parts = line.split("|");
+      if (parts.length < 6) continue;
+      const containerName = normalizeDockerValue(parts[0]);
+      const imageName = normalizeDockerValue(parts[1]);
+      const projectName = normalizeDockerValue(parts[2]);
+      const serviceName = normalizeDockerValue(parts[3]);
+      const workingDirRaw = normalizeDockerValue(parts[4]);
+      const configFilesRaw = normalizeDockerValue(parts[5]);
+      if (!workingDirRaw) continue;
+
+      const workingDir = path.resolve(workingDirRaw);
+      if (!isExistingDir(workingDir)) continue;
+
+      const composeCandidates = composeCandidatesFromLabel(workingDir, configFilesRaw);
+      const preferredComposeFile = composeCandidates.length ? composeCandidates[0] : "";
+      const detected = detectBzlInstance(workingDir, {
+        source: "docker-label",
+        allowComposeOnly: true,
+        preferredComposeFile,
+        hints: [containerName, imageName, projectName, serviceName, workingDir]
+      });
+      if (detected) {
+        found.push(detected);
+      }
+    }
+    return found;
+  } catch {
+    return [];
+  }
 }
 
 function run(cmd, args, cwd, { dryRun = false, allowFail = false } = {}) {
@@ -199,7 +344,10 @@ function printDiscovered(instances) {
   }
   log(`Discovered ${instances.length} instance(s):`);
   for (const [i, inst] of instances.entries()) {
-    console.log(`  ${i + 1}. ${displayPath(inst.rootDir)}  (compose: ${path.basename(inst.composeFile)})`);
+    const source = String(inst?.source || "filesystem");
+    console.log(
+      `  ${i + 1}. ${displayPath(inst.rootDir)}  (compose: ${path.basename(inst.composeFile)}, source: ${source})`
+    );
   }
 }
 
@@ -209,6 +357,7 @@ function main() {
   const skipGit = args["skip-git"] === "1";
   const skipBuild = args["skip-build"] === "1";
   const dryRun = args["dry-run"] === "1";
+  const noDockerDiscovery = args["no-docker-discovery"] === "1";
   const remote = String(args.remote || "origin").trim();
   const branch = String(args.branch || "main").trim();
   const maxDepth = Number.isInteger(Number(args["max-depth"])) ? Math.max(1, Number(args["max-depth"])) : DEFAULT_MAX_DEPTH;
@@ -222,11 +371,15 @@ function main() {
 
   const foundRaw = [];
   for (const root of roots) foundRaw.push(...discoverFromRoot(root, maxDepth));
+  if (!noDockerDiscovery) foundRaw.push(...discoverFromDockerLabels());
 
   const byRoot = new Map();
   for (const inst of foundRaw) {
     const key = path.resolve(inst.rootDir);
-    if (!byRoot.has(key)) byRoot.set(key, inst);
+    const existing = byRoot.get(key);
+    if (!existing || sourcePriority(inst.source) > sourcePriority(existing.source)) {
+      byRoot.set(key, inst);
+    }
   }
   const instances = Array.from(byRoot.values()).sort((a, b) => a.rootDir.localeCompare(b.rootDir));
   printDiscovered(instances);
