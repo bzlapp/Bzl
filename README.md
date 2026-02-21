@@ -1,3 +1,15 @@
+Bzl is a self-hostable, modular social platform designed for creators and communities who want full control of their space. Launch your own instance, extend it with plugins, and shape the experience to fit your world.
+
+🔗 Try the live dev instance: https://chat.bzl.one/
+
+🚀 Learn more & quick start: https://bzl.one/
+
+💬 Follow development in real time: https://chat.bzl.one/    REGISTRATION CODE IS "bzl" 
+
+If you're experimenting, building plugins, or just curious how Bzl works in the wild — jump into the official instance and say hi.
+
+
+
 # Bzl (MVP)
 
 Keyword-driven ephemeral posts ("pollination") that auto-expire after a TTL and broadcast live over WebSockets. Each post has a tiny chat room.
