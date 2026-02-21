@@ -2,7 +2,7 @@
 
 This is the **minimal plugin system** used to ship optional features without forking the core app.
 
-Plugins are **trusted code**: the owner installs them, and they can run both client-side and server-side logic.
+Plugins are **trusted code**: moderators/owners install them, and they can run both client-side and server-side logic.
 
 ## Included plugins at a glance
 
@@ -17,9 +17,9 @@ Use this quick reference when packaging releases or deciding what to enable by d
 | `directory-server` | Public directory endpoint + moderation queue for listings (`/api/plugins/directory-server/list`) | **Directory host instance only** | Acts as the central directory service. |
 | `directory-publisher` | Sends this instance announcement payloads to a directory server | Any instance that wants listing | Configure directory URL + instance URL/name, then publish. |
 
-## Install / manage (Owner UI)
+## Install / manage (Moderator/Owner UI)
 
-1. Sign in as the `owner`.
+1. Sign in as `owner` or `moderator`.
 2. Open the **Instance** panel in the left sidebar.
 3. Under **Plugins**:
    - Upload a plugin `.zip` (must contain a `plugin.json` manifest).

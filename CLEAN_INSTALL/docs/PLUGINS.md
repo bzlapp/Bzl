@@ -2,11 +2,11 @@
 
 This is the **minimal plugin system** used to ship optional features without forking the core app.
 
-Plugins are **trusted code**: the owner installs them, and they can run both client-side and server-side logic.
+Plugins are **trusted code**: moderators/owners install them, and they can run both client-side and server-side logic.
 
-## Install / manage (Owner UI)
+## Install / manage (Moderator/Owner UI)
 
-1. Sign in as the `owner`.
+1. Sign in as `owner` or `moderator`.
 2. Open the **Instance** panel in the left sidebar.
 3. Under **Plugins**:
    - Upload a plugin `.zip` (must contain a `plugin.json` manifest).

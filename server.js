@@ -3406,8 +3406,8 @@ async function handlePluginInstall(req, res, url) {
     return true;
   }
   const username = getSessionUserFromRequest(req);
-  if (!username || !hasRole(username, ROLE_OWNER)) {
-    sendJson(res, 403, { error: "Owner access required." });
+  if (!username || !hasRole(username, ROLE_MODERATOR)) {
+    sendJson(res, 403, { error: "Moderator access required." });
     return true;
   }
 
@@ -5608,8 +5608,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginSetEnabled") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_OWNER)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Owner access required." }));
+      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
         return;
       }
       const id = normalizePluginId(msg.id || msg.pluginId || "");
@@ -5633,8 +5633,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginUninstall") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_OWNER)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Owner access required." }));
+      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
         return;
       }
       const id = normalizePluginId(msg.id || msg.pluginId || "");
@@ -5663,8 +5663,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginReload") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_OWNER)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Owner access required." }));
+      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
         return;
       }
       loadPluginsFromDisk();

@@ -5771,8 +5771,12 @@ function isOwnerUser() {
   return Boolean(loggedInUser && loggedInRole === "owner");
 }
 
+function canManagePlugins() {
+  return Boolean(loggedInUser && (loggedInRole === "owner" || loggedInRole === "moderator"));
+}
+
 function renderPluginsAdminHtml() {
-  if (!isOwnerUser()) return `<div class="muted small">Owner only.</div>`;
+  if (!canManagePlugins()) return `<div class="muted small">Moderator/owner only.</div>`;
   const status = pluginAdminStatus ? `<div class="small muted">${escapeHtml(pluginAdminStatus)}</div>` : "";
   const busyLine = pluginAdminBusy ? `<div class="small muted">Working...</div>` : "";
   const listHtml = !plugins.length
@@ -5804,7 +5808,7 @@ function renderPluginsAdminHtml() {
     })
     .join("");
   return `
-    <div class="small muted">Owner-only. Install optional plugins to extend your instance.</div>
+    <div class="small muted">Moderator/owner only. Install optional plugins to extend your instance.</div>
     <div class="pluginInstallRow" style="margin-top:10px">
       <input data-pluginzip="1" type="file" accept=".zip,application/zip" />
       <button data-plugininstall="1" class="ghost" type="button">Install</button>
@@ -9974,7 +9978,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const pluginReloadBtn = e.target.closest("button[data-pluginreload]");
   if (pluginReloadBtn) {
-    if (!isOwnerUser()) return;
+    if (!canManagePlugins()) return;
     pluginAdminBusy = true;
     pluginAdminStatus = "Reloading plugins...";
     renderModPanel();
@@ -9984,7 +9988,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const pluginUninstallBtn = e.target.closest("button[data-pluginuninstall]");
   if (pluginUninstallBtn) {
-    if (!isOwnerUser()) return;
+    if (!canManagePlugins()) return;
     const id = String(pluginUninstallBtn.getAttribute("data-pluginuninstall") || "").trim().toLowerCase();
     if (!id) return;
     const ok = confirm(`Uninstall "${id}"? This deletes the plugin files from this server.`);
@@ -9998,7 +10002,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const pluginInstallBtn = e.target.closest("button[data-plugininstall]");
   if (pluginInstallBtn) {
-    if (!isOwnerUser()) return;
+    if (!canManagePlugins()) return;
     const input = modBodyEl.querySelector("input[type='file'][data-pluginzip]") || null;
     const file = input?.files && input.files[0] ? input.files[0] : null;
     if (!file) {
@@ -10293,7 +10297,7 @@ modBodyEl?.addEventListener("change", (e) => {
 
   const toggle = e.target?.closest?.("input[type='checkbox'][data-pluginenable]");
   if (toggle) {
-    if (!isOwnerUser()) return;
+    if (!canManagePlugins()) return;
     const id = String(toggle.getAttribute("data-pluginenable") || "").trim().toLowerCase();
     if (!id) return;
     const enabled = Boolean(toggle.checked);
@@ -11182,7 +11186,7 @@ function onWsMessage(evt) {
 
   if (msg.type === "permissionDenied") {
     const m = msg.message || "Permission denied.";
-    if (/owner access required/i.test(m)) {
+    if (/(owner|moderator) access required/i.test(m)) {
       pluginAdminStatus = m;
       pluginAdminBusy = false;
       pluginEnableInFlight.clear();
