@@ -1,3 +1,15 @@
+Bzl is a self-hostable, modular social platform designed for creators and communities who want full control of their space. Launch your own instance, extend it with plugins, and shape the experience to fit your world.
+
+🔗 Try the live dev instance: https://chat.bzl.one/
+
+🚀 Learn more & quick start: https://bzl.one/
+
+💬 Follow development in real time: https://chat.bzl.one/    REGISTRATION CODE IS "bzl" 
+
+If you're experimenting, building plugins, or just curious how Bzl works in the wild — jump into the official instance and say hi.
+
+
+
 # Bzl (MVP)
 
 Keyword-driven ephemeral posts ("pollination") that auto-expire after a TTL and broadcast live over WebSockets. Each post has a tiny chat room.
@@ -20,24 +32,38 @@ Media uploads:
 
 - Full feature rundown (video script aid): `docs/FUNCTIONALITY_REFERENCE.md`
 - Plugins (MVP): `docs/PLUGINS.md`
+- UI rack layout (draft): `docs/UI_RACK_LAYOUT.md`
 - Directory plugins (draft): `docs/DIRECTORY_SPEC.md`
 - Moderation spec: `docs/MODERATION_MVP_SPEC.md`
 - Self-hosted installer plan: `docs/SELF_HOSTED_INSTALLER_PLAN.md`
+- Multi-instance docker stack: `docs/MULTI_INSTANCE_DOCKER.md`
+- Instance fleet automation (discovery + bulk update): `docs/INSTANCE_FLEET_AUTOMATION.md`
 - Issue tracker guide: `docs/ISSUE_TRACKER.md`
+- Updating a live server (git + docker): `docs/SERVER_UPDATE.md`
 
 ## Run locally
 
+### Docker
+
+To run a local instance of the app, the following command can be used:
+```bash
+docker compose -f compose.yaml up --build --remove-orphans
+```
+
+Optionally the `-d` flag can be specified to let the app run as a background process.
+
+### Manual
+
 1. Install Node.js (recommended: Node 18+)
 2. From this folder:
-   - Optional first-time wizard: `npm run init` (Windows PowerShell: `npm.cmd run init`) (or run `INSTALL.cmd` / `INSTALL.ps1` / `INSTALL.sh`)
+   - Optional first-time wizard: `npm run init` (Windows PowerShell: `npm.cmd run init`)
    - `npm install` (or `npm.cmd install` in Windows PowerShell if `npm` is blocked by execution policy)
    - `npm start` (or `npm.cmd start` in Windows PowerShell)
-   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1` — includes Cloudflare setup + core auto-update
-     - Launcher UI URL: `http://127.0.0.1:8787` (it should auto-open; if not, paste this into your browser)
-   - Or use the launcher: `LAUNCH.cmd` (Windows) / `LAUNCH.ps1` / `LAUNCH.sh`
-   - Or launch with a quick Cloudflare tunnel: `LAUNCH_TUNNEL.cmd` / `LAUNCH_TUNNEL.ps1` / `LAUNCH_TUNNEL.sh`
+   - Recommended: GUI launcher: `LAUNCHER.cmd` / `LAUNCHER.ps1` (or `npm run launcher:ui`) — includes Cloudflare setup + core auto-update
+   - Or a launcher (opens the URL when ready): `npm run launch`
+   - Or launcher + Cloudflare quick tunnel: `npm run launch:tunnel`
 3. Open:
-    - `http://localhost:3000`
+   - `http://localhost:3000`
    - or from another device on the same Wi-Fi/LAN: `http://<your-laptop-ip>:3000`
 
 If another device can't connect, allow inbound connections for Node on your firewall.
@@ -169,7 +195,7 @@ Rate limit env vars:
 
 ## Open source
 
-Bzl is released under the MIT License. See `LICENSE` in the repository root.
+Bzl is released under the MIT License. See `LICENSE`.
 
 Community docs:
 - Contributing: `CONTRIBUTING.md`

@@ -36,6 +36,8 @@ Media uploads:
 - Directory plugins (draft): `docs/DIRECTORY_SPEC.md`
 - Moderation spec: `docs/MODERATION_MVP_SPEC.md`
 - Self-hosted installer plan: `docs/SELF_HOSTED_INSTALLER_PLAN.md`
+- Multi-instance docker stack: `docs/MULTI_INSTANCE_DOCKER.md`
+- Instance fleet automation (discovery + bulk update): `docs/INSTANCE_FLEET_AUTOMATION.md`
 - Issue tracker guide: `docs/ISSUE_TRACKER.md`
 - Updating a live server (git + docker): `docs/SERVER_UPDATE.md`
 
