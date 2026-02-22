@@ -646,6 +646,12 @@ module.exports = function init(api) {
     ws.send(JSON.stringify({ type: "plugin:maps:avatarPresets", presets, canManage }));
   }
 
+  function findAvatarPresetIndexById(rawId) {
+    const targetId = normId(rawId || "");
+    if (!targetId) return -1;
+    return avatarPresets.findIndex((preset) => normId(preset?.id || "") === targetId);
+  }
+
   function sanitizeMapChatText(text) {
     const raw = typeof text === "string" ? text : "";
     return raw.replace(/\s+/g, " ").trim().slice(0, 420);
@@ -840,9 +846,12 @@ module.exports = function init(api) {
       }
       customMaps = next;
       const nextPresets = [];
+      const seenPresetIds = new Set();
       for (const rawPreset of presetList) {
         const preset = normalizeAvatarPreset(rawPreset || {}, rawPreset?.updatedBy || rawPreset?.createdBy || "");
         if (!preset) continue;
+        if (seenPresetIds.has(preset.id)) continue;
+        seenPresetIds.add(preset.id);
         nextPresets.push(preset);
       }
       avatarPresets = nextPresets;
@@ -1411,7 +1420,7 @@ module.exports = function init(api) {
       ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Invalid avatar preset." }));
       return;
     }
-    const idx = avatarPresets.findIndex((preset) => preset.id === normalized.id);
+    const idx = findAvatarPresetIndexById(normalized.id);
     if (idx >= 0) {
       const prior = avatarPresets[idx];
       avatarPresets[idx] = {
@@ -1449,9 +1458,12 @@ module.exports = function init(api) {
     }
     const id = normId(msg?.id || "");
     if (!id) return;
-    const before = avatarPresets.length;
-    avatarPresets = avatarPresets.filter((preset) => preset.id !== id);
-    if (avatarPresets.length === before) return;
+    const idx = findAvatarPresetIndexById(id);
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Preset not found." }));
+      return;
+    }
+    avatarPresets.splice(idx, 1);
     try {
       saveCustomMapsToDisk();
     } catch {
@@ -1467,8 +1479,12 @@ module.exports = function init(api) {
     if (!username) return;
     const id = normId(msg?.id || "");
     if (!id) return;
-    const preset = avatarPresets.find((item) => item.id === id);
-    if (!preset) return;
+    const idx = findAvatarPresetIndexById(id);
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Preset not found." }));
+      return;
+    }
+    const preset = avatarPresets[idx];
     if (!preset.published && !canManageAvatarPresets(ws)) {
       ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Preset unavailable." }));
       return;

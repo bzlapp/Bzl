@@ -5528,7 +5528,7 @@
         avatarPresets = normalizeAvatarPresetList(msg?.presets);
         avatarPresetsCanManage = Boolean(msg?.canManage);
         if (!avatarPresets.some((preset) => preset.id === avatarPresetSelectedId)) {
-          avatarPresetSelectedId = "";
+          avatarPresetSelectedId = avatarPresets[0]?.id || "";
         }
         if (mode === "map" && avatarEditorOpen) renderMapView();
         return;
