@@ -1,77 +1,55 @@
-# Multi-instance Docker Setup (Single Server)
+# Multi-Instance Docker Stack (Single Compose Project)
 
-This workflow lets you run multiple Bzl instances on one host, each with its own:
-- persistent data volume
-- hostname
-- registration code
+This workflow runs many Bzl instances from one generated compose file (`multi_instance/docker-compose.yml`).
 
-It also supports generating Cloudflare tunnel ingress config and optional automated `cloudflared tunnel route dns` calls.
+Use this when you want:
+- one config file for all instances
+- one command to start all instances
+- one command to update all instances
 
----
-
-## 1) Create/edit config
-
-Run once:
+## 1) Create or edit the config
 
 ```bash
+cd /root/Bzl
 npm run multi:init
 ```
 
-If `multi_instance/instances.json` does not exist, the script creates a template and exits.
-
-Edit:
-- `multi_instance/instances.json`
+If `multi_instance/instances.json` does not exist, a template is created.
 
 Key fields:
-- `instances[].id` - stable identifier (used for service/env filenames)
-- `instances[].hostname` - public hostname for that instance
-- `instances[].hostPort` - unique localhost port each instance maps to
-- `instances[].registrationCode` - per-instance registration code
-- `cloudflared.*` - tunnel config + optional DNS route automation
+- `instances[].id`: stable ID for env/service naming
+- `instances[].hostname`: public hostname
+- `instances[].hostPort`: unique local port
+- `instances[].registrationCode`: per-instance registration code
 
----
-
-## 2) Generate compose + env + DNS checklist
+## 2) Generate compose + env outputs
 
 ```bash
+cd /root/Bzl
 npm run multi:init
 ```
 
-Generated files:
+Generated:
 - `multi_instance/docker-compose.yml`
-- `multi_instance/env/<id>.env` (one per instance)
+- `multi_instance/env/<id>.env`
 - `multi_instance/DNS_CHECKLIST.md`
-- Cloudflared config (path from `cloudflared.configPath`, default `~/.cloudflared/config.yml`)
 
-Optional DNS automation:
+Optional (Cloudflare tunnel DNS automation):
 
 ```bash
 npm run multi:init -- --route-dns
 ```
 
-This runs `cloudflared tunnel route dns ...` for each configured hostname.
-
----
-
-## 3) Start all instances
+## 3) Start all configured instances
 
 ```bash
 docker compose -f multi_instance/docker-compose.yml up -d --build --remove-orphans
 ```
 
-Then verify local health endpoints from the host:
+## 4) Update all configured instances
 
 ```bash
-curl -fsS http://127.0.0.1:<hostPort>/api/health
-```
-
----
-
-## 4) Update all instances to latest source-of-truth
-
-Use the updater script from the repo root:
-
-```bash
+cd /root/Bzl
 npm run multi:update
 ```
 
@@ -79,22 +57,25 @@ Default behavior:
 1. `git fetch origin`
 2. `git checkout main`
 3. `git pull --ff-only origin main`
-4. regenerate multi-instance config outputs
+4. regenerate compose/env outputs
 5. `docker compose -f multi_instance/docker-compose.yml up -d --build --remove-orphans`
 
-Options:
-- `--skip-git` (skip fetch/pull)
-- `--skip-build` (restart/update without image rebuild)
-- `--route-dns` (also rerun DNS route commands during regeneration)
-- `--dry-run` (show the docker command without executing it)
+Useful flags:
+- `--skip-git`
+- `--skip-build`
+- `--route-dns`
+- `--dry-run`
 - `--config=/path/to/instances.json`
 
----
+## 5) Validate routing
 
-## DNS reminders
+```bash
+curl -fsS http://127.0.0.1:<hostPort>/api/health
+```
 
-After generating or changing hostnames:
-- ensure each hostname is routed to the intended tunnel (`cloudflared tunnel route dns ...`)
-- confirm Cloudflare SSL/TLS mode is compatible (Full / Full strict recommended)
-- restart tunnel process/service if ingress config changed
-- verify each hostname reaches the expected instance (`/api/health`)
+Then verify each public hostname resolves to the expected instance.
+
+## When to use this vs fleet automation
+
+- Use this doc (`multi:*`) if you intentionally keep all instances in one managed stack.
+- Use `docs/INSTANCE_FLEET_AUTOMATION.md` if your instances are spread across independent folders/projects.

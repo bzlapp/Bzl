@@ -38,6 +38,7 @@ Media uploads:
 - Self-hosted installer plan: `docs/SELF_HOSTED_INSTALLER_PLAN.md`
 - Multi-instance docker stack: `docs/MULTI_INSTANCE_DOCKER.md`
 - Instance fleet automation (discovery + bulk update): `docs/INSTANCE_FLEET_AUTOMATION.md`
+- DigitalOcean + domain deployment and monthly cost guide: `docs/DIGITALOCEAN_DEPLOYMENT_AND_COST.md`
 - Issue tracker guide: `docs/ISSUE_TRACKER.md`
 - Updating a live server (git + docker): `docs/SERVER_UPDATE.md`
 

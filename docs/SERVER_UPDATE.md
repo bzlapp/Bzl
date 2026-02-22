@@ -1,161 +1,66 @@
-# Updating a Live Bzl Server (Git + Docker)
+# Updating a Live Bzl Server
 
-This doc is for a typical droplet setup where you:
-- have the `bzlapp/Bzl` repo checked out on the server (example: `~/Bzl`)
-- run Bzl via Docker / Docker Compose using that checkout (builds the image from the local Dockerfile)
+This is the standard update flow when Bzl is running from a git checkout + Docker Compose on your host.
 
-If you’re not sure which setup you have, run `docker ps` and see whether Bzl is running as a container.
-
----
-
-## The “golden” update flow (Compose + local build)
-
-From the droplet host (not inside the container):
+## Single instance update (quick path)
 
 ```bash
 cd ~/Bzl
-
-# 1) make sure you're on the right branch and clean
 git status
 git checkout main
-
-# 2) pull latest code
 git fetch origin
 git pull --ff-only origin main
-
-# 3) rebuild + recreate container(s)
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 ```
 
-That’s it.
+## Update every detected Bzl instance on the host
 
-### Why this order matters
-- If you rebuild before pulling, you rebuild the *old* code.
-- A `git pull` does **not** update a running container unless you rebuild/recreate it (or you’re bind-mounting the code into the container).
-
----
-
-## Restart only (no code update)
+Use this when you have multiple instance folders (for example `/root/Bzl`, `/opt/bzl-tawky`, `/opt/bzl-unianetwork`).
 
 ```bash
-docker compose restart
+cd /root/Bzl
+npm ci --omit=dev
+
+# preview only
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7 --dry-run
+
+# execute
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7
 ```
 
-Or, if you run a single container named `bzl`:
+The updater runs per instance:
+1. `git fetch`
+2. `git checkout main`
+3. `git pull --ff-only origin main`
+4. `docker compose up -d --build --remove-orphans`
+
+## Restart all detected instances (no pull, no rebuild)
+
+Use this if you only changed env values or need a service restart.
 
 ```bash
-docker restart bzl
+cd /root/Bzl
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7 --skip-git --skip-build
 ```
 
----
+## Common failures
 
-## Multi-instance stack update (single host, many Bzl instances)
+- `fatal: not a git repository`: you are in the wrong folder. `cd` into the repo root first.
+- `npm: command not found`: install Node.js/npm on the host, then retry.
+- `Target path is not empty` during `instance:create`: use an empty folder, or create manually in an existing clone.
 
-If you run multiple Bzl instances from `multi_instance/docker-compose.yml`, use:
-
-```bash
-npm run multi:update
-```
-
-This script pulls latest `main`, regenerates per-instance env/compose from `multi_instance/instances.json`, and runs:
-
-```bash
-docker compose -f multi_instance/docker-compose.yml up -d --build --remove-orphans
-```
-
-See: `docs/MULTI_INSTANCE_DOCKER.md`
-
----
-
-## Auto-detect + update all Bzl clones across server folders
-
-If your instances live in separate folders (for example one in `/Bzl` and another elsewhere), use fleet automation:
-
-```bash
-# detect instances first
-npm run instances:scan -- --roots=/ --max-depth=4
-
-# then update all detected instances
-npm run instances:update -- --roots=/ --max-depth=4
-```
-
-To create a brand-new instance folder:
-
-```bash
-npm run instance:create -- --path=/srv/bzl-new --port=3405 --registration-code='replace-me' --hostname=new.example.com
-```
-
-See: `docs/INSTANCE_FLEET_AUTOMATION.md`
-
----
-
-## Common git mistake (your screenshot)
-
-If you run:
-
-```bash
-git pull main
-```
-
-Git interprets `main` as a *remote name* (not a branch), and you’ll get:
-`fatal: 'main' does not appear to be a git repository`
-
-Use this instead:
-
-```bash
-git pull --ff-only origin main
-```
-
-Quick sanity checks:
-
-```bash
-git remote -v
-git branch --show-current
-git log -1 --oneline
-```
-
----
-
-## If you have local changes on the droplet
-
-If `git status` shows modified files, decide whether you want to keep them.
-
-To throw away local changes and match GitHub exactly:
-
-```bash
-git fetch origin
-git reset --hard origin/main
-```
-
-Then rebuild:
-
-```bash
-docker compose up -d --build
-```
-
----
-
-## Confirm you’re actually updated
-
-After updating/restarting:
+## Validation checklist
 
 ```bash
 docker ps
-docker logs --tail 80 bzl
+curl -fsS http://127.0.0.1:<PORT>/api/health
+docker logs --tail 80 <container-name>
 ```
 
-In the UI, the Moderation → Server panel should reflect the latest version string.
+Replace `<PORT>` and `<container-name>` per instance.
 
-If the UI still looks unchanged, hard-refresh your browser:
-- Chrome/Edge: `Ctrl+Shift+R`
+## Related docs
 
----
-
-## Next step (recommended): in-app core updates
-
-For “Clean Install” desktop setups, the Launcher UI can already do opt-in updates via GitHub Releases.
-
-For live servers, we can add a similar admin-only “Update core” flow (pull + rebuild + restart) later, but it needs extra safety:
-- confirmation prompts + backup
-- clear logs of what changed
-- no “surprise” updates
+- `docs/INSTANCE_FLEET_AUTOMATION.md`
+- `docs/MULTI_INSTANCE_DOCKER.md`
+- `docs/DIGITALOCEAN_DEPLOYMENT_AND_COST.md`

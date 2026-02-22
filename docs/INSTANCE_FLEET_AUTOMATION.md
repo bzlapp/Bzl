@@ -1,55 +1,39 @@
-# Instance Fleet Automation (Detect + Update + Create)
+# Instance Fleet Automation (Detect, Create, Update, Restart)
 
-Use this when you run multiple Bzl clones in separate folders on one server (for example `/Bzl`, `/srv/bzl-staging`, `/opt/community/Bzl`).
+Use this when you run several Bzl repos on one server and want one workflow for all of them.
 
-## 1) Detect instances from root paths
-
-List discovered Bzl instances:
+## 1) Detect Bzl instances
 
 ```bash
-npm run instances:scan -- --roots=/ --max-depth=4
+cd /root/Bzl
+npm run instances:scan -- --roots=/root,/srv,/opt,/home --max-depth=7
 ```
 
-By default, detection combines:
-- filesystem scan for compose projects with Bzl-like signals (`bzl` in path/name or Bzl source markers)
-- Docker label scan (`com.docker.compose.project.working_dir`) so running instances are found even if the folder is compose-only
+Detection sources:
+- Filesystem scan for compose projects and Bzl source markers
+- Docker labels (`com.docker.compose.project.working_dir`) so compose-only folders can still be found
 
-Supported compose filenames include:
+Supported compose filenames:
 - `compose.yaml`
 - `compose.yml`
 - `docker-compose.yml`
 - `docker-compose.yaml`
 
-## 2) Update all discovered instances
-
-Bulk update:
+## 2) Create a new instance folder
 
 ```bash
-npm run instances:update -- --roots=/ --max-depth=4
+cd /root/Bzl
+npm run instance:create -- --path=/opt/bzl-new --port=3405 --registration-code='replace-me' --hostname=new.example.com
 ```
 
-This performs, per instance:
-1. `git fetch`
-2. `git checkout main`
-3. `git pull --ff-only origin main`
-4. `docker compose -f <compose-file> up -d --build --remove-orphans`
+What this does:
+- Clones `https://github.com/bzlapp/Bzl.git` (`main`) into `--path`
+- Writes `.env` with `PORT`, `HOST`, and `REGISTRATION_CODE`
+- Starts Docker Compose unless `--no-start` is used
 
-Useful flags:
-- `--skip-git`
-- `--skip-build`
-- `--branch=main`
-- `--remote=origin`
-- `--dry-run`
-
-## 3) Create a new instance in a new folder
-
-Provision a fresh clone + `.env` + docker startup:
-
-```bash
-npm run instance:create -- --path=/srv/bzl-new --port=3405 --registration-code='replace-me' --hostname=new.example.com
-```
-
-Default repo source is `https://github.com/bzlapp/Bzl.git` on `main`.
+Important:
+- `--path` must be empty
+- `--port` must be unique per instance
 
 Useful flags:
 - `--repo=...`
@@ -57,9 +41,40 @@ Useful flags:
 - `--no-start`
 - `--dry-run`
 
-## Caddy + DNS reminders
+## 3) Update all instances to latest `main`
 
-After creating/updating instances:
-- ensure each hostname reverse proxies to the correct local port
-- verify `curl http://127.0.0.1:<port>/api/health`
-- confirm public hostname routes to the expected instance
+```bash
+cd /root/Bzl
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7 --dry-run
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7
+```
+
+Useful flags:
+- `--skip-git` (restart/recreate only)
+- `--skip-build` (skip image build)
+- `--branch=main`
+- `--remote=origin`
+- `--dry-run`
+
+## 4) Restart all instances (fast path)
+
+```bash
+cd /root/Bzl
+npm run instances:update -- --roots=/root,/srv,/opt,/home --max-depth=7 --skip-git --skip-build
+```
+
+## 5) Verify each instance
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}'
+curl -fsS http://127.0.0.1:<port>/api/health
+```
+
+## DNS + reverse proxy reminder
+
+For each hostname:
+1. DNS `A` record points to the server IP
+2. Caddy routes hostname to the instance port
+3. Public HTTPS URL returns app + `/api/health`
+
+See also: `docs/DIGITALOCEAN_DEPLOYMENT_AND_COST.md`
