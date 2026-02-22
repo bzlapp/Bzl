@@ -2627,6 +2627,100 @@ function nearestVisibleChatInstancePanelId(sourceEl) {
   return bestId;
 }
 
+function panelIdFromSourceElement(sourceEl) {
+  const el = sourceEl instanceof HTMLElement ? sourceEl : null;
+  if (!el) return "";
+  const panel = el.closest(".rackPanel");
+  if (!(panel instanceof HTMLElement)) return "";
+  return String(panel.dataset.panelId || "").trim();
+}
+
+function workspaceChatTargetCandidates() {
+  if (!rackLayoutEnabled) return [];
+  const left = ensureWorkspaceLeftRack();
+  const right = ensureWorkspaceRightRack();
+  if (!left || !right) return [];
+  const slots = [left, right];
+  const out = [];
+  for (const slot of slots) {
+    const panel = slot.querySelector?.(":scope > .rackPanel:not(.hidden)");
+    if (!(panel instanceof HTMLElement)) continue;
+    const panelId = String(panel.dataset.panelId || "").trim();
+    if (!panelId) continue;
+    if (panelId === "chat") {
+      out.push({ kind: "main", panelId, element: panel });
+      continue;
+    }
+    if (panelId.startsWith("chat:post:") && chatPanelInstances.has(panelId)) {
+      out.push({ kind: "instance", panelId, element: panel });
+    }
+  }
+  return out;
+}
+
+function chooseWorkspaceChatTarget(sourceEl) {
+  const candidates = workspaceChatTargetCandidates();
+  if (!candidates.length) return null;
+  const anchor = sourceEl instanceof HTMLElement ? sourceEl : null;
+  if (!anchor) return candidates[0] || null;
+  const anchorRect = anchor.getBoundingClientRect();
+  const ax = anchorRect.left + anchorRect.width / 2;
+  const ay = anchorRect.top + anchorRect.height / 2;
+  let best = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const rect = candidate.element.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.hypot(cx - ax, cy - ay);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidate;
+    }
+  }
+  return best || candidates[0] || null;
+}
+
+function chooseReferrerPanelForChatSplit(sourceEl) {
+  const sourcePanelId = panelIdFromSourceElement(sourceEl);
+  if (sourcePanelId && sourcePanelId !== "chat" && !sourcePanelId.startsWith("chat:")) return sourcePanelId;
+
+  const left = ensureWorkspaceLeftRack();
+  const right = ensureWorkspaceRightRack();
+  const inWorkspace = [];
+  const leftPanel = left?.querySelector?.(":scope > .rackPanel:not(.hidden)");
+  const rightPanel = right?.querySelector?.(":scope > .rackPanel:not(.hidden)");
+  if (leftPanel instanceof HTMLElement) inWorkspace.push(String(leftPanel.dataset.panelId || "").trim());
+  if (rightPanel instanceof HTMLElement) inWorkspace.push(String(rightPanel.dataset.panelId || "").trim());
+  for (const id of inWorkspace) {
+    if (!id || id === "chat" || id.startsWith("chat:")) continue;
+    return id;
+  }
+
+  const activePrimary = readWorkspaceActivePrimary();
+  if (activePrimary && activePrimary !== "chat" && !activePrimary.startsWith("chat:")) return activePrimary;
+
+  if (getPanelElement("hives")) return "hives";
+  return "";
+}
+
+function ensureChatWorkspaceSplit(sourceEl) {
+  if (!rackLayoutEnabled || isMobileSwipeMode()) return false;
+  if (!chatPanelEl) return false;
+  const existingTarget = chooseWorkspaceChatTarget(sourceEl);
+  if (existingTarget) return true;
+
+  const referrerPanelId = chooseReferrerPanelForChatSplit(sourceEl);
+  if (referrerPanelId) {
+    restorePanelToWorkspaceSlot(referrerPanelId, "workspaceLeftSlot");
+    writeWorkspaceActivePrimary(referrerPanelId);
+  }
+  if (isDocked("chat")) undockPanel("chat");
+  restorePanelToWorkspaceSlot("chat", "workspaceRightSlot");
+  writeWorkspaceActivePrimary(referrerPanelId || "chat");
+  return true;
+}
+
 function applyPluginPresetHint(panelDef) {
   if (!rackLayoutEnabled) return;
   const id = String(panelDef?.id || "").trim();
@@ -8277,19 +8371,31 @@ function openChat(postId, opts = null) {
     return;
   }
 
-  // Rack mode: switch the nearest visible chat panel when possible; otherwise use main chat.
+  // Rack mode: prefer an existing workspace chat panel; if none exists, create a split view
+  // (referrer on left, chat on right) so opening chat is deterministic.
   if (rackLayoutEnabled && !isStreamPost(post)) {
-    const nearestInstanceId = nearestVisibleChatInstancePanelId(sourceEl);
-    if (nearestInstanceId) {
+    const workspaceTarget = chooseWorkspaceChatTarget(sourceEl);
+    if (workspaceTarget?.kind === "instance" && workspaceTarget.panelId) {
       touchRecentHiveChat(postId);
       markRead(postId);
       renderFeed();
       ws.send(JSON.stringify({ type: "getChat", postId }));
-      setChatInstancePanelPost(nearestInstanceId, postId, true);
+      setChatInstancePanelPost(workspaceTarget.panelId, postId, true);
       renderChatContextSelect();
       return;
     }
-    if (chatPanelEl && typeof isDocked === "function" && !isDocked("chat")) {
+    if (workspaceTarget?.kind === "main") {
+      activeChatPostId = postId;
+      touchRecentHiveChat(postId);
+      markRead(postId);
+      renderFeed();
+      ws.send(JSON.stringify({ type: "getChat", postId }));
+      renderChatPanel(true);
+      renderTypingIndicator();
+      if (isMobileSwipeMode()) setMobilePanel("chat");
+      return;
+    }
+    if (ensureChatWorkspaceSplit(sourceEl)) {
       activeChatPostId = postId;
       touchRecentHiveChat(postId);
       markRead(postId);
