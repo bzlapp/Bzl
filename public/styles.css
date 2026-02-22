@@ -47,6 +47,7 @@
   --chat-rail-inset: 12px;
   --chat-rail-side-max: 66%;
   --chat-rail-center-max: 70%;
+  --hotbar-safe-lane: 0px;
 }
 
 :root[data-ui-scale="xs"] {
@@ -285,9 +286,14 @@ body {
   grid-template-areas: "sidebar sidebarResize chat chatResize main";
   gap: 0;
   padding: var(--app-pad);
+  padding-bottom: calc(var(--app-pad) + var(--hotbar-safe-lane));
   height: 100vh;
   overflow: hidden;
   position: relative;
+}
+
+.app.hotbarVisible {
+  --hotbar-safe-lane: calc(82px + env(safe-area-inset-bottom, 0px));
 }
 
 .app.rackMode {
@@ -688,6 +694,8 @@ body {
 }
 
 .poweredByTile {
+  text-decoration: none;
+  color: inherit;
   width: 220px;
   height: 84px;
   border-radius: 16px;
@@ -700,6 +708,13 @@ body {
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+a.poweredByTile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(246, 240, 255, 0.24);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
 }
 
 .poweredByLogo {
@@ -727,6 +742,12 @@ body {
 .poweredByByline {
   font-size: 10px;
   color: rgba(246, 240, 255, 0.62);
+  line-height: 1.1;
+}
+
+.poweredByVersion {
+  font-size: 10px;
+  color: rgba(246, 240, 255, 0.82);
   line-height: 1.1;
 }
 
@@ -2865,7 +2886,7 @@ button:disabled {
 }
 
 .app.hotbarVisible .chatForm {
-  padding-bottom: 76px;
+  padding-bottom: 12px;
 }
 
 .chatForm > .primary[type="submit"] {

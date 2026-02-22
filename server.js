@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { version: APP_VERSION = "0.0.0" } = require("./package.json");
 
 // Minimal .env loader (no external deps). Only sets vars that aren't already set.
 function loadDotEnvIfPresent() {
@@ -252,8 +253,9 @@ let persistTimer = null;
 
 const ROLE_MEMBER = "member";
 const ROLE_MODERATOR = "moderator";
+const ROLE_ADMIN = "admin";
 const ROLE_OWNER = "owner";
-const ROLE_RANK = { [ROLE_MEMBER]: 1, [ROLE_MODERATOR]: 2, [ROLE_OWNER]: 3 };
+const ROLE_RANK = { [ROLE_MEMBER]: 1, [ROLE_MODERATOR]: 2, [ROLE_ADMIN]: 3, [ROLE_OWNER]: 4 };
 const DEFAULT_COLLECTION_ID = "general";
 const POST_MODE_TEXT = "text";
 const POST_MODE_WALKIE = "walkie";
@@ -807,7 +809,7 @@ function normalizeCustomRoleKey(key) {
   const cleaned = key.trim().toLowerCase();
   if (!cleaned) return "";
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(cleaned)) return "";
-  if (cleaned === ROLE_OWNER || cleaned === ROLE_MODERATOR || cleaned === ROLE_MEMBER) return "";
+  if (cleaned === ROLE_OWNER || cleaned === ROLE_ADMIN || cleaned === ROLE_MODERATOR || cleaned === ROLE_MEMBER) return "";
   return cleaned;
 }
 
@@ -843,7 +845,7 @@ function sanitizeAllowedRoleTokens(list) {
   for (const item of list) {
     if (typeof item !== "string") continue;
     const token = item.trim().toLowerCase();
-    const isBase = token === ROLE_MEMBER || token === ROLE_MODERATOR || token === ROLE_OWNER;
+    const isBase = token === ROLE_MEMBER || token === ROLE_MODERATOR || token === ROLE_ADMIN || token === ROLE_OWNER;
     const isCustom = /^role:[a-z0-9][a-z0-9_-]{0,31}$/.test(token);
     if (!isBase && !isCustom) continue;
     if (seen.has(token)) continue;
@@ -868,7 +870,7 @@ function validateAllowedRoleTokensForCurrentRoles(tokens) {
   const existing = existingCustomRoleTokenSet();
   const out = [];
   for (const token of clean) {
-    if (token === ROLE_MEMBER || token === ROLE_MODERATOR || token === ROLE_OWNER) {
+    if (token === ROLE_MEMBER || token === ROLE_MODERATOR || token === ROLE_ADMIN || token === ROLE_OWNER) {
       out.push(token);
       continue;
     }
@@ -923,7 +925,7 @@ function sanitizeReplyMeta(raw) {
 }
 
 function normalizeRole(role) {
-  if (role === ROLE_OWNER || role === ROLE_MODERATOR || role === ROLE_MEMBER) return role;
+  if (role === ROLE_OWNER || role === ROLE_ADMIN || role === ROLE_MODERATOR || role === ROLE_MEMBER) return role;
   return ROLE_MEMBER;
 }
 
@@ -3575,8 +3577,8 @@ async function handlePluginInstall(req, res, url) {
     return true;
   }
   const username = getSessionUserFromRequest(req);
-  if (!username || !hasRole(username, ROLE_MODERATOR)) {
-    sendJson(res, 403, { error: "Moderator access required." });
+  if (!username || !hasRole(username, ROLE_ADMIN)) {
+    sendJson(res, 403, { error: "Admin access required." });
     return true;
   }
 
@@ -3874,7 +3876,7 @@ function serveStatic(req, res) {
   }
 
   if (pathname === "/api/health") {
-    const roleCounts = { owner: 0, moderator: 0, member: 0 };
+    const roleCounts = { owner: 0, admin: 0, moderator: 0, member: 0 };
     for (const user of usersByName.values()) {
       const role = normalizeRole(user?.role);
       roleCounts[role] = (roleCounts[role] || 0) + 1;
@@ -3883,6 +3885,7 @@ function serveStatic(req, res) {
     res.end(
       JSON.stringify({
         ok: true,
+        version: APP_VERSION,
         uptimeSec: Math.floor(process.uptime()),
         now: now(),
         stats: {
@@ -4062,8 +4065,11 @@ function applyModerationAction(ws, msg) {
     if (target === actor) return { ok: false, message: "You cannot moderate yourself." };
     const targetRole = normalizeRole(targetUser.role);
     if (targetRole === ROLE_OWNER) return { ok: false, message: "Owner account cannot be moderated." };
-    if (targetRole === ROLE_MODERATOR && actorRole !== ROLE_OWNER) {
-      return { ok: false, message: "Only the owner can moderate moderators." };
+    if (targetRole === ROLE_ADMIN && actorRole !== ROLE_OWNER) {
+      return { ok: false, message: "Only the owner can moderate admins." };
+    }
+    if (targetRole === ROLE_MODERATOR && !(actorRole === ROLE_OWNER || actorRole === ROLE_ADMIN)) {
+      return { ok: false, message: "Only admins/owner can moderate moderators." };
     }
 
     const minutesRaw = Number(metadata.minutes || 0) || 0;
@@ -5762,7 +5768,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (hasRole(target, ROLE_MODERATOR)) {
-        sendError(ws, "You can't ignore moderators or the owner.");
+        sendError(ws, "You can't ignore staff (moderator/admin/owner).");
         return;
       }
       const ignore = msg.type === "ignoreUser";
@@ -5801,7 +5807,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (hasRole(target, ROLE_MODERATOR)) {
-        sendError(ws, "You can't block moderators or the owner.");
+        sendError(ws, "You can't block staff (moderator/admin/owner).");
         return;
       }
       const block = msg.type === "blockUser";
@@ -5998,8 +6004,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginSetEnabled") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+      if (!actor || !hasRole(actor, ROLE_ADMIN)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Admin access required." }));
         return;
       }
       const id = normalizePluginId(msg.id || msg.pluginId || "");
@@ -6023,8 +6029,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginUninstall") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+      if (!actor || !hasRole(actor, ROLE_ADMIN)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Admin access required." }));
         return;
       }
       const id = normalizePluginId(msg.id || msg.pluginId || "");
@@ -6053,8 +6059,8 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "pluginReload") {
       const actor = ws?.user?.username;
-      if (!actor || !hasRole(actor, ROLE_MODERATOR)) {
-        ws.send(JSON.stringify({ type: "permissionDenied", message: "Moderator access required." }));
+      if (!actor || !hasRole(actor, ROLE_ADMIN)) {
+        ws.send(JSON.stringify({ type: "permissionDenied", message: "Admin access required." }));
         return;
       }
       loadPluginsFromDisk();

@@ -32,12 +32,18 @@ module.exports = function init(api) {
 
   const DATA_DIR = path.join(process.cwd(), "data", "plugin-data");
   const MAPS_FILE = path.join(DATA_DIR, "maps.json");
+  const AVATAR_PREFS_FILE = path.join(DATA_DIR, "maps-avatar-prefs.json");
 
   /** @type {Array<{id:string,title:string,owner:string,backgroundUrl:string,thumbUrl:string,world?:{w:number,h:number}|null,avatarSize?:number,cameraZoom?:number,collisions?:any[],masks?:any[],exits?:any[],ttrpgEnabled?:boolean,sprites?:any[],props?:any[],walkiesEnabled?:boolean}>} */
   let customMaps = [];
+  /** @type {Array<{id:string,name:string,description:string,tags:string[],mode:string,avatar:any,createdBy:string,updatedBy:string,createdAt:number,updatedAt:number,published:boolean}>} */
+  let avatarPresets = [];
+  /** @type {Map<string, {mode:"profile_token",displayName:string,showUsername:boolean}>} */
+  let avatarPrefsByUser = new Map();
 
-  /** @type {Map<string, {users: Map<string, {x:number,y:number,color:string,image:string,invisible?:boolean,seq?:number}>, lastListAt:number, walkies?: Map<string, {url:string, pending:Set<string>, createdAt:number, mapId:string}>, chatGlobal?: Array<{id:string,fromUser:string,text:string,createdAt:number}>}>} */
+  /** @type {Map<string, {users: Map<string, {x:number,y:number,color:string,image:string,invisible?:boolean,seq?:number}>, lastListAt:number, lastActiveAt:number, typing?: Map<string, number>, walkies?: Map<string, {url:string, pending:Set<string>, createdAt:number, mapId:string, timeout?:NodeJS.Timeout}>, chatGlobal?: Array<{id:string,fromUser:string,text:string,createdAt:number}>}>} */
   const rooms = new Map();
+  const avatarSnapshotNeededByUser = new Set();
 
   function normId(raw) {
     const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
@@ -89,6 +95,63 @@ module.exports = function init(api) {
     } catch {
       return false;
     }
+  }
+
+  const walkieTelemetry = {
+    counters: new Map(),
+    lastFlushAt: 0
+  };
+
+  function walkieMetricKey(stage, mapId) {
+    return `${String(stage || "unknown")}:${String(mapId || "_")}`;
+  }
+
+  function noteWalkie(stage, mapId, extra) {
+    const key = walkieMetricKey(stage, mapId);
+    walkieTelemetry.counters.set(key, Number(walkieTelemetry.counters.get(key) || 0) + 1);
+    const now = api.now();
+    if (now - walkieTelemetry.lastFlushAt < 60_000) return;
+    walkieTelemetry.lastFlushAt = now;
+    const snapshot = {};
+    for (const [k, v] of walkieTelemetry.counters.entries()) snapshot[k] = v;
+    if (extra && typeof extra === "object") {
+      console.info("[maps/walkie]", stage, { mapId, ...extra, counters: snapshot });
+      return;
+    }
+    console.info("[maps/walkie]", stage, { mapId, counters: snapshot });
+  }
+
+  function dropWalkiePendingForUser(room, username, reason) {
+    if (!room || !room.walkies || !username) return;
+    for (const [walkieId, entry] of room.walkies.entries()) {
+      if (!entry?.pending || !entry.pending.has(username)) continue;
+      entry.pending.delete(username);
+      noteWalkie("pending-drop", entry.mapId || "", { walkieId, reason });
+      if (entry.pending.size === 0) {
+        cleanupWalkieEntry(room, walkieId, "cleanup-all-acked", { reason });
+      }
+    }
+  }
+
+  function clearRoomWalkies(room, reason) {
+    if (!room || !room.walkies) return;
+    for (const walkieId of room.walkies.keys()) cleanupWalkieEntry(room, walkieId, "cleanup-room-clear", { reason });
+  }
+
+  function cleanupWalkieEntry(room, walkieId, stage, extra) {
+    if (!room?.walkies) return;
+    const entry = room.walkies.get(walkieId);
+    if (!entry) return;
+    if (entry.timeout) {
+      try {
+        clearTimeout(entry.timeout);
+      } catch {
+        // ignore
+      }
+    }
+    room.walkies.delete(walkieId);
+    tryDeleteUploadSoon(entry.url, entry.createdAt);
+    noteWalkie(stage || "cleanup", entry.mapId || "", { walkieId, ...(extra || {}) });
   }
 
 
@@ -239,9 +302,35 @@ module.exports = function init(api) {
   function canManageMaps(ws, map) {
     const role = String(ws?.user?.role || "").toLowerCase();
     const username = userIdentity(ws);
-    if (role === "owner" || role === "moderator") return true;
+    if (role === "owner" || role === "admin" || role === "moderator") return true;
     if (map && username && map.owner && username === map.owner) return true;
     return false;
+  }
+
+  function canManageAvatarPresets(ws) {
+    const role = String(ws?.user?.role || "").toLowerCase();
+    return role === "owner" || role === "admin" || role === "moderator";
+  }
+
+  function normalizePresetName(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  }
+
+  function normalizePresetDescription(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 140);
+  }
+
+  function normalizePresetTags(list) {
+    const src = Array.isArray(list) ? list : [];
+    const out = [];
+    const seen = new Set();
+    for (const raw of src.slice(0, 12)) {
+      const tag = String(raw || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      out.push(tag);
+    }
+    return out;
   }
 
   function clamp01(n) {
@@ -309,8 +398,252 @@ module.exports = function init(api) {
   function roomFor(mapId) {
     const mid = normId(mapId);
     if (!mid) return null;
-    if (!rooms.has(mid)) rooms.set(mid, { users: new Map(), lastListAt: 0, walkies: new Map(), chatGlobal: [] });
+    if (!rooms.has(mid)) rooms.set(mid, { users: new Map(), lastListAt: 0, lastActiveAt: 0, typing: new Map(), walkies: new Map(), chatGlobal: [] });
     return rooms.get(mid) || null;
+  }
+
+  function touchRoomActivity(mapId) {
+    const room = roomFor(mapId);
+    if (!room) return;
+    room.lastActiveAt = api.now();
+    broadcastMapsListThrottled();
+  }
+
+  function mapsCapabilities(ws = null) {
+    return {
+      type: "plugin:maps:capabilities",
+      version: "0.4.0",
+      emittedAt: api.now(),
+      mapId: normId(ws?.__mapsRoomId || ""),
+      features: {
+        focusMode: true,
+        gmOverlay: true,
+        avatarModes: ["profile_token", "frame_animation"],
+        avatarPresets: true,
+        walkieV2: true,
+        spatialStreamAudio: false,
+        undoRedo: false
+      }
+    };
+  }
+
+  function sanitizeDisplayName(name) {
+    const raw = typeof name === "string" ? name : "";
+    return raw.replace(/\s+/g, " ").trim().slice(0, 32);
+  }
+
+  function sanitizeFrameStateName(name) {
+    const raw = typeof name === "string" ? name.trim() : "";
+    if (!raw) return "";
+    if (!/^[a-z][a-z0-9_]{0,31}$/i.test(raw)) return "";
+    return raw;
+  }
+
+  function sanitizeHotkeyName(name) {
+    const raw = typeof name === "string" ? name.trim() : "";
+    if (!raw) return "";
+    if (!/^(Digit[0-9]|Key[A-Z])$/.test(raw)) return "";
+    return raw;
+  }
+
+  function normalizeFrameAnimation(raw) {
+    const input = raw && typeof raw === "object" ? raw : {};
+    const defaultFps = clampInt(input.defaultFps, 1, 24);
+    const renderScale = clampFloat(input.renderScale, 0.25, 4.0, 1.0);
+    const statesIn = input.states && typeof input.states === "object" ? input.states : {};
+    const states = {};
+    let totalFrames = 0;
+    const MAX_STATES = 24;
+    const MAX_FRAMES_PER_STATE = 48;
+    const MAX_TOTAL_FRAMES = 220;
+    for (const [stateRaw, defRaw] of Object.entries(statesIn).slice(0, MAX_STATES)) {
+      const state = sanitizeFrameStateName(stateRaw);
+      if (!state) continue;
+      const def = defRaw && typeof defRaw === "object" ? defRaw : {};
+      const framesIn = Array.isArray(def.frames) ? def.frames : [];
+      const frames = [];
+      for (const frameRaw of framesIn.slice(0, MAX_FRAMES_PER_STATE)) {
+        const frameUrl = typeof frameRaw?.url === "string" ? frameRaw.url.trim() : "";
+        if (!frameUrl || frameUrl.length > 240) continue;
+        if (!isSafeImageUrl(frameUrl)) continue;
+        const sx = clampInt(frameRaw?.sx, 0, 8192);
+        const sy = clampInt(frameRaw?.sy, 0, 8192);
+        const sw = clampInt(frameRaw?.sw, 1, 8192);
+        const sh = clampInt(frameRaw?.sh, 1, 8192);
+        const hasCrop =
+          Number.isFinite(Number(frameRaw?.sx)) &&
+          Number.isFinite(Number(frameRaw?.sy)) &&
+          Number.isFinite(Number(frameRaw?.sw)) &&
+          Number.isFinite(Number(frameRaw?.sh));
+        frames.push(hasCrop ? { url: frameUrl, sx, sy, sw, sh } : { url: frameUrl });
+        totalFrames += 1;
+        if (totalFrames >= MAX_TOTAL_FRAMES) break;
+      }
+      if (!frames.length) continue;
+      states[state] = {
+        frames,
+        fps: clampInt(def.fps, 1, 24),
+        loop: Object.prototype.hasOwnProperty.call(def, "loop") ? Boolean(def.loop) : true,
+        flipXWithDirection: Object.prototype.hasOwnProperty.call(def, "flipXWithDirection") ? Boolean(def.flipXWithDirection) : true
+      };
+      if (totalFrames >= MAX_TOTAL_FRAMES) break;
+    }
+    const movementMapIn = input.movementMap && typeof input.movementMap === "object" ? input.movementMap : {};
+    const movementMap = {};
+    const moveKeys = ["idle", "idleUp", "idleDown", "walkVertical", "walkHorizontal", "walkUp", "walkDown", "walkLeft", "walkRight"];
+    for (const key of moveKeys) {
+      const state = sanitizeFrameStateName(movementMapIn[key]);
+      if (state && states[state]) movementMap[key] = state;
+    }
+    const emotesIn = Array.isArray(input.emotes) ? input.emotes : [];
+    const emotes = [];
+    for (const emoteRaw of emotesIn.slice(0, 16)) {
+      const emote = emoteRaw && typeof emoteRaw === "object" ? emoteRaw : {};
+      const name = sanitizeFrameStateName(emote.name);
+      const state = sanitizeFrameStateName(emote.state);
+      if (!name || !state || !states[state]) continue;
+      emotes.push({
+        name,
+        state,
+        hotkey: sanitizeHotkeyName(emote.hotkey),
+        loop: Object.prototype.hasOwnProperty.call(emote, "loop") ? Boolean(emote.loop) : false,
+        interruptible: Object.prototype.hasOwnProperty.call(emote, "interruptible") ? Boolean(emote.interruptible) : true
+      });
+    }
+    if (!Object.keys(states).length) return null;
+    return { defaultFps, renderScale, states, movementMap, emotes };
+  }
+
+  function estimateEmoteDurationMs(frameAnimation, emoteState) {
+    const anim = frameAnimation && typeof frameAnimation === "object" ? frameAnimation : null;
+    if (!anim) return 1000;
+    const states = anim.states && typeof anim.states === "object" ? anim.states : {};
+    const state = states[emoteState] && typeof states[emoteState] === "object" ? states[emoteState] : null;
+    if (!state) return 1000;
+    if (state.loop) return 1200;
+    const frames = Array.isArray(state.frames) ? state.frames.length : 0;
+    const fps = clampInt(state.fps || anim.defaultFps || 8, 1, 24);
+    const raw = Math.round((Math.max(1, frames) / Math.max(1, fps)) * 1000);
+    return Math.max(320, Math.min(4000, raw));
+  }
+
+  function resolveAvatarEmote(pref, msg) {
+    if (!pref || pref.mode !== "frame_animation" || !pref.frameAnimation) return null;
+    const anim = pref.frameAnimation;
+    const emotes = Array.isArray(anim.emotes) ? anim.emotes : [];
+    if (!emotes.length) return null;
+    const nameRaw = typeof msg?.name === "string" ? msg.name.trim().toLowerCase() : "";
+    const idxRaw = Number(msg?.index);
+    let emote = null;
+    if (nameRaw) {
+      emote = emotes.find((e) => String(e?.name || "").toLowerCase() === nameRaw) || null;
+    } else if (Number.isFinite(idxRaw) && idxRaw >= 0 && idxRaw < emotes.length) {
+      emote = emotes[Math.floor(idxRaw)] || null;
+    }
+    if (!emote) return null;
+    const state = sanitizeFrameStateName(emote.state);
+    if (!state) return null;
+    const durationMs = estimateEmoteDurationMs(anim, state);
+    return { name: emote.name, state, loop: Boolean(emote.loop), durationMs };
+  }
+
+  function normalizeAvatarPref(raw) {
+    const rawMode = String(raw?.mode || "profile_token").trim();
+    const mode = rawMode === "frame_animation" ? "frame_animation" : "profile_token";
+    const displayName = sanitizeDisplayName(raw?.displayName);
+    const showUsername = raw && Object.prototype.hasOwnProperty.call(raw, "showUsername") ? Boolean(raw.showUsername) : true;
+    const frameAnimation = mode === "frame_animation" ? normalizeFrameAnimation(raw?.frameAnimation) : null;
+    return {
+      mode: frameAnimation ? "frame_animation" : "profile_token",
+      displayName,
+      showUsername,
+      frameAnimation: frameAnimation || null
+    };
+  }
+
+  function loadAvatarPrefsFromDisk() {
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      if (!fs.existsSync(AVATAR_PREFS_FILE)) {
+        avatarPrefsByUser = new Map();
+        return;
+      }
+      const raw = fs.readFileSync(AVATAR_PREFS_FILE, "utf8");
+      const json = JSON.parse(raw);
+      const users = json && typeof json === "object" ? json.users : null;
+      const next = new Map();
+      if (users && typeof users === "object") {
+        for (const [usernameRaw, prefRaw] of Object.entries(users)) {
+          const username = normId(usernameRaw);
+          if (!username) continue;
+          next.set(username, normalizeAvatarPref(prefRaw));
+        }
+      }
+      avatarPrefsByUser = next;
+    } catch (e) {
+      console.warn("Maps plugin: failed to load avatar prefs:", e?.message || e);
+      avatarPrefsByUser = new Map();
+    }
+  }
+
+  function saveAvatarPrefsToDisk() {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const users = {};
+    for (const [username, pref] of avatarPrefsByUser.entries()) users[username] = normalizeAvatarPref(pref);
+    fs.writeFileSync(AVATAR_PREFS_FILE, JSON.stringify({ users }, null, 2));
+  }
+
+  function getAvatarPref(username) {
+    const key = normId(username);
+    if (!key) return normalizeAvatarPref(null);
+    return normalizeAvatarPref(avatarPrefsByUser.get(key));
+  }
+
+  function normalizeAvatarPreset(raw, actor = "") {
+    const name = normalizePresetName(raw?.name || "");
+    if (!name) return null;
+    const idRaw = typeof raw?.id === "string" ? normId(raw.id) : "";
+    const avatar = normalizeAvatarPref(raw?.avatar || {});
+    const now = api.now();
+    return {
+      id: idRaw || randId("preset"),
+      name,
+      description: normalizePresetDescription(raw?.description || ""),
+      tags: normalizePresetTags(raw?.tags),
+      mode: avatar.mode,
+      avatar: {
+        mode: avatar.mode,
+        frameAnimation: avatar.frameAnimation || null
+      },
+      createdBy: normId(raw?.createdBy || actor || ""),
+      updatedBy: normId(actor || raw?.updatedBy || ""),
+      createdAt: clampInt(raw?.createdAt || now, 0, now + 365 * 24 * 60 * 60 * 1000),
+      updatedAt: clampInt(now, 0, now + 365 * 24 * 60 * 60 * 1000),
+      published: Boolean(raw?.published)
+    };
+  }
+
+  function presetMetaPayload(preset) {
+    return {
+      id: preset.id,
+      name: preset.name,
+      description: preset.description || "",
+      tags: Array.isArray(preset.tags) ? preset.tags : [],
+      mode: preset.mode || "profile_token",
+      createdBy: preset.createdBy || "",
+      updatedBy: preset.updatedBy || "",
+      createdAt: Number(preset.createdAt || 0) || 0,
+      updatedAt: Number(preset.updatedAt || 0) || 0,
+      published: Boolean(preset.published)
+    };
+  }
+
+  function sendAvatarPresets(ws) {
+    const canManage = canManageAvatarPresets(ws);
+    const presets = avatarPresets
+      .filter((preset) => canManage || Boolean(preset.published))
+      .map((preset) => (canManage ? { ...presetMetaPayload(preset), avatar: preset.avatar } : presetMetaPayload(preset)));
+    ws.send(JSON.stringify({ type: "plugin:maps:avatarPresets", presets, canManage }));
   }
 
   function sanitizeMapChatText(text) {
@@ -330,10 +663,13 @@ module.exports = function init(api) {
   }
 
   function listMapsPayload() {
+    const t = api.now();
     const all = [...BUILTIN_MAPS, ...customMaps];
     return all.map((m) => {
       const room = rooms.get(m.id);
       const count = room ? Array.from(room.users.values()).filter((u) => !u?.invisible).length : 0;
+      const lastActiveAt = Number(room?.lastActiveAt || 0) || 0;
+      const live = count > 0 && t - lastActiveAt <= 60_000;
       return {
         id: m.id,
         title: m.title,
@@ -350,7 +686,9 @@ module.exports = function init(api) {
         collisionsCount: Array.isArray(m.collisions) ? m.collisions.length : 0,
         masksCount: Array.isArray(m.masks) ? m.masks.length : 0,
         exitsCount: Array.isArray(m.exits) ? m.exits.length : 0,
-        userCount: count
+        userCount: count,
+        live,
+        lastActiveAt
       };
     });
   }
@@ -384,16 +722,30 @@ module.exports = function init(api) {
     const all = Array.from(room.users.entries());
     const recipients = usersInRoom(mid);
     for (const recipient of recipients) {
+      const includeAvatarSnapshot = avatarSnapshotNeededByUser.has(recipient);
       const users = all
         .filter(([username, u]) => username === recipient || !u?.invisible)
-        .map(([username, u]) => ({
-          username,
-          x: u.x,
-          y: u.y,
-          color: u.color || "",
-          image: u.image || ""
-        }));
-      api.sendToUsers([recipient], { type: "plugin:maps:roomState", mapId: mid, users });
+        .map(([username, u]) => {
+          const base = {
+            username,
+            x: u.x,
+            y: u.y,
+            color: u.color || "",
+            image: u.image || ""
+          };
+          if (includeAvatarSnapshot) {
+            base.avatar = normalizeAvatarPref(u?.avatar || getAvatarPref(username));
+          }
+          return base;
+        });
+      const now = api.now();
+      const typingUsers = Array.from(room.typing?.entries() || [])
+        .filter(([name, until]) => name !== recipient && Number(until || 0) > now)
+        .map(([name]) => name);
+      const visibleCount = all.filter(([, u]) => !u?.invisible).length;
+      const presence = { userCount: visibleCount, live: visibleCount > 0 && now - Number(room.lastActiveAt || 0) <= 60_000, lastActiveAt: Number(room.lastActiveAt || 0) || 0 };
+      api.sendToUsers([recipient], { type: "plugin:maps:roomState", mapId: mid, users, typingUsers, presence });
+      if (includeAvatarSnapshot) avatarSnapshotNeededByUser.delete(recipient);
     }
     broadcastMapsListThrottled();
   }
@@ -410,11 +762,16 @@ module.exports = function init(api) {
       ws.__mapsSpeakAsPropId = "";
       return;
     }
+    dropWalkiePendingForUser(room, username, "leave");
     if (room.users.has(username)) room.users.delete(username);
+    if (room.typing && room.typing.has(username)) room.typing.delete(username);
     ws.__mapsRoomId = "";
     ws.__mapsInvisible = 0;
     ws.__mapsSpeakAsPropId = "";
-    if (room.users.size === 0) rooms.delete(current);
+    if (room.users.size === 0) {
+      clearRoomWalkies(room, "room-empty");
+      rooms.delete(current);
+    }
     broadcastRoomState(current);
   }
 
@@ -432,6 +789,7 @@ module.exports = function init(api) {
       const raw = fs.readFileSync(MAPS_FILE, "utf8");
       const json = JSON.parse(raw);
       const list = Array.isArray(json?.maps) ? json.maps : [];
+      const presetList = Array.isArray(json?.avatarPresets) ? json.avatarPresets : [];
       const next = [];
       for (const m of list) {
         const id = normId(m?.id || "");
@@ -481,21 +839,32 @@ module.exports = function init(api) {
         });
       }
       customMaps = next;
+      const nextPresets = [];
+      for (const rawPreset of presetList) {
+        const preset = normalizeAvatarPreset(rawPreset || {}, rawPreset?.updatedBy || rawPreset?.createdBy || "");
+        if (!preset) continue;
+        nextPresets.push(preset);
+      }
+      avatarPresets = nextPresets;
     } catch (e) {
       console.warn("Maps plugin: failed to load custom maps:", e?.message || e);
       customMaps = [];
+      avatarPresets = [];
     }
   }
 
   function saveCustomMapsToDisk() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(MAPS_FILE, JSON.stringify({ maps: customMaps }, null, 2));
+    fs.writeFileSync(MAPS_FILE, JSON.stringify({ maps: customMaps, avatarPresets }, null, 2));
   }
 
   loadCustomMapsFromDisk();
+  loadAvatarPrefsFromDisk();
 
   api.registerWs("list", (ws) => {
     ws.send(JSON.stringify({ type: "plugin:maps:mapsList", maps: listMapsPayload() }));
+    ws.send(JSON.stringify(mapsCapabilities(ws)));
+    sendAvatarPresets(ws);
   });
 
   api.registerWs("createMap", (ws, msg) => {
@@ -505,8 +874,8 @@ module.exports = function init(api) {
       return;
     }
     const role = String(ws?.user?.role || "").toLowerCase();
-    if (role !== "owner" && role !== "moderator") {
-      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Owner/mod access required to create maps." }));
+    if (role !== "owner" && role !== "admin" && role !== "moderator") {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Owner/admin/mod access required to create maps." }));
       return;
     }
 
@@ -760,10 +1129,19 @@ module.exports = function init(api) {
   api.registerWs("ttrpgPropMove", (ws, msg) => {
     const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
     const idx = customMapIndex(mapId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Map not found." }));
+      return;
+    }
     const map = customMaps[idx];
-    if (!map.ttrpgEnabled) return;
-    if (!canManageMaps(ws, map)) return;
+    if (!map.ttrpgEnabled) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "TTRPG mode is disabled for this map." }));
+      return;
+    }
+    if (!canManageMaps(ws, map)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Permission denied." }));
+      return;
+    }
     const propId = typeof msg?.propId === "string" ? msg.propId.trim() : "";
     if (!propId) return;
     const list = Array.isArray(map.props) ? map.props : [];
@@ -784,10 +1162,19 @@ module.exports = function init(api) {
   api.registerWs("ttrpgPropPatch", (ws, msg) => {
     const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
     const idx = customMapIndex(mapId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Map not found." }));
+      return;
+    }
     const map = customMaps[idx];
-    if (!map.ttrpgEnabled) return;
-    if (!canManageMaps(ws, map)) return;
+    if (!map.ttrpgEnabled) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "TTRPG mode is disabled for this map." }));
+      return;
+    }
+    if (!canManageMaps(ws, map)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Permission denied." }));
+      return;
+    }
     const propId = typeof msg?.propId === "string" ? msg.propId.trim() : "";
     const { prop: prev, index: pidx } = propById(map, propId);
     if (!prev || pidx < 0) return;
@@ -816,10 +1203,19 @@ module.exports = function init(api) {
     if (!username) return;
     const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
     const idx = customMapIndex(mapId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Map not found." }));
+      return;
+    }
     const map = customMaps[idx];
-    if (!map.ttrpgEnabled) return;
-    if (!canManageMaps(ws, map)) return;
+    if (!map.ttrpgEnabled) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "TTRPG mode is disabled for this map." }));
+      return;
+    }
+    if (!canManageMaps(ws, map)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Permission denied." }));
+      return;
+    }
     const action = msg?.action === "release" ? "release" : "possess";
     const props = Array.isArray(map.props) ? map.props : [];
 
@@ -874,10 +1270,19 @@ module.exports = function init(api) {
   api.registerWs("ttrpgPropRemove", (ws, msg) => {
     const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
     const idx = customMapIndex(mapId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Map not found." }));
+      return;
+    }
     const map = customMaps[idx];
-    if (!map.ttrpgEnabled) return;
-    if (!canManageMaps(ws, map)) return;
+    if (!map.ttrpgEnabled) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "TTRPG mode is disabled for this map." }));
+      return;
+    }
+    if (!canManageMaps(ws, map)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Permission denied." }));
+      return;
+    }
     const propId = typeof msg?.propId === "string" ? msg.propId.trim() : "";
     if (!propId) return;
     map.props = (Array.isArray(map.props) ? map.props : []).filter((p) => String(p?.id || "") !== propId);
@@ -928,7 +1333,9 @@ module.exports = function init(api) {
     const prof = api.getProfile(username) || {};
     const color = typeof prof.color === "string" ? prof.color : "";
     const image = typeof prof.image === "string" ? prof.image : "";
-    room.users.set(username, { x: Math.random(), y: Math.random(), color, image, invisible: false, seq: 0 });
+    room.users.set(username, { x: Math.random(), y: Math.random(), color, image, avatar: getAvatarPref(username), invisible: false, seq: 0 });
+    room.lastActiveAt = api.now();
+    avatarSnapshotNeededByUser.add(username);
     ws.__mapsRoomId = mapId;
     ws.__mapsInvisible = 0;
 
@@ -957,7 +1364,161 @@ module.exports = function init(api) {
         selfInvisible: false
       })
     );
+    ws.send(JSON.stringify(mapsCapabilities(ws)));
+    sendAvatarPresets(ws);
     broadcastRoomState(mapId);
+  });
+
+  api.registerWs("getCapabilities", (ws) => {
+    ws.send(JSON.stringify(mapsCapabilities(ws)));
+  });
+
+  api.registerWs("setAvatar", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const avatar = normalizeAvatarPref(msg || {});
+    avatarPrefsByUser.set(username, avatar);
+    try {
+      saveAvatarPrefsToDisk();
+    } catch (e) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Failed to save avatar settings." }));
+      return;
+    }
+    const mapId = normId(ws.__mapsRoomId || "");
+    const room = mapId ? rooms.get(mapId) : null;
+    if (room && room.users.has(username)) {
+      const current = room.users.get(username) || {};
+      room.users.set(username, { ...current, avatar });
+      api.sendToUsers(usersInRoom(mapId), { type: "plugin:maps:avatarChanged", mapId, username, avatar });
+      broadcastRoomState(mapId);
+    }
+    ws.send(JSON.stringify({ type: "plugin:maps:avatarSet", avatar }));
+  });
+
+  api.registerWs("listAvatarPresets", (ws) => {
+    sendAvatarPresets(ws);
+  });
+
+  api.registerWs("upsertAvatarPreset", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    if (!canManageAvatarPresets(ws)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Owner/admin/mod access required." }));
+      return;
+    }
+    const normalized = normalizeAvatarPreset(msg || {}, username);
+    if (!normalized) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Invalid avatar preset." }));
+      return;
+    }
+    const idx = avatarPresets.findIndex((preset) => preset.id === normalized.id);
+    if (idx >= 0) {
+      const prior = avatarPresets[idx];
+      avatarPresets[idx] = {
+        ...prior,
+        ...normalized,
+        id: prior.id,
+        createdAt: Number(prior.createdAt || api.now()),
+        createdBy: prior.createdBy || username,
+        updatedAt: api.now(),
+        updatedBy: username
+      };
+    } else {
+      avatarPresets.push({
+        ...normalized,
+        createdAt: api.now(),
+        updatedAt: api.now(),
+        createdBy: username,
+        updatedBy: username
+      });
+    }
+    try {
+      saveCustomMapsToDisk();
+    } catch {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Failed to save avatar presets." }));
+      return;
+    }
+    sendAvatarPresets(ws);
+    api.broadcast({ type: "plugin:maps:avatarPresetsUpdated" });
+  });
+
+  api.registerWs("deleteAvatarPreset", (ws, msg) => {
+    if (!canManageAvatarPresets(ws)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Owner/admin/mod access required." }));
+      return;
+    }
+    const id = normId(msg?.id || "");
+    if (!id) return;
+    const before = avatarPresets.length;
+    avatarPresets = avatarPresets.filter((preset) => preset.id !== id);
+    if (avatarPresets.length === before) return;
+    try {
+      saveCustomMapsToDisk();
+    } catch {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Failed to save avatar presets." }));
+      return;
+    }
+    sendAvatarPresets(ws);
+    api.broadcast({ type: "plugin:maps:avatarPresetsUpdated" });
+  });
+
+  api.registerWs("applyAvatarPreset", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const id = normId(msg?.id || "");
+    if (!id) return;
+    const preset = avatarPresets.find((item) => item.id === id);
+    if (!preset) return;
+    if (!preset.published && !canManageAvatarPresets(ws)) {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Preset unavailable." }));
+      return;
+    }
+    const current = getAvatarPref(username);
+    const avatar = normalizeAvatarPref({
+      ...preset.avatar,
+      displayName: current.displayName || "",
+      showUsername: current.showUsername !== false
+    });
+    avatarPrefsByUser.set(username, avatar);
+    try {
+      saveAvatarPrefsToDisk();
+    } catch {
+      ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Failed to apply avatar preset." }));
+      return;
+    }
+    const mapId = normId(ws.__mapsRoomId || "");
+    const room = mapId ? rooms.get(mapId) : null;
+    if (room && room.users.has(username)) {
+      const currentUser = room.users.get(username) || {};
+      room.users.set(username, { ...currentUser, avatar });
+      api.sendToUsers(usersInRoom(mapId), { type: "plugin:maps:avatarChanged", mapId, username, avatar });
+      broadcastRoomState(mapId);
+    }
+    ws.send(JSON.stringify({ type: "plugin:maps:avatarSet", avatar }));
+  });
+
+  api.registerWs("avatarEmote", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
+    if (!mapId) return;
+    const room = rooms.get(mapId);
+    if (!room || !room.users.has(username)) return;
+    const pref = getAvatarPref(username);
+    const resolved = resolveAvatarEmote(pref, msg);
+    if (!resolved) return;
+    const until = api.now() + resolved.durationMs;
+    room.lastActiveAt = api.now();
+    api.sendToUsers(usersInRoom(mapId), {
+      type: "plugin:maps:avatarEmote",
+      mapId,
+      username,
+      state: resolved.state,
+      name: resolved.name,
+      loop: resolved.loop,
+      until
+    });
+    broadcastMapsListThrottled();
   });
 
   api.registerWs("leave", (ws) => {
@@ -987,6 +1548,7 @@ module.exports = function init(api) {
     if (seq && seq < prevSeq) return;
     const next = { ...u, x, y, seq: seq || prevSeq };
     room.users.set(username, next);
+    room.lastActiveAt = api.now();
 
     const payload = { type: "plugin:maps:userMoved", mapId, username, x, y, seq: seq || prevSeq };
     if (next.invisible) {
@@ -1024,6 +1586,7 @@ module.exports = function init(api) {
     if (!text) return;
 
     const createdAt = api.now();
+    room.lastActiveAt = createdAt;
     const id = `${createdAt}_${Math.random().toString(16).slice(2)}`;
     const message = { id, fromUser: username, text, createdAt };
     const payload = { type: "plugin:maps:chatMessage", mapId, scope, message };
@@ -1085,12 +1648,45 @@ module.exports = function init(api) {
         }
       }
     }
-    const payload = { type: "plugin:maps:bubble", mapId, username, actorType, actorPropId, displayName, color, text, createdAt: api.now() };
+    const createdAt = api.now();
+    room.lastActiveAt = createdAt;
+    const scopeRaw = typeof msg?.scope === "string" ? msg.scope.trim().toLowerCase() : "local";
+    const scope = scopeRaw === "global" ? "global" : "local";
+    const payload = { type: "plugin:maps:bubble", mapId, username, actorType, actorPropId, displayName, color, text, createdAt, scope };
     if (u.invisible) {
       api.sendToUsers([username], payload);
-    } else {
+    } else if (scope === "global") {
       api.sendToUsers(usersInRoom(mapId), payload);
+    } else {
+      const recipients = [];
+      const all = Array.from(room.users.entries());
+      for (const [otherName, other] of all) {
+        if (!other) continue;
+        const d = distance01(u.x, u.y, other.x, other.y);
+        if (d <= MAP_CHAT_LOCAL_RADIUS) recipients.push(otherName);
+      }
+      if (!recipients.includes(username)) recipients.push(username);
+      api.sendToUsers(recipients, payload);
     }
+  });
+
+  api.registerWs("typing", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
+    if (!mapId) return;
+    const room = rooms.get(mapId);
+    if (!room || !room.users.has(username)) return;
+    const isTyping = Boolean(msg?.isTyping);
+    if (!room.typing) room.typing = new Map();
+    if (isTyping) {
+      room.typing.set(username, api.now() + 4500);
+      room.lastActiveAt = api.now();
+    } else {
+      room.typing.delete(username);
+    }
+    api.sendToUsers(usersInRoom(mapId), { type: "plugin:maps:typing", mapId, username, isTyping, expiresAt: Number(room.typing.get(username) || 0) || 0 });
+    broadcastMapsListThrottled();
   });
 
   api.registerWs("setInvisible", (ws, msg) => {
@@ -1126,6 +1722,7 @@ module.exports = function init(api) {
     const map = mapById(mapId);
     if (!map) return;
     if (!map.walkiesEnabled) {
+      noteWalkie("send-denied-disabled", mapId, { username });
       ws.send(JSON.stringify({ type: "plugin:maps:error", message: "Walkies are disabled for this map." }));
       return;
     }
@@ -1134,27 +1731,30 @@ module.exports = function init(api) {
     if (!room.users.has(username)) return;
 
     const idRaw = typeof msg?.id === "string" ? msg.id.trim() : "";
-    const id = idRaw && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$/.test(idRaw) ? idRaw : `${api.now()}_${Math.random().toString(16).slice(2)}`;
+    let id = idRaw && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,80}$/.test(idRaw) ? idRaw : `${api.now()}_${Math.random().toString(16).slice(2)}`;
+    while (room.walkies?.has(id)) id = `${id}_${Math.random().toString(16).slice(2, 6)}`;
     const url = typeof msg?.url === "string" ? msg.url.trim() : "";
-    if (!isSafeUploadUrl(url)) return;
+    if (!isSafeUploadUrl(url)) {
+      noteWalkie("send-denied-bad-url", mapId, { username });
+      return;
+    }
     const x = clamp01(msg?.x);
     const y = clamp01(msg?.y);
 
     const createdAt = api.now();
+    room.lastActiveAt = createdAt;
     const pending = new Set(usersInRoom(mapId));
     if (!room.walkies) room.walkies = new Map();
-    room.walkies.set(id, { url, pending, createdAt, mapId });
+    const timeout = setTimeout(() => {
+      const r = rooms.get(mapId);
+      if (!r?.walkies?.has(id)) return;
+      cleanupWalkieEntry(r, id, "cleanup-timeout", {});
+    }, 2 * 60 * 1000);
+    room.walkies.set(id, { url, pending, createdAt, mapId, timeout });
+    noteWalkie("send", mapId, { id, pendingCount: pending.size });
 
     api.sendToUsers(usersInRoom(mapId), { type: "plugin:maps:walkie", mapId, id, username, url, x, y, createdAt });
 
-    // Hard timeout to ensure cleanup even if clients never ack.
-    setTimeout(() => {
-      const r = rooms.get(mapId);
-      const entry = r?.walkies?.get(id);
-      if (!entry) return;
-      r.walkies.delete(id);
-      tryDeleteUploadSoon(url, createdAt);
-    }, 2 * 60 * 1000);
   });
 
   api.registerWs("walkiePlayed", (ws, msg) => {
@@ -1168,10 +1768,27 @@ module.exports = function init(api) {
     if (!id) return;
     const entry = room.walkies.get(id);
     if (!entry) return;
-    entry.pending.delete(username);
-    if (entry.pending.size === 0) {
-      room.walkies.delete(id);
-      tryDeleteUploadSoon(entry.url, entry.createdAt);
+    if (!entry.pending.has(username)) {
+      noteWalkie("ack-duplicate", mapId, { id, username, reason: String(msg?.reason || "") });
+      return;
     }
+    entry.pending.delete(username);
+    noteWalkie("ack", mapId, { id, username, pendingCount: entry.pending.size, reason: String(msg?.reason || "") });
+    if (entry.pending.size === 0) {
+      cleanupWalkieEntry(room, id, "cleanup-all-acked", {});
+    }
+  });
+
+  api.registerWs("walkieState", (ws, msg) => {
+    const username = userIdentity(ws);
+    if (!username) return;
+    const mapId = normId(ws.__mapsRoomId || msg?.mapId || "");
+    if (!mapId) return;
+    const phaseRaw = typeof msg?.phase === "string" ? msg.phase.trim().toLowerCase() : "";
+    const phase = /^[a-z_]{2,24}$/.test(phaseRaw) ? phaseRaw : "unknown";
+    const id = typeof msg?.id === "string" ? msg.id.trim().slice(0, 120) : "";
+    const attempt = clampInt(msg?.attempt, 0, 10);
+    const error = typeof msg?.error === "string" ? msg.error.trim().slice(0, 120) : "";
+    noteWalkie(`client-${phase}`, mapId, { username, id, attempt, error });
   });
 };

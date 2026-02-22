@@ -42,6 +42,7 @@ const showSideRackBtn = document.getElementById("showSideRack");
 const showRightRackBtn = document.getElementById("showRightRack");
 const chatModToggleWrapEl = document.getElementById("chatModToggleWrap");
 const chatModToggleEl = document.getElementById("chatModToggle");
+const poweredByVersionEl = document.getElementById("poweredByVersion");
 
 const authHint = document.getElementById("authHint");
 const onboardingCard = document.getElementById("onboardingCard");
@@ -341,6 +342,26 @@ const HIVES_VIEW_MODE_KEY = "bzl_hivesViewMode";
 const HIVES_LIST_AUTO_THRESHOLD_PX = 520;
 let lastHivesWidthPx = 0;
 let hivesResizeObserver = null;
+
+function isOwnerRole(role) {
+  return String(role || "").toLowerCase() === "owner";
+}
+
+function isAdminRole(role) {
+  return String(role || "").toLowerCase() === "admin";
+}
+
+function isModeratorRole(role) {
+  return String(role || "").toLowerCase() === "moderator";
+}
+
+function isStaffRole(role) {
+  return isOwnerRole(role) || isAdminRole(role) || isModeratorRole(role);
+}
+
+function canManagePluginsRole(role) {
+  return isOwnerRole(role) || isAdminRole(role);
+}
 
 // --- Rack layout (experimental) ------------------------------------------------
 
@@ -2351,7 +2372,7 @@ function ensureChatPostPanelInstance(postId, opts) {
         toast("Walkie Talkie", "This hive is walkie-only. Hold ~ to talk.");
         return;
       }
-      if (currentPost?.readOnly && !(loggedInRole === "owner" || loggedInRole === "moderator")) {
+      if (currentPost?.readOnly && !isStaffRole(loggedInRole)) {
         toast("Read-only", "This hive is read-only.");
         return;
       }
@@ -2484,7 +2505,7 @@ function renderChatPostPanelInstance(panelId, forceScroll) {
   }
 
   const isWalkie = String(post.mode || post.chatMode || "").toLowerCase() === "walkie";
-  const canChatWrite = Boolean(loggedInRole === "owner" || loggedInRole === "moderator" || !post.readOnly);
+  const canChatWrite = Boolean(isStaffRole(loggedInRole) || !post.readOnly);
   if (editorEl) editorEl.contentEditable = String(Boolean(canChatWrite && !isWalkie));
   if (sendBtn instanceof HTMLButtonElement) sendBtn.disabled = !(loggedInUser && canChatWrite && !isWalkie);
 
@@ -2545,7 +2566,7 @@ function renderChatPostPanelInstance(panelId, forceScroll) {
             )}">Report</button>`
           : "";
       const deleteAction =
-        loggedInUser && !m.deleted && (loggedInRole === "owner" || loggedInRole === "moderator" || from === loggedInUser)
+        loggedInUser && !m.deleted && (isStaffRole(loggedInRole) || from === loggedInUser)
           ? `<button type="button" class="ghost smallBtn" data-delchat="${escapeHtml(m.id)}" data-postid="${escapeHtml(
               post.id
             )}">Delete</button>`
@@ -3685,6 +3706,12 @@ function renderInstanceBranding() {
   if (instanceSubtitleEl) instanceSubtitleEl.textContent = b.subtitle;
 }
 
+function renderPoweredByVersion() {
+  if (!poweredByVersionEl) return;
+  const version = String(serverHealth?.version || "").trim();
+  poweredByVersionEl.textContent = version ? `v${version}` : "";
+}
+
 function formatLocalTime(ts) {
   const n = Number(ts || 0);
   if (!n) return "";
@@ -3709,9 +3736,11 @@ async function requestServerInfo() {
     serverInfo = await infoRes.json();
     serverHealth = await healthRes.json();
     serverInfoStatus = { loading: false, at: Date.now(), error: "" };
+    renderPoweredByVersion();
     renderModPanel();
   } catch (e) {
     serverInfoStatus = { loading: false, at: Date.now(), error: e?.message || "Failed to load server info." };
+    renderPoweredByVersion();
     renderModPanel();
   }
 }
@@ -5941,15 +5970,15 @@ function normalizePlugins(rawList) {
 }
 
 function isOwnerUser() {
-  return Boolean(loggedInUser && loggedInRole === "owner");
+  return Boolean(loggedInUser && isOwnerRole(loggedInRole));
 }
 
 function canManagePlugins() {
-  return Boolean(loggedInUser && (loggedInRole === "owner" || loggedInRole === "moderator"));
+  return Boolean(loggedInUser && canManagePluginsRole(loggedInRole));
 }
 
 function renderPluginsAdminHtml() {
-  if (!canManagePlugins()) return `<div class="muted small">Moderator/owner only.</div>`;
+  if (!canManagePlugins()) return `<div class="muted small">Admin/owner only.</div>`;
   const status = pluginAdminStatus ? `<div class="small muted">${escapeHtml(pluginAdminStatus)}</div>` : "";
   const busyLine = pluginAdminBusy ? `<div class="small muted">Working...</div>` : "";
   const listHtml = !plugins.length
@@ -5981,7 +6010,7 @@ function renderPluginsAdminHtml() {
     })
     .join("");
   return `
-    <div class="small muted">Moderator/owner only. Install optional plugins to extend your instance.</div>
+    <div class="small muted">Admin/owner only. Install optional plugins to extend your instance.</div>
     <div class="pluginInstallRow" style="margin-top:10px">
       <input data-pluginzip="1" type="file" accept=".zip,application/zip" />
       <button data-plugininstall="1" class="ghost" type="button">Install</button>
@@ -6029,7 +6058,7 @@ function roleDefByKey(key) {
 
 function roleTokenLabel(token) {
   const t = String(token || "");
-  if (t === "owner" || t === "moderator" || t === "member") return t;
+  if (t === "owner" || t === "admin" || t === "moderator" || t === "member") return t;
   if (t.startsWith("role:")) {
     const key = t.slice("role:".length);
     const found = roleDefByKey(key);
@@ -6059,7 +6088,7 @@ function renderCustomRoleBadges(username) {
 }
 
 function availableGateTokens() {
-  const base = ["member", "moderator", "owner"];
+  const base = ["member", "moderator", "admin", "owner"];
   const custom = customRoles.map((r) => `role:${r.key}`);
   return [...base, ...custom];
 }
@@ -6836,7 +6865,7 @@ function setAuthUi() {
 
   const canMakePermanent =
     Boolean(loggedInUser) &&
-    (loggedInRole === "owner" || loggedInRole === "moderator" || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts));
+    (isStaffRole(loggedInRole) || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts));
   if (ttlMinutesEl) {
     ttlMinutesEl.min = canMakePermanent ? "0" : "1";
     if (!canMakePermanent && Number(ttlMinutesEl.value || 0) <= 0) ttlMinutesEl.value = "60";
@@ -6849,8 +6878,8 @@ function setAuthUi() {
 }
 
 function roleLabel(role) {
-  const r = String(role || "member");
-  return r === "owner" || r === "moderator" ? r : "member";
+  const r = String(role || "member").toLowerCase();
+  return r === "owner" || r === "admin" || r === "moderator" ? r : "member";
 }
 
 function peopleOnlineCardStyle(member) {
@@ -7047,13 +7076,13 @@ function renderModPanel() {
     btn.classList.toggle("ghost", !on);
     // Owner-only plugin tabs should not show for non-owners.
     const ownerOnly = btn.dataset.ownerOnly === "1";
-    btn.classList.toggle("hidden", Boolean(ownerOnly && loggedInRole !== "owner"));
+    btn.classList.toggle("hidden", Boolean(ownerOnly && !isOwnerRole(loggedInRole) && !isAdminRole(loggedInRole)));
   }
 
   // Plugin-provided moderation tabs (render into modBody).
   if (modPluginTabs.has(modTab)) {
     const def = modPluginTabs.get(modTab);
-    if (def?.ownerOnly && loggedInRole !== "owner") {
+    if (def?.ownerOnly && !isOwnerRole(loggedInRole) && !isAdminRole(loggedInRole)) {
       modTab = "server";
       renderModPanel();
       return;
@@ -7091,8 +7120,8 @@ function renderModPanel() {
   }
 
   if (modTab === "server") {
-    const isOwner = loggedInRole === "owner";
-    const canEditAppearance = loggedInRole === "owner" || loggedInRole === "moderator";
+    const isOwner = isOwnerRole(loggedInRole) || isAdminRole(loggedInRole);
+    const canEditAppearance = isStaffRole(loggedInRole);
     const b = normalizeInstanceBranding(instanceBranding);
     const a = b.appearance || {};
     const loading = Boolean(serverInfoStatus.loading);
@@ -7291,8 +7320,8 @@ function renderModPanel() {
   }
 
   if (modTab === "onboarding") {
-    const isOwner = loggedInRole === "owner";
-    const canEdit = loggedInRole === "owner" || loggedInRole === "moderator";
+    const isOwner = isOwnerRole(loggedInRole) || isAdminRole(loggedInRole);
+    const canEdit = isStaffRole(loggedInRole);
     syncOnboardingAdminDraft(false);
     normalizeOnboardingDraftRules();
     const roleOptions = customRoles
@@ -7452,7 +7481,7 @@ function renderModPanel() {
         </label>
         <button type="button" data-rolecreate="1">Create</button>
       </div>
-      <div class="small muted" style="margin-bottom:8px">Tip: gate collections with <span class="tag">member</span>, <span class="tag">moderator</span>, <span class="tag">owner</span>, or <span class="tag">role:yourkey</span>.</div>
+      <div class="small muted" style="margin-bottom:8px">Tip: gate collections with <span class="tag">member</span>, <span class="tag">moderator</span>, <span class="tag">admin</span>, <span class="tag">owner</span>, or <span class="tag">role:yourkey</span>.</div>
       <div class="gateList">${roleList}</div>
     </div>`;
     if (!modUsers.length) {
@@ -7471,7 +7500,8 @@ function renderModPanel() {
           canModerate &&
           u.username !== loggedInUser &&
           role !== "owner" &&
-          (role !== "moderator" || loggedInRole === "owner");
+          (role !== "admin" || isOwnerRole(loggedInRole)) &&
+          (role !== "moderator" || isOwnerRole(loggedInRole) || isAdminRole(loggedInRole));
         const customBadges = renderCustomRoleBadges(u.username);
         return `<div class="modCard">
           <div class="modRowTop">
@@ -7492,6 +7522,20 @@ function renderModPanel() {
                 ? `<button type="button" data-modaction="user_role_set" data-targettype="user" data-targetid="${escapeHtml(
                     u.username
                   )}" data-role="moderator">Make mod</button>`
+                : ""
+            }
+            ${
+              canPromote && role === "moderator"
+                ? `<button type="button" data-modaction="user_role_set" data-targettype="user" data-targetid="${escapeHtml(
+                    u.username
+                  )}" data-role="admin">Make admin</button>`
+                : ""
+            }
+            ${
+              canPromote && role === "admin"
+                ? `<button type="button" class="danger" data-modaction="user_role_set" data-targettype="user" data-targetid="${escapeHtml(
+                    u.username
+                  )}" data-role="moderator">Remove admin</button>`
                 : ""
             }
             ${
@@ -7999,7 +8043,7 @@ function renderChatPanel(forceScroll = false) {
   chatMeta.textContent = `${author}${isWalkie ? " | walkie talkie" : ""}${streamMeta}${ro} | ${
     exp === "permanent" ? "permanent" : `expires in ${exp}`
   } | ${tags}`.trim();
-  const canChatWrite = Boolean(loggedInRole === "owner" || loggedInRole === "moderator" || !post.readOnly);
+  const canChatWrite = Boolean(isStaffRole(loggedInRole) || !post.readOnly);
   if (chatEditor) chatEditor.contentEditable = String(Boolean(canChatWrite && !isWalkie));
   const chatSendBtn = chatForm?.querySelector?.("button[type='submit']") || null;
   if (chatSendBtn) chatSendBtn.disabled = !(loggedInUser && canChatWrite && !isWalkie);
@@ -8918,7 +8962,7 @@ function attachStreamPreview(stream, kind, local = false) {
 function streamCanHostPost(post) {
   if (!post || !loggedInUser) return false;
   if (String(post.author || "") === String(loggedInUser || "")) return true;
-  return loggedInRole === "owner" || loggedInRole === "moderator";
+  return isStaffRole(loggedInRole);
 }
 
 function streamResetState(keepPostId = false) {
@@ -9768,7 +9812,7 @@ newPostForm.addEventListener("submit", (e) => {
   }
   const ttlMinutes = Number(ttlMinutesEl.value || 60);
   const canMakePermanent =
-    loggedInRole === "owner" || loggedInRole === "moderator" || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts);
+    isStaffRole(loggedInRole) || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts);
   const minMinutes = canMakePermanent ? 0 : 1;
   const ttl = Math.max(minMinutes, Math.min(2880, Math.floor(ttlMinutes))) * 60_000;
 
@@ -9884,7 +9928,7 @@ function submitChat() {
     toast("Walkie Talkie", "This hive is walkie-only. Hold ~ to talk.");
     return;
   }
-  if (post?.readOnly && !(loggedInRole === "owner" || loggedInRole === "moderator")) {
+  if (post?.readOnly && !isStaffRole(loggedInRole)) {
     toast("Read-only", "This hive is read-only.");
     return;
   }
@@ -10427,7 +10471,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const devLogClearBtn = e.target.closest("button[data-devlogclear]");
   if (devLogClearBtn) {
-    if (!(canModerate && loggedInRole === "owner")) return;
+    if (!(canModerate && (isOwnerRole(loggedInRole) || isAdminRole(loggedInRole)))) return;
     const ok = confirm("Clear the server dev log?");
     if (!ok) return;
     ws.send(JSON.stringify({ type: "devLogClear" }));
@@ -10474,7 +10518,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const onbRuleAddBtn = e.target.closest("button[data-onb-ruleadd]");
   if (onbRuleAddBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     normalizeOnboardingDraftRules();
     const nextIndex = onboardingAdminDraft.rules.length + 1;
     const id = `r${Date.now()}_${nextIndex}`;
@@ -10505,7 +10549,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const onbRuleDeleteBtn = e.target.closest("button[data-onb-ruledelete]");
   if (onbRuleDeleteBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const id = String(onbRuleDeleteBtn.getAttribute("data-onb-ruledelete") || "").trim();
     onboardingAdminDraft.rules = onboardingAdminDraft.rules.filter((r) => r.id !== id);
     onboardingAdminExpandedRuleIds.delete(id);
@@ -10516,7 +10560,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const onbRuleUpBtn = e.target.closest("button[data-onb-ruleup]");
   if (onbRuleUpBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const id = String(onbRuleUpBtn.getAttribute("data-onb-ruleup") || "").trim();
     const idx = onboardingAdminDraft.rules.findIndex((r) => r.id === id);
     if (idx <= 0) return;
@@ -10530,7 +10574,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const onbRuleDownBtn = e.target.closest("button[data-onb-ruledown]");
   if (onbRuleDownBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const id = String(onbRuleDownBtn.getAttribute("data-onb-ruledown") || "").trim();
     const idx = onboardingAdminDraft.rules.findIndex((r) => r.id === id);
     if (idx < 0 || idx >= onboardingAdminDraft.rules.length - 1) return;
@@ -10544,7 +10588,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const onboardingSaveBtn = e.target.closest("button[data-onboarding-save],button[data-onboarding-publish]");
   if (onboardingSaveBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const publish = onboardingSaveBtn.hasAttribute("data-onboarding-publish");
     normalizeOnboardingDraftRules();
     ws.send(
@@ -10570,7 +10614,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const instanceSaveBtn = e.target.closest("button[data-instance-save]");
   if (instanceSaveBtn) {
-    if (!(canModerate && loggedInRole === "owner")) return;
+    if (!(canModerate && (isOwnerRole(loggedInRole) || isAdminRole(loggedInRole)))) return;
     const title = String(modBodyEl.querySelector("input[data-instance-title]")?.value || "").replace(/\s+/g, " ").trim().slice(0, 32);
     const subtitle = String(modBodyEl.querySelector("input[data-instance-subtitle]")?.value || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const allowMemberPermanentPosts = Boolean(modBodyEl.querySelector("input[data-instance-allowpermanent]")?.checked);
@@ -10605,7 +10649,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const instanceSaveAppearanceBtn = e.target.closest("button[data-instance-saveappearance]");
   if (instanceSaveAppearanceBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const bg = String(modBodyEl.querySelector("input[data-instance-bg]")?.value || "").trim();
     const panel = String(modBodyEl.querySelector("input[data-instance-panel]")?.value || "").trim();
     const text = String(modBodyEl.querySelector("input[data-instance-text]")?.value || "").trim();
@@ -10630,7 +10674,7 @@ modBodyEl?.addEventListener("click", (e) => {
 
   const themeResetBtn = e.target.closest("button[data-theme-reset]");
   if (themeResetBtn) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     applyInstanceAppearance();
     renderModPanel();
     toast("Theme", "Reset to saved theme.");
@@ -10928,7 +10972,7 @@ modBodyEl?.addEventListener("change", (e) => {
 
   const presetSelect = e.target?.closest?.("select[data-theme-preset]");
   if (presetSelect) {
-    if (!(canModerate && (loggedInRole === "owner" || loggedInRole === "moderator"))) return;
+    if (!(canModerate && isStaffRole(loggedInRole))) return;
     const id = String(presetSelect.value || "").trim();
     if (!id) return;
     const preset = THEME_PRESETS.find((p) => p.id === id) || null;

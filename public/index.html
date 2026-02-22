@@ -173,13 +173,22 @@
         </div>
 
         <div class="sidebarFooter">
-          <div class="poweredByTile" aria-label="Powered by Bzl">
+          <a
+            id="poweredByTileLink"
+            class="poweredByTile"
+            aria-label="Powered by Bzl"
+            href="https://bzl.one"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Visit bzl.one"
+          >
             <img class="poweredByLogo" src="/assets/logobzl.png" alt="Bzl logo" />
             <div class="poweredByText">
               <div class="poweredByTitle">Powered by Bzl</div>
               <div class="poweredByByline">by Azakaela Erin Redfire</div>
+              <div class="poweredByVersion" id="poweredByVersion"></div>
             </div>
-          </div>
+          </a>
           <button id="toggleSidebar" class="ghost smallBtn" type="button" title="Hide sidebar">Hide</button>
         </div>
       </aside>

@@ -110,13 +110,71 @@
       .mapHudTitle { font-weight: 800; display:flex; justify-content: space-between; align-items:center; gap: 8px; }
       .mapHudList { margin-top: 10px; display:flex; flex-direction: column; gap: 8px; max-height: 340px; overflow:auto; }
       .mapHint { margin-top: 10px; color: rgba(246,240,255,0.72); font-size: 12px; line-height: 1.05rem; }
-      .mapChatOverlay { position:absolute; left: 12px; right: 12px; bottom: 12px; display:flex; gap: 8px; }
+      .mapChatOverlay {
+        position:absolute;
+        left: 12px;
+        bottom: 12px;
+        width: min(560px, calc(100% - 24px));
+        display:flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(246,240,255,0.16);
+        border-radius: 12px;
+        background: rgba(10,10,18,var(--maps-chat-overlay-alpha,0.92));
+        backdrop-filter: blur(6px);
+        z-index: 9;
+      }
+      .mapChatOverlay.raiseForWalkie { bottom: 68px; }
+      .mapChatOverlay.raiseForHotbar { bottom: 126px; }
       .mapChatOverlay input { flex:1; }
+      .mapChatToolbar { display:flex; align-items:center; gap: 8px; flex-wrap: wrap; }
+      .mapChatDragHandle { cursor: move; user-select: none; touch-action: none; }
+      .mapChatScopeRow { display:flex; gap: 6px; }
+      .mapChatOpacity { display:flex; align-items:center; gap: 6px; margin-left: auto; min-width: 132px; }
+      .mapChatOpacity input[type="range"] { flex: 1; }
+      .mapChatFeed { min-height: 120px; max-height: min(38vh, 320px); overflow: auto; border: 1px solid rgba(246,240,255,0.12); border-radius: 10px; padding: 8px; background: rgba(0,0,0,0.16); display:flex; flex-direction:column; gap: 6px; }
+      .mapChatFeedItem { border: 1px solid rgba(246,240,255,0.10); border-radius: 9px; padding: 6px 8px; background: rgba(255,255,255,0.03); }
+      .mapChatFeedMeta { display:flex; justify-content: space-between; gap: 8px; font-size: 11px; color: rgba(246,240,255,0.70); margin-bottom: 2px; }
+      .mapChatFeedText { font-size: 13px; line-height: 1.25rem; color: rgba(246,240,255,0.92); white-space: pre-wrap; word-break: break-word; }
       .mapWalkieBar { position:absolute; left: 12px; right: 12px; bottom: 12px; display:flex; justify-content:center; pointer-events:none; }
       .mapWalkieBarInner { pointer-events:auto; display:flex; gap: 10px; align-items:center; width: min(520px, 100%); }
       .mapWalkieBtn { flex: 1; height: 44px; border-radius: 14px; font-weight: 900; letter-spacing: 0.01em; }
       .mapWalkieHint { font-size: 12px; color: rgba(246,240,255,0.75); white-space: nowrap; }
       .mapsRoomWrap { display:flex; flex-direction: column; min-height: 0; flex: 1; }
+      .mapCornerTools { position:absolute; top: 12px; right: 12px; display:flex; gap: 8px; z-index: 5; }
+      .mapGmTopLeft { position:absolute; top: 12px; left: 12px; z-index: 5; display:flex; flex-direction:column; gap: 8px; }
+      .mapModePill { display:inline-flex; align-items:center; gap: 8px; padding: 6px 10px; border-radius: 999px; border:1px solid rgba(246,240,255,0.18); background: rgba(10,10,18,0.72); font-size: 12px; }
+      .mapGmHotbar { position:absolute; left: 12px; right: 12px; bottom: 12px; z-index: 5; display:flex; justify-content:center; pointer-events:none; }
+      .mapGmHotbar.raiseForWalkie { bottom: 68px; }
+      .mapGmHotbarInner { pointer-events:auto; display:flex; gap: 8px; padding: 8px; border:1px solid rgba(246,240,255,0.14); border-radius: 14px; background: rgba(10,10,18,0.72); }
+      .mapGmHotbarInner .smallBtn { min-width: 84px; }
+      .mapInspectorDrawer { position:absolute; top: 56px; right: 12px; z-index: 5; width: min(320px, calc(100% - 24px)); border:1px solid rgba(246,240,255,0.14); border-radius: 14px; background: rgba(10,10,18,0.92); padding: 10px; }
+      .mapInspectorDrawer.hidden { display:none; }
+      .mapInspectorTitle { font-weight: 900; margin-bottom: 6px; }
+      .mapsPanel.focusMode .mapView { gap: 0; padding: 0; }
+      .mapsPanel.focusMode .mapCanvasWrap { border-radius: 0; border-left: 0; border-right: 0; }
+      .mapsPanel.focusMode .mapHud { display: none; }
+      .mapsPanel.focusMode .mapDock { display: none; }
+      .mapsPanel.cinematicMode .mapView { gap: 0; padding: 0; }
+      .mapsPanel.cinematicMode .mapCanvasWrap { border-radius: 0; border-left: 0; border-right: 0; }
+      .mapsPanel.cinematicMode .mapHud,
+      .mapsPanel.cinematicMode .mapDock,
+      .mapsPanel.cinematicMode .mapGmTopLeft,
+      .mapsPanel.cinematicMode .mapCornerTools,
+      .mapsPanel.cinematicMode .mapInspectorDrawer,
+      .mapsPanel.cinematicMode .mapGmHotbar,
+      .mapsPanel.cinematicMode .mapWalkieBar,
+      .mapsPanel.cinematicMode .mapChatOverlay { display: none !important; }
+      .mapsAvatarEditorModal { position: fixed; inset: 0; z-index: 1500; background: rgba(6,5,12,0.68); display:flex; align-items:center; justify-content:center; padding: 16px; }
+      .mapsAvatarEditorCard { width: min(920px, 96vw); max-height: 90vh; overflow:auto; border: 1px solid rgba(246,240,255,0.18); border-radius: 16px; background: linear-gradient(180deg, rgba(20,16,32,0.98), rgba(10,9,16,0.98)); padding: 14px; }
+      .mapsAvatarEditorGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .mapsAvatarStates { border:1px solid rgba(246,240,255,0.14); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.02); }
+      .mapsAvatarFrames { border:1px solid rgba(246,240,255,0.14); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.02); min-height: 180px; }
+      .mapsAvatarFrameRow { display:flex; align-items:center; gap: 8px; border:1px solid rgba(246,240,255,0.10); border-radius: 10px; padding: 6px; margin-bottom: 6px; }
+      .mapsAvatarFrameThumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border:1px solid rgba(246,240,255,0.15); }
+      .mapsAvatarFrameName { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size: 12px; color: rgba(246,240,255,0.82); }
+      .mapsAvatarSheetGrid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
       .mapDock { border: 1px solid rgba(246,240,255,0.14); border-radius: 14px; background: rgba(255,255,255,0.02); margin: 0 12px 12px; padding: 10px 12px; display:flex; flex-direction: column; min-height: 0; max-height: min(46vh, 520px); overflow:hidden; }
       .mapDock.collapsed { max-height: none; }
       .mapDock.collapsed .dockBody { display:none; }
@@ -223,6 +281,9 @@
     let walkieChunks = [];
     let walkieRecording = false;
     let walkieStartAt = 0;
+    let walkieState = { phase: "idle", id: "", error: "", attempt: 0 };
+    const walkiePhases = new Set(["idle", "recording", "encoding", "uploading", "sent", "playing", "played", "timeout", "failed"]);
+    let walkieLastStateEmit = "";
     const walkiePlaybacks = new Map(); // id -> {audio, gain, pan, filter?, interval?, ackTimer?}
     const exitInside = new Map(); // idx -> boolean
     let lastExitAt = 0;
@@ -242,10 +303,606 @@
     let placeScale = 1.0;
     let speakingAsPropId = "";
     let ttrpgDockCollapsed = false;
+    let mapsCapabilities = null;
+    const typingUntil = new Map(); // username -> expiresAt(ms)
+    const emoteUntil = new Map(); // username -> {state:string, until:number, loop:boolean}
+    const avatarAnimRuntime = new Map(); // username -> {lastX,lastY,lastState,lastFrameAt,lastFacing:number,lastMoveAt:number}
+    const frameAvatarCache = new Map(); // url -> {img,status,failedAt}
+    let typingLastSentAt = 0;
+    let typingOpen = false;
+    let mapChatScope = "local";
+    let mapChatOverlayOpacity = 0.92;
+    let mapChatOverlayPos = null;
+    let mapChatOverlayDrag = null;
+    let mapChatFeed = []; // Array<{id:string,scope:"local"|"global",fromUser:string,text:string,createdAt:number}>
+    let isFocusMode = false;
+    let cinematicMode = false;
+    let gmMode = "play"; // "play" | "select" | "place" | "polygon"
+    let inspectorOpen = false;
+    let lastPaletteToastAt = 0;
+    let gmOverlayVisible = false;
+    let avatarEditorOpen = false;
+    let avatarEditorDraft = null;
+    let avatarPresets = [];
+    let avatarPresetsCanManage = false;
+    let avatarPresetSelectedId = "";
+    let capabilitiesRetryTimer = 0;
+    let capabilitiesRetries = 0;
+
+    function clearCapabilitiesRetry() {
+      if (capabilitiesRetryTimer) {
+        try {
+          clearTimeout(capabilitiesRetryTimer);
+        } catch {
+          // ignore
+        }
+      }
+      capabilitiesRetryTimer = 0;
+      capabilitiesRetries = 0;
+    }
+
+    function requestCapabilitiesWithRetry(reason = "manual") {
+      if (!activeMap?.id) return;
+      const maxRetries = 3;
+      const attemptDelay = 500;
+      const attempt = () => {
+        if (!activeMap?.id) return;
+        ctx.send("getCapabilities", { mapId: activeMap.id, reason });
+        if (mapsCapabilities?.features && typeof mapsCapabilities.features === "object") {
+          clearCapabilitiesRetry();
+          return;
+        }
+        if (capabilitiesRetries >= maxRetries) {
+          clearCapabilitiesRetry();
+          return;
+        }
+        capabilitiesRetries += 1;
+        capabilitiesRetryTimer = setTimeout(attempt, attemptDelay * capabilitiesRetries);
+      };
+      clearCapabilitiesRetry();
+      attempt();
+    }
+
+    function isMapStaffRole(role) {
+      const r = String(role || "").toLowerCase();
+      return r === "owner" || r === "admin" || r === "moderator";
+    }
+
+    function focusModePrefKey() {
+      return "bzl_maps_focusMode";
+    }
+
+    function mapChatOverlayPrefKey() {
+      return "bzl_maps_chatOverlay";
+    }
+
+    function readFocusModePref() {
+      try {
+        return localStorage.getItem(focusModePrefKey()) === "1";
+      } catch {
+        return false;
+      }
+    }
+
+    function writeFocusModePref(on) {
+      try {
+        localStorage.setItem(focusModePrefKey(), on ? "1" : "0");
+      } catch {
+        // ignore
+      }
+    }
+
+    function readMapChatOverlayPrefs() {
+      try {
+        const raw = localStorage.getItem(mapChatOverlayPrefKey());
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          mapChatScope = String(parsed.scope || "local") === "global" ? "global" : "local";
+          mapChatOverlayOpacity = clamp(Number(parsed.opacity || 0.92), 0.25, 1);
+          const x = Number(parsed?.pos?.x);
+          const y = Number(parsed?.pos?.y);
+          mapChatOverlayPos = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    function writeMapChatOverlayPrefs() {
+      try {
+        localStorage.setItem(
+          mapChatOverlayPrefKey(),
+          JSON.stringify({
+            scope: mapChatScope,
+            opacity: mapChatOverlayOpacity,
+            pos: mapChatOverlayPos && Number.isFinite(mapChatOverlayPos.x) && Number.isFinite(mapChatOverlayPos.y) ? { x: mapChatOverlayPos.x, y: mapChatOverlayPos.y } : null
+          })
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    function pushMapChatFeedEntry(scopeRaw, messageRaw) {
+      const scope = String(scopeRaw || "").trim().toLowerCase() === "global" ? "global" : "local";
+      const message = messageRaw && typeof messageRaw === "object" ? messageRaw : null;
+      if (!message) return;
+      const id = String(message.id || `${Date.now()}_${Math.random().toString(16).slice(2)}`).slice(0, 120);
+      const fromUser = String(message.fromUser || "").trim().toLowerCase().slice(0, 40);
+      const text = String(message.text || "").replace(/\s+/g, " ").trim().slice(0, 420);
+      const createdAt = Number(message.createdAt || Date.now()) || Date.now();
+      if (!text) return;
+      mapChatFeed.push({ id, scope, fromUser, text, createdAt });
+      if (mapChatFeed.length > 260) mapChatFeed = mapChatFeed.slice(-220);
+    }
+
+    function replaceMapChatGlobalHistory(messages) {
+      const list = Array.isArray(messages) ? messages : [];
+      const keepLocal = mapChatFeed.filter((entry) => entry.scope !== "global");
+      mapChatFeed = keepLocal;
+      for (const item of list) pushMapChatFeedEntry("global", item);
+    }
+
+    function renderMapChatFeedDom() {
+      const feedEl = document.getElementById("mapsChatFeed");
+      if (!feedEl) return;
+      const rows = mapChatFeed
+        .filter((entry) => entry.scope === mapChatScope)
+        .slice(-120);
+      if (!rows.length) {
+        feedEl.innerHTML = `<div class="small muted">No ${mapChatScope} messages yet.</div>`;
+        return;
+      }
+      const html = rows
+        .map((entry) => {
+          const t = new Date(Number(entry.createdAt || 0) || Date.now());
+          const hh = String(t.getHours()).padStart(2, "0");
+          const mm = String(t.getMinutes()).padStart(2, "0");
+          const user = entry.fromUser ? `@${entry.fromUser}` : "unknown";
+          return `<div class="mapChatFeedItem"><div class="mapChatFeedMeta"><span>${escapeHtml(user)}</span><span>${escapeHtml(`${hh}:${mm}`)}</span></div><div class="mapChatFeedText">${escapeHtml(entry.text)}</div></div>`;
+        })
+        .join("");
+      feedEl.innerHTML = html;
+      feedEl.scrollTop = feedEl.scrollHeight;
+    }
+
+    function applyFocusModeClass() {
+      if (!mapsPanel) return;
+      mapsPanel.classList.toggle("focusMode", Boolean(mode === "map" && isFocusMode));
+      mapsPanel.classList.toggle("cinematicMode", Boolean(mode === "map" && cinematicMode));
+    }
+
+    function setFocusMode(on, persist = true) {
+      if (Boolean(on) && !featureEnabled("focusMode")) return;
+      isFocusMode = Boolean(on) && featureEnabled("focusMode");
+      if (persist) writeFocusModePref(isFocusMode);
+      if (isFocusMode) {
+        gmMode = "play";
+        editMode = false;
+      }
+      applyFocusModeClass();
+      if (mode === "map") renderMapView();
+    }
+
+    function setCinematicMode(on) {
+      cinematicMode = Boolean(on);
+      if (cinematicMode) typingOpen = false;
+      applyFocusModeClass();
+      if (mode === "map") renderMapView();
+    }
+
+    isFocusMode = readFocusModePref();
+    readMapChatOverlayPrefs();
+
+    function setGmMode(next) {
+      const target = String(next || "").toLowerCase();
+      const canUseTools = Boolean(activeMap?.ttrpgEnabled && canManageTtrpg);
+      if (target === "play") {
+        gmMode = "play";
+        editMode = false;
+        ttrpgTool = "select";
+        renderMapView();
+        return;
+      }
+      if (!canUseTools) return;
+      if (target === "select") {
+        gmMode = "select";
+        editMode = false;
+        ttrpgTool = "select";
+        renderMapView();
+        return;
+      }
+      if (target === "place") {
+        gmMode = "place";
+        editMode = false;
+        ttrpgTool = "place";
+        renderMapView();
+        return;
+      }
+      if (target === "polygon") {
+        gmMode = "polygon";
+        editMode = true;
+        renderMapView();
+      }
+    }
+
+    function setGmOverlayVisible(on) {
+      gmOverlayVisible = Boolean(on);
+      if (!gmOverlayVisible) inspectorOpen = false;
+      if (mode === "map") renderMapView();
+    }
+
+    function featureEnabled(name, fallback = false) {
+      const features = mapsCapabilities?.features;
+      if (!features || typeof features !== "object") return fallback;
+      if (!Object.prototype.hasOwnProperty.call(features, name)) return fallback;
+      return Boolean(features[name]);
+    }
+
+    function avatarModesSupported() {
+      const features = mapsCapabilities?.features;
+      const list = Array.isArray(features?.avatarModes) ? features.avatarModes : ["profile_token"];
+      return new Set(list.map((x) => String(x || "").trim()).filter(Boolean));
+    }
+
+    function normalizeAvatarState(raw) {
+      const supported = avatarModesSupported();
+      let mode = String(raw?.mode || "profile_token");
+      if (!supported.has(mode)) mode = "profile_token";
+      const displayName = String(raw?.displayName || "").replace(/\s+/g, " ").trim().slice(0, 32);
+      const showUsername = raw && Object.prototype.hasOwnProperty.call(raw, "showUsername") ? Boolean(raw.showUsername) : true;
+      const frameAnimation = mode === "frame_animation" ? normalizeFrameAnimation(raw?.frameAnimation) : null;
+      return { mode: frameAnimation ? "frame_animation" : "profile_token", displayName, showUsername, frameAnimation };
+    }
+
+    function displayNameForUser(username, u) {
+      const avatar = normalizeAvatarState(u?.avatar || null);
+      if (!avatar.showUsername) return "";
+      return avatar.displayName || `@${String(username || "")}`;
+    }
+
+    function defaultFrameAnimationDraft() {
+      return {
+        defaultFps: 8,
+        renderScale: 1,
+        sheetImport: { cols: 4, rows: 4, limit: 24 },
+        selectedState: "idle_down",
+        states: {
+          idle_down: { frames: [], fps: 8, loop: true, flipXWithDirection: true },
+          idle_up: { frames: [], fps: 8, loop: true, flipXWithDirection: true },
+          walk_down: { frames: [], fps: 8, loop: true, flipXWithDirection: true },
+          walk_up: { frames: [], fps: 8, loop: true, flipXWithDirection: true },
+          walk_horizontal: { frames: [], fps: 8, loop: true, flipXWithDirection: true }
+        },
+        movementMap: {
+          idleDown: "idle_down",
+          idleUp: "idle_up",
+          walkDown: "walk_down",
+          walkUp: "walk_up",
+          walkHorizontal: "walk_horizontal"
+        },
+        emotes: []
+      };
+    }
+
+    function cloneAvatarForEditor(avatarRaw) {
+      const avatar = normalizeAvatarState(avatarRaw || null);
+      const frameBase = avatar.frameAnimation
+        ? {
+            defaultFps: clamp(avatar.frameAnimation.defaultFps || 8, 1, 24),
+            renderScale: clamp(avatar.frameAnimation.renderScale || 1, 0.25, 4.0),
+            sheetImport: {
+              cols: Math.floor(clamp(avatar.frameAnimation?.sheetImport?.cols || 4, 1, 32)),
+              rows: Math.floor(clamp(avatar.frameAnimation?.sheetImport?.rows || 4, 1, 32)),
+              limit: Math.floor(clamp(avatar.frameAnimation?.sheetImport?.limit || 24, 1, 96))
+            },
+            selectedState: "idle_down",
+            states: JSON.parse(JSON.stringify(avatar.frameAnimation.states || {})),
+            movementMap: { ...(avatar.frameAnimation.movementMap || {}) },
+            emotes: Array.isArray(avatar.frameAnimation.emotes) ? JSON.parse(JSON.stringify(avatar.frameAnimation.emotes)) : []
+          }
+        : defaultFrameAnimationDraft();
+      if (!frameBase.selectedState || !frameBase.states?.[frameBase.selectedState]) {
+        const first = Object.keys(frameBase.states || {})[0] || "idle_down";
+        frameBase.selectedState = first;
+      }
+      return {
+        mode: avatar.mode === "frame_animation" ? "frame_animation" : "profile_token",
+        displayName: avatar.displayName || "",
+        showUsername: avatar.showUsername !== false,
+        frameAnimation: frameBase
+      };
+    }
+
+    function ensureAvatarEditorDraft(currentAvatar) {
+      if (!avatarEditorDraft) avatarEditorDraft = cloneAvatarForEditor(currentAvatar);
+      return avatarEditorDraft;
+    }
+
+    function normalizeAvatarPresetList(list) {
+      const src = Array.isArray(list) ? list : [];
+      const out = [];
+      for (const raw of src) {
+        const id = String(raw?.id || "").trim().toLowerCase();
+        const name = String(raw?.name || "").trim();
+        if (!id || !name) continue;
+        out.push({
+          id,
+          name: name.slice(0, 40),
+          description: String(raw?.description || "").trim().slice(0, 140),
+          tags: Array.isArray(raw?.tags) ? raw.tags.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 12) : [],
+          mode: String(raw?.mode || "profile_token"),
+          published: Boolean(raw?.published),
+          avatar: raw?.avatar && typeof raw.avatar === "object" ? raw.avatar : null
+        });
+      }
+      return out;
+    }
+
+    function selectedAvatarPresetById(id) {
+      const key = String(id || "").trim().toLowerCase();
+      if (!key) return null;
+      return avatarPresets.find((preset) => preset.id === key) || null;
+    }
+
+    function collectAvatarPayloadFromDraft() {
+      const draft = avatarEditorDraft || cloneAvatarForEditor(null);
+      const payload = {
+        mode: draft.mode === "frame_animation" ? "frame_animation" : "profile_token",
+        displayName: String(draft.displayName || "").replace(/\s+/g, " ").trim().slice(0, 32),
+        showUsername: Boolean(draft.showUsername)
+      };
+      if (payload.mode === "frame_animation") {
+        const fa = draft.frameAnimation || defaultFrameAnimationDraft();
+        const states = {};
+        for (const [stateName, stateDef] of Object.entries(fa.states || {})) {
+          const cleanState = normalizeFrameStateName(stateName);
+          if (!cleanState) continue;
+          const frames = (Array.isArray(stateDef?.frames) ? stateDef.frames : [])
+            .map((f) => {
+              const url = String(f?.url || "").trim();
+              const hasCrop =
+                Number.isFinite(Number(f?.sx)) &&
+                Number.isFinite(Number(f?.sy)) &&
+                Number.isFinite(Number(f?.sw)) &&
+                Number.isFinite(Number(f?.sh));
+              return hasCrop
+                ? {
+                    url,
+                    sx: clamp(Number(f.sx), 0, 8192),
+                    sy: clamp(Number(f.sy), 0, 8192),
+                    sw: clamp(Number(f.sw), 1, 8192),
+                    sh: clamp(Number(f.sh), 1, 8192)
+                  }
+                : { url };
+            })
+            .filter((f) => Boolean(f.url));
+          if (!frames.length) continue;
+          states[cleanState] = {
+            frames,
+            fps: clamp(stateDef?.fps || fa.defaultFps || 8, 1, 24),
+            loop: Object.prototype.hasOwnProperty.call(stateDef || {}, "loop") ? Boolean(stateDef.loop) : true,
+            flipXWithDirection: Object.prototype.hasOwnProperty.call(stateDef || {}, "flipXWithDirection") ? Boolean(stateDef.flipXWithDirection) : true
+          };
+        }
+        const hasStates = Object.keys(states).length > 0;
+        if (!hasStates) {
+          payload.mode = "profile_token";
+        } else {
+          const movementMap = {};
+          const moveRaw = fa.movementMap && typeof fa.movementMap === "object" ? fa.movementMap : {};
+          for (const key of ["idle", "idleUp", "idleDown", "walkVertical", "walkHorizontal", "walkUp", "walkDown", "walkLeft", "walkRight"]) {
+            const v = normalizeFrameStateName(moveRaw[key]);
+            if (v && states[v]) movementMap[key] = v;
+          }
+          payload.frameAnimation = {
+            defaultFps: clamp(fa.defaultFps || 8, 1, 24),
+            renderScale: clamp(fa.renderScale || 1, 0.25, 4.0),
+            states,
+            movementMap,
+            emotes: Array.isArray(fa.emotes) ? fa.emotes.map((e) => ({ ...e })) : []
+          };
+        }
+      }
+      return payload;
+    }
+
+    function normalizeFrameStateName(name) {
+      const raw = String(name || "").trim();
+      if (!raw) return "";
+      if (!/^[a-z][a-z0-9_]{0,31}$/i.test(raw)) return "";
+      return raw;
+    }
+
+    function normalizeFrameAnimation(raw) {
+      const input = raw && typeof raw === "object" ? raw : {};
+      const defaultFps = clamp(input.defaultFps, 1, 24);
+      const renderScale = clamp(input.renderScale, 0.25, 4.0);
+      const statesRaw = input.states && typeof input.states === "object" ? input.states : {};
+      const states = {};
+      let totalFrames = 0;
+      const MAX_STATES = 24;
+      const MAX_FRAMES_PER_STATE = 48;
+      const MAX_TOTAL_FRAMES = 220;
+      for (const [stateRaw, defRaw] of Object.entries(statesRaw).slice(0, MAX_STATES)) {
+        const state = normalizeFrameStateName(stateRaw);
+        if (!state) continue;
+        const def = defRaw && typeof defRaw === "object" ? defRaw : {};
+        const framesRaw = Array.isArray(def.frames) ? def.frames : [];
+        const frames = [];
+        for (const frameRaw of framesRaw.slice(0, MAX_FRAMES_PER_STATE)) {
+          const url = String(frameRaw?.url || "").trim();
+          if (!url || url.length > 240) continue;
+          if (!url) continue;
+          const sx = clamp(Number(frameRaw?.sx), 0, 8192);
+          const sy = clamp(Number(frameRaw?.sy), 0, 8192);
+          const sw = clamp(Number(frameRaw?.sw), 1, 8192);
+          const sh = clamp(Number(frameRaw?.sh), 1, 8192);
+          const hasCrop =
+            Number.isFinite(Number(frameRaw?.sx)) &&
+            Number.isFinite(Number(frameRaw?.sy)) &&
+            Number.isFinite(Number(frameRaw?.sw)) &&
+            Number.isFinite(Number(frameRaw?.sh));
+          frames.push(hasCrop ? { url, sx, sy, sw, sh } : { url });
+          totalFrames += 1;
+          if (totalFrames >= MAX_TOTAL_FRAMES) break;
+        }
+        if (!frames.length) continue;
+        states[state] = {
+          frames,
+          fps: clamp(def.fps || defaultFps, 1, 24),
+          loop: Object.prototype.hasOwnProperty.call(def, "loop") ? Boolean(def.loop) : true,
+          flipXWithDirection: Object.prototype.hasOwnProperty.call(def, "flipXWithDirection") ? Boolean(def.flipXWithDirection) : true
+        };
+        if (totalFrames >= MAX_TOTAL_FRAMES) break;
+      }
+      if (!Object.keys(states).length) return null;
+      const movementRaw = input.movementMap && typeof input.movementMap === "object" ? input.movementMap : {};
+      const movementMap = {};
+      const movementKeys = ["idle", "idleUp", "idleDown", "walkVertical", "walkHorizontal", "walkUp", "walkDown", "walkLeft", "walkRight"];
+      for (const key of movementKeys) {
+        const state = normalizeFrameStateName(movementRaw[key]);
+        if (state && states[state]) movementMap[key] = state;
+      }
+      const emotesRaw = Array.isArray(input.emotes) ? input.emotes : [];
+      const emotes = [];
+      for (const emoteRaw of emotesRaw.slice(0, 16)) {
+        const name = normalizeFrameStateName(emoteRaw?.name);
+        const state = normalizeFrameStateName(emoteRaw?.state);
+        if (!name || !state || !states[state]) continue;
+        emotes.push({
+          name,
+          state,
+          hotkey: String(emoteRaw?.hotkey || "").trim(),
+          loop: Boolean(emoteRaw?.loop),
+          interruptible: Object.prototype.hasOwnProperty.call(emoteRaw || {}, "interruptible") ? Boolean(emoteRaw.interruptible) : true
+        });
+      }
+      return { defaultFps, renderScale, states, movementMap, emotes };
+    }
+
+    function getFrameImage(url) {
+      const src = String(url || "").trim();
+      if (!src) return null;
+      const now = Date.now();
+      const cached = frameAvatarCache.get(src);
+      if (cached) {
+        if (cached.status === "ok" && cached.img) return cached.img;
+        if (cached.status === "loading") return null;
+        if (cached.status === "error" && now - Number(cached.failedAt || 0) < 5000) return null;
+      }
+      const img = new Image();
+      if (!src.startsWith("data:")) img.crossOrigin = "anonymous";
+      frameAvatarCache.set(src, { img: null, status: "loading", failedAt: 0 });
+      img.onload = () => frameAvatarCache.set(src, { img, status: "ok", failedAt: 0 });
+      img.onerror = () => frameAvatarCache.set(src, { img: null, status: "error", failedAt: Date.now() });
+      img.src = src;
+      return null;
+    }
+
+    function resolveAvatarFrame(username, u, nowMs) {
+      const avatar = normalizeAvatarState(u?.avatar || null);
+      if (avatar.mode !== "frame_animation" || !avatar.frameAnimation) return null;
+      const anim = avatar.frameAnimation;
+      const states = anim.states || {};
+      const x = Number(u?.x ?? u?.tx ?? 0);
+      const y = Number(u?.y ?? u?.ty ?? 0);
+      const rt = avatarAnimRuntime.get(username) || { lastX: x, lastY: y, lastState: "", lastFrameAt: nowMs, lastFacing: 1, lastDir: "down", lastMoveAt: 0 };
+      const dx = x - Number(rt.lastX || x);
+      const dy = y - Number(rt.lastY || y);
+      const movedDistance = Math.hypot(dx, dy);
+      if (movedDistance > 0.00008) {
+        rt.lastMoveAt = nowMs;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          rt.lastFacing = dx < 0 ? -1 : 1;
+          rt.lastDir = dx < 0 ? "left" : "right";
+        } else {
+          rt.lastDir = dy < 0 ? "up" : "down";
+        }
+      }
+      const isMoving = nowMs - Number(rt.lastMoveAt || 0) < 180;
+      const override = emoteUntil.get(username);
+      if (override && Number(override.until || 0) <= nowMs) emoteUntil.delete(username);
+      const liveOverride = emoteUntil.get(username);
+      let stateName = "";
+      if (liveOverride?.state && states[liveOverride.state]) {
+        stateName = liveOverride.state;
+      } else if (isMoving) {
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          stateName = anim.movementMap?.walkHorizontal || anim.movementMap?.walkRight || anim.movementMap?.walkLeft || "walk_horizontal";
+        } else if (dy < 0) {
+          stateName = anim.movementMap?.walkUp || anim.movementMap?.walkVertical || "walk_vertical";
+        } else {
+          stateName = anim.movementMap?.walkDown || anim.movementMap?.walkVertical || "walk_vertical";
+        }
+      } else {
+        stateName =
+          rt.lastDir === "up"
+            ? anim.movementMap?.idleUp || anim.movementMap?.idle || "idle_up"
+            : anim.movementMap?.idleDown || anim.movementMap?.idle || "idle_down";
+      }
+      if (!states[stateName]) {
+        stateName = states.idle_down ? "idle_down" : states.idle ? "idle" : Object.keys(states)[0] || "";
+      }
+      const state = stateName ? states[stateName] : null;
+      if (!state) {
+        avatarAnimRuntime.set(username, { ...rt, lastX: x, lastY: y });
+        return null;
+      }
+      const frames = Array.isArray(state.frames) ? state.frames : [];
+      if (!frames.length) {
+        avatarAnimRuntime.set(username, { ...rt, lastX: x, lastY: y });
+        return null;
+      }
+      if (rt.lastState !== stateName) {
+        rt.lastState = stateName;
+        rt.lastFrameAt = nowMs;
+      }
+      const fps = clamp(state.fps || anim.defaultFps || 8, 1, 24);
+      const elapsed = Math.max(0, (nowMs - Number(rt.lastFrameAt || nowMs)) / 1000);
+      const rawIndex = Math.floor(elapsed * fps);
+      const loop = Boolean(state.loop);
+      const index = loop ? rawIndex % frames.length : Math.min(frames.length - 1, rawIndex);
+      const frame = frames[index] || {};
+      const frameUrl = String(frame?.url || "").trim();
+      const flipX = Boolean(state.flipXWithDirection) && Number(rt.lastFacing || 1) < 0;
+      rt.lastX = x;
+      rt.lastY = y;
+      avatarAnimRuntime.set(username, rt);
+      return {
+        frameUrl,
+        flipX,
+        renderScale: clamp(anim.renderScale || 1, 0.25, 4.0),
+        crop:
+          Number.isFinite(Number(frame?.sx)) &&
+          Number.isFinite(Number(frame?.sy)) &&
+          Number.isFinite(Number(frame?.sw)) &&
+          Number.isFinite(Number(frame?.sh))
+            ? {
+                sx: clamp(Number(frame.sx), 0, 8192),
+                sy: clamp(Number(frame.sy), 0, 8192),
+                sw: clamp(Number(frame.sw), 1, 8192),
+                sh: clamp(Number(frame.sh), 1, 8192)
+              }
+            : null
+      };
+    }
 
     function setHidden(el, hidden) {
       if (!el) return;
       el.classList.toggle("hidden", Boolean(hidden));
+    }
+
+    function isTextEditingElement(el) {
+      const node = el instanceof HTMLElement ? el : null;
+      if (!node) return false;
+      if (node.isContentEditable) return true;
+      const tag = String(node.tagName || "").toLowerCase();
+      if (tag === "textarea") return true;
+      if (tag !== "input") return false;
+      const type = String(node.getAttribute("type") || "text").toLowerCase();
+      return !["button", "checkbox", "radio", "range", "file", "color", "submit"].includes(type);
     }
 
     function getSessionToken() {
@@ -375,6 +1032,35 @@
       return String(json.url);
     }
 
+    function countDraftFrames(frameAnimation) {
+      const states = frameAnimation?.states && typeof frameAnimation.states === "object" ? frameAnimation.states : {};
+      let total = 0;
+      for (const state of Object.values(states)) {
+        total += Array.isArray(state?.frames) ? state.frames.length : 0;
+      }
+      return total;
+    }
+
+    async function readImageNaturalSizeFromFile(file) {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Could not read image."));
+          el.src = objectUrl;
+        });
+        const width = Number(img?.naturalWidth || 0);
+        const height = Number(img?.naturalHeight || 0);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+          throw new Error("Invalid image size.");
+        }
+        return { width, height };
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
     async function uploadAudioBlob(blob, filenameHint = "walkie.webm") {
       const token = getSessionToken();
       if (!token) throw new Error("Sign in required.");
@@ -431,6 +1117,84 @@
       return Math.max(a, Math.min(b, x));
     }
 
+    function isWalkieTransitionAllowed(fromPhase, toPhase) {
+      if (fromPhase === toPhase) return true;
+      const allowed = {
+        idle: new Set(["recording", "playing", "failed"]),
+        recording: new Set(["encoding", "idle", "failed"]),
+        encoding: new Set(["uploading", "failed", "idle"]),
+        uploading: new Set(["sent", "failed", "idle"]),
+        sent: new Set(["idle", "playing", "failed"]),
+        playing: new Set(["played", "timeout", "idle", "failed"]),
+        played: new Set(["idle"]),
+        timeout: new Set(["idle"]),
+        failed: new Set(["idle", "recording"])
+      };
+      return Boolean(allowed[fromPhase]?.has(toPhase));
+    }
+
+    function emitWalkieState() {
+      if (!activeMap?.id) return;
+      const payload = {
+        mapId: activeMap.id,
+        id: walkieState.id || "",
+        phase: walkieState.phase || "idle",
+        attempt: Number(walkieState.attempt || 0) || 0,
+        error: walkieState.error || ""
+      };
+      const key = `${payload.mapId}|${payload.id}|${payload.phase}|${payload.attempt}|${payload.error}`;
+      if (key === walkieLastStateEmit) return;
+      walkieLastStateEmit = key;
+      ctx.send("walkieState", payload);
+    }
+
+    function setWalkieState(phase, patch = {}, options = {}) {
+      const nextPhase = String(phase || "idle");
+      const force = Boolean(options?.force);
+      if (!walkiePhases.has(nextPhase)) return;
+      if (!force && !isWalkieTransitionAllowed(String(walkieState.phase || "idle"), nextPhase)) return;
+      walkieState = {
+        phase: nextPhase,
+        id: typeof patch.id === "string" ? patch.id : walkieState.id,
+        error: typeof patch.error === "string" ? patch.error : "",
+        attempt: Number(patch.attempt || 0) || 0
+      };
+      emitWalkieState();
+      const btn = document.getElementById("mapsWalkieBtn");
+      const hint = document.getElementById("mapsWalkieHint");
+      const status = document.getElementById("mapsWalkieStatus");
+      if (btn) {
+        const ph = walkieState.phase;
+        btn.textContent =
+          ph === "recording"
+            ? "Recording…"
+            : ph === "encoding"
+              ? "Encoding…"
+              : ph === "uploading"
+                ? "Uploading…"
+                : ph === "playing"
+                  ? "Playing…"
+                  : ph === "failed"
+                    ? "Retry walkie"
+                    : "Hold to talk";
+      }
+      if (status) {
+        const ph = walkieState.phase;
+        let txt = "";
+        if (ph === "uploading") txt = walkieState.attempt > 1 ? `Uploading (retry ${walkieState.attempt - 1})…` : "Uploading…";
+        else if (ph === "sent") txt = "Sent";
+        else if (ph === "playing") txt = "Playing nearby";
+        else if (ph === "played") txt = "Played";
+        else if (ph === "timeout") txt = "Playback timeout";
+        else if (ph === "failed") txt = walkieState.error || "Walkie failed";
+        else if (ph === "recording") txt = "Recording";
+        status.textContent = txt;
+      }
+      if (hint) {
+        hint.textContent = walkieState.phase === "failed" ? "Press and hold to retry" : "or hold ~";
+      }
+    }
+
     function computeWalkieSpatial(from, to, dims) {
       const dx = (Number(from.x || 0) - Number(to.x || 0)) * dims.w;
       const dy = (Number(from.y || 0) - Number(to.y || 0)) * dims.h;
@@ -475,23 +1239,54 @@
       walkieRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       walkieRecording = true;
       walkieStartAt = Date.now();
+      setWalkieState("recording");
       walkieRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size) walkieChunks.push(e.data);
       };
       walkieRecorder.onstop = async () => {
         walkieRecording = false;
         const elapsed = Date.now() - walkieStartAt;
-        if (elapsed < 180) return;
+        if (elapsed < 180) {
+          setWalkieState("idle", { id: "", error: "", attempt: 0 }, { force: true });
+          return;
+        }
+        if (!activeMap?.id) {
+          setWalkieState("failed", { id: "", error: "Not in a map.", attempt: 0 }, { force: true });
+          return;
+        }
+        setWalkieState("encoding", {}, { force: true });
         const blob = new Blob(walkieChunks, { type: walkieRecorder?.mimeType || walkieChunks?.[0]?.type || "audio/webm" });
         walkieChunks = [];
         const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-        try {
-          const url = await uploadAudioBlob(blob, "walkie.webm");
-          // Play locally immediately using spatial audio too.
-          playWalkie({ id, username: String(ctx.getUser() || "").trim().toLowerCase(), url, x: localPos.x, y: localPos.y });
-          ctx.send("walkieSend", { id, url, x: localPos.x, y: localPos.y });
-        } catch (e) {
-          ctx.toast("Walkie", String(e?.message || e));
+        let uploadError = null;
+        const maxAttempts = 2;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            setWalkieState("uploading", { id, attempt }, { force: true });
+            const url = await uploadAudioBlob(blob, "walkie.webm");
+            // Play locally immediately using spatial audio too.
+            playWalkie({ id, username: String(ctx.getUser() || "").trim().toLowerCase(), url, x: localPos.x, y: localPos.y });
+            ctx.send("walkieSend", { id, url, x: localPos.x, y: localPos.y });
+            setWalkieState("sent", { id, attempt }, { force: true });
+            setTimeout(() => {
+              if (walkieState.id === id && (walkieState.phase === "sent" || walkieState.phase === "idle")) {
+                setWalkieState("idle", { id: "", error: "", attempt: 0 }, { force: true });
+              }
+            }, 1200);
+            uploadError = null;
+            break;
+          } catch (e) {
+            uploadError = e;
+            if (attempt < maxAttempts) {
+              const backoff = 450 * (2 ** (attempt - 1)) + Math.floor(Math.random() * 180);
+              await new Promise((resolve) => setTimeout(resolve, backoff));
+            }
+          }
+        }
+        if (uploadError) {
+          const msg = String(uploadError?.message || uploadError);
+          setWalkieState("failed", { id, error: msg, attempt: maxAttempts }, { force: true });
+          ctx.toast("Walkie", msg);
         }
       };
       walkieRecorder.start();
@@ -509,10 +1304,8 @@
     function stopAllWalkies() {
       for (const entry of walkiePlaybacks.values()) {
         try {
-          if (entry.interval) clearInterval(entry.interval);
-          if (entry.ackTimer) clearTimeout(entry.ackTimer);
-          entry.audio?.pause?.();
-          entry.audio?.remove?.();
+          entry.ack?.("stop-all");
+          entry.cleanup?.("stop-all");
         } catch {
           // ignore
         }
@@ -527,6 +1320,9 @@
       if (!id || !url || !username) return;
       if (walkiePlaybacks.has(id)) return;
       if (!activeMap?.walkiesEnabled) return;
+      if (walkieState.phase !== "recording" && walkieState.phase !== "uploading" && walkieState.phase !== "encoding") {
+        setWalkieState("playing", { id });
+      }
 
       const ok = await ensureAudioReady();
       if (!ok) {
@@ -582,9 +1378,12 @@
         return;
       }
 
-      const ack = () => {
+      let acked = false;
+      const ackOnce = (reason) => {
+        if (acked) return;
+        acked = true;
         if (!activeMap?.id) return;
-        ctx.send("walkiePlayed", { id });
+        ctx.send("walkiePlayed", { id, reason: String(reason || "played") });
       };
 
       const cleanup = () => {
@@ -607,14 +1406,23 @@
           // ignore
         }
         walkiePlaybacks.delete(id);
+        if (walkieState.phase === "playing" && walkieState.id === id) {
+          setWalkieState("idle", { id: "", error: "", attempt: 0 }, { force: true });
+        }
       };
 
       a.onended = () => {
-        ack();
+        ackOnce("ended");
+        setWalkieState("played", { id }, { force: true });
+        setTimeout(() => {
+          if (walkieState.id === id && walkieState.phase === "played") {
+            setWalkieState("idle", { id: "", error: "", attempt: 0 }, { force: true });
+          }
+        }, 700);
         cleanup();
       };
       a.onerror = () => {
-        ack();
+        ackOnce("error");
         cleanup();
       };
 
@@ -629,20 +1437,31 @@
       }, 120);
 
       const ackTimer = setTimeout(() => {
-        ack();
+        ackOnce("timeout");
+        if (walkieState.id === id && walkieState.phase === "playing") {
+          setWalkieState("timeout", { id, error: "Playback timed out." }, { force: true });
+          setTimeout(() => {
+            if (walkieState.id === id && walkieState.phase === "timeout") {
+              setWalkieState("idle", { id: "", error: "", attempt: 0 }, { force: true });
+            }
+          }, 900);
+        }
+        cleanup();
       }, 25_000);
 
-      walkiePlaybacks.set(id, { audio: a, gain, pan, filter, interval, ackTimer });
+      walkiePlaybacks.set(id, { audio: a, gain, pan, filter, interval, ackTimer, ack: ackOnce, cleanup });
       try {
         await a.play();
       } catch {
         // If autoplay blocked, we'll just cleanup (owner can click to enable and retry later).
+        ackOnce("autoplay-blocked");
         cleanup();
       }
     }
 
     function enterMaps() {
       mode = "maps";
+      applyFocusModeClass();
       if (mapsBtn) {
         mapsBtn.classList.add("primary");
         mapsBtn.classList.remove("ghost");
@@ -661,6 +1480,7 @@
 
     function exitMapsToHives() {
       mode = "hives";
+      applyFocusModeClass();
       if (mapsBtn) {
         mapsBtn.classList.add("ghost");
         mapsBtn.classList.remove("primary");
@@ -686,7 +1506,7 @@
     function renderMapsList() {
       if (!mapsPanel) return;
       if (mode !== "maps") return;
-      const canCreate = ["owner", "moderator"].includes(String(ctx.getRole() || "").toLowerCase());
+      const canCreate = isMapStaffRole(ctx.getRole());
       const me = String(ctx.getUser() || "").trim().toLowerCase();
       const role = String(ctx.getRole() || "").toLowerCase();
       const createHtml = canCreate
@@ -695,7 +1515,7 @@
           <div class="mapCreateCard">
             <div class="mapsTop">
               <div class="mapsTopTitle">Create map</div>
-              <div class="small muted">Owner/mod only</div>
+              <div class="small muted">Owner/admin/mod only</div>
             </div>
             <div class="mapCreateGrid">
               <label>
@@ -730,11 +1550,12 @@
           const count = Number(m.userCount || 0) || 0;
           const thumb = m.thumbUrl || "";
           const owner = String(m.owner || "").trim().toLowerCase();
-          const canManage = role === "owner" || role === "moderator" || (owner && me && owner === me);
+          const canManage = isMapStaffRole(role) || (owner && me && owner === me);
+          const liveBadge = Boolean(m.live) ? `<span class="tag" style="background: rgba(0,255,150,0.16); border-color: rgba(0,255,150,0.45); color:#8fffd0;">LIVE</span>` : "";
           return `<div class="mapCard">
             <img class="mapThumb" src="${thumb}" alt="" />
             <div class="mapTitle">${escapeHtml(m.title || m.id)}</div>
-            <div class="mapMeta"><span>${escapeHtml(m.id)}</span><span>${count} in room</span></div>
+            <div class="mapMeta"><span>${escapeHtml(m.id)}</span><span>${count} in room ${liveBadge}</span></div>
             <div class="mapEnterRow">
               <button type="button" class="primary smallBtn" data-mapenter="${escapeHtml(m.id)}">Enter</button>
               ${canManage && owner ? `<button type="button" class="ghost smallBtn" data-mapdelete="${escapeHtml(m.id)}">Delete</button>` : ""}
@@ -805,6 +1626,165 @@
       }
     }
 
+    function renderAvatarEditorModal(draft, canManagePresets = false) {
+      const mode = draft?.mode === "frame_animation" ? "frame_animation" : "profile_token";
+      const displayName = String(draft?.displayName || "");
+      const showUsername = draft?.showUsername !== false;
+      const fa = draft?.frameAnimation || defaultFrameAnimationDraft();
+      const sheetImport = fa?.sheetImport && typeof fa.sheetImport === "object" ? fa.sheetImport : { cols: 4, rows: 4, limit: 24 };
+      const sheetCols = Math.floor(clamp(sheetImport.cols || 4, 1, 32));
+      const sheetRows = Math.floor(clamp(sheetImport.rows || 4, 1, 32));
+      const sheetLimit = Math.floor(clamp(sheetImport.limit || 24, 1, 96));
+      const states = fa.states && typeof fa.states === "object" ? fa.states : {};
+      const stateNames = Object.keys(states);
+      const selectedState = states[fa.selectedState] ? fa.selectedState : stateNames[0] || "idle_down";
+      const selected = states[selectedState] || { frames: [], fps: fa.defaultFps || 8, loop: true, flipXWithDirection: true };
+      const presetOptions = avatarPresets
+        .map((preset) => `<option value="${escapeHtml(preset.id)}" ${avatarPresetSelectedId === preset.id ? "selected" : ""}>${escapeHtml(preset.name)}${preset.published ? "" : " (draft)"}</option>`)
+        .join("");
+      const frameRows = (Array.isArray(selected.frames) ? selected.frames : [])
+        .map((frame, idx) => {
+          const url = String(frame?.url || "");
+          const short = url.length > 54 ? `${url.slice(0, 54)}...` : url;
+          return `<div class="mapsAvatarFrameRow">
+            <img class="mapsAvatarFrameThumb" src="${escapeHtml(url)}" alt="" />
+            <div class="mapsAvatarFrameName">${escapeHtml(short)}</div>
+            <button type="button" class="ghost smallBtn" data-avatar-frame-up="${idx}">↑</button>
+            <button type="button" class="ghost smallBtn" data-avatar-frame-down="${idx}">↓</button>
+            <button type="button" class="ghost smallBtn" data-avatar-frame-remove="${idx}">✕</button>
+          </div>`;
+        })
+        .join("");
+      return `
+        <div class="mapsAvatarEditorModal" id="mapsAvatarEditorModal">
+          <div class="mapsAvatarEditorCard">
+            <div class="row" style="justify-content:space-between; gap:10px;">
+              <div>
+                <div class="dockTitle">Avatar editor</div>
+                <div class="small muted">Quick mode: upload frame images by state.</div>
+              </div>
+              <button type="button" class="ghost smallBtn" id="mapsAvatarEditorCloseBtn">Close</button>
+            </div>
+            <div class="mapsAvatarEditorGrid" style="margin-top:10px;">
+              <div class="mapsAvatarStates">
+                <div class="small muted">Profile</div>
+                <label style="margin-top:8px;">
+                  <span class="small muted">Display name</span>
+                  <input id="mapsAvatarEditorDisplayName" type="text" maxlength="32" value="${escapeHtml(displayName)}" />
+                </label>
+                <label class="checkRow" style="margin-top:8px;">
+                  <span>Show username</span>
+                  <input id="mapsAvatarEditorShowUsername" type="checkbox" ${showUsername ? "checked" : ""} />
+                </label>
+                <label style="margin-top:10px;">
+                  <span class="small muted">Avatar mode</span>
+                  <select id="mapsAvatarEditorMode">
+                    <option value="profile_token" ${mode === "profile_token" ? "selected" : ""}>Profile token</option>
+                    <option value="frame_animation" ${mode === "frame_animation" ? "selected" : ""}>Frame animation (Quick)</option>
+                  </select>
+                </label>
+                <div class="panelDivider" style="margin-top:10px;"></div>
+                <div class="small muted">Server presets</div>
+                <label style="margin-top:8px;">
+                  <span class="small muted">Preset</span>
+                  <select id="mapsAvatarPresetSelect">
+                    <option value="">Select preset...</option>
+                    ${presetOptions}
+                  </select>
+                </label>
+                <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap;">
+                  <button type="button" class="ghost smallBtn" id="mapsAvatarPresetApplyBtn">Apply preset</button>
+                  <button type="button" class="ghost smallBtn" id="mapsAvatarPresetRefreshBtn">Refresh</button>
+                </div>
+                ${canManagePresets ? `
+                <label style="margin-top:8px;">
+                  <span class="small muted">Preset name (staff)</span>
+                  <input id="mapsAvatarPresetName" type="text" maxlength="40" placeholder="Example: Forest Ranger" />
+                </label>
+                <label class="checkRow" style="margin-top:8px;">
+                  <span>Published</span>
+                  <input id="mapsAvatarPresetPublished" type="checkbox" checked />
+                </label>
+                <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap;">
+                  <button type="button" class="ghost smallBtn" id="mapsAvatarPresetSaveBtn">Save preset</button>
+                  <button type="button" class="ghost smallBtn" id="mapsAvatarPresetDeleteBtn">Delete preset</button>
+                </div>
+                ` : ""}
+                <div class="${mode === "frame_animation" ? "" : "hidden"}" id="mapsAvatarEditorFrameSettings">
+                  <label style="margin-top:10px;">
+                    <span class="small muted">Default FPS</span>
+                    <input id="mapsAvatarEditorDefaultFps" type="number" min="1" max="24" value="${escapeHtml(String(clamp(fa.defaultFps || 8, 1, 24)))}" />
+                  </label>
+                  <label style="margin-top:10px;">
+                    <span class="small muted">State</span>
+                    <div class="row" style="gap:8px;">
+                      <select id="mapsAvatarEditorStateSelect">${stateNames.map((stateName) => `<option value="${escapeHtml(stateName)}" ${stateName === selectedState ? "selected" : ""}>${escapeHtml(stateName)}</option>`).join("")}</select>
+                      <button type="button" class="ghost smallBtn" id="mapsAvatarEditorAddStateBtn">+ State</button>
+                    </div>
+                  </label>
+                  <label class="checkRow" style="margin-top:8px;">
+                    <span>Loop selected state</span>
+                    <input id="mapsAvatarEditorStateLoop" type="checkbox" ${selected.loop !== false ? "checked" : ""} />
+                  </label>
+                  <label class="checkRow" style="margin-top:8px;">
+                    <span>Flip with direction</span>
+                    <input id="mapsAvatarEditorStateFlip" type="checkbox" ${selected.flipXWithDirection !== false ? "checked" : ""} />
+                  </label>
+                  <label style="margin-top:10px;">
+                    <span class="small muted">State FPS</span>
+                    <input id="mapsAvatarEditorStateFps" type="number" min="1" max="24" value="${escapeHtml(String(clamp(selected.fps || fa.defaultFps || 8, 1, 24)))}" />
+                  </label>
+                  <label style="margin-top:10px;">
+                    <span class="small muted">Render scale</span>
+                    <input id="mapsAvatarEditorRenderScale" type="range" min="0.25" max="4" step="0.05" value="${escapeHtml(String(clamp(fa.renderScale || 1, 0.25, 4).toFixed(2)))}" />
+                    <div class="small muted" id="mapsAvatarEditorRenderScaleVal">${escapeHtml(String(clamp(fa.renderScale || 1, 0.25, 4).toFixed(2)))}x</div>
+                  </label>
+                </div>
+              </div>
+              <div class="mapsAvatarFrames">
+                <div class="row" style="justify-content:space-between; gap:8px;">
+                  <div class="small muted">Frames (${escapeHtml(selectedState)})</div>
+                  <div class="row" style="gap:8px;">
+                    <label class="ghost smallBtn" style="cursor:pointer;">
+                      Add frame
+                      <input id="mapsAvatarEditorFrameInput" type="file" accept="image/png,image/webp,image/gif,image/jpeg" style="display:none;" />
+                    </label>
+                    <label class="ghost smallBtn" style="cursor:pointer;">
+                      Import sheet
+                      <input id="mapsAvatarEditorSheetInput" type="file" accept="image/png,image/webp" style="display:none;" />
+                    </label>
+                  </div>
+                </div>
+                <div class="mapsAvatarSheetGrid">
+                  <label>
+                    <span class="small muted">Cols</span>
+                    <input id="mapsAvatarEditorSheetCols" type="number" min="1" max="32" value="${escapeHtml(String(sheetCols))}" />
+                  </label>
+                  <label>
+                    <span class="small muted">Rows</span>
+                    <input id="mapsAvatarEditorSheetRows" type="number" min="1" max="32" value="${escapeHtml(String(sheetRows))}" />
+                  </label>
+                  <label>
+                    <span class="small muted">Import max</span>
+                    <input id="mapsAvatarEditorSheetLimit" type="number" min="1" max="96" value="${escapeHtml(String(sheetLimit))}" />
+                  </label>
+                </div>
+                <div class="small muted" style="margin-top:6px;">One upload, many frames: split by rows/cols into cropped frames for this state.</div>
+                <div style="margin-top:8px; max-height: 46vh; overflow:auto;">
+                  ${frameRows || `<div class="small muted">No frames yet.</div>`}
+                </div>
+              </div>
+            </div>
+            <div class="row" style="justify-content:flex-end; gap:8px; margin-top:10px;">
+              <div class="small muted grow" id="mapsAvatarEditorStatus"></div>
+              <button type="button" class="ghost smallBtn" id="mapsAvatarEditorCancelBtn">Cancel</button>
+              <button type="button" class="primary smallBtn" id="mapsAvatarEditorSaveBtn">Save avatar</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderMapView() {
       if (!mapsPanel) return;
       if (mode !== "map" || !activeMap) return;
@@ -812,14 +1792,20 @@
       if (chatPanel) chatPanel.classList.add("hidden");
       if (chatResizeHandle) chatResizeHandle.classList.add("hidden");
       const title = escapeHtml(activeMap.title || activeMap.id);
+      const now = Date.now();
       const list = Array.from(users.keys())
         .sort((a, b) => a.localeCompare(b))
-        .map((u) => `<div class="small">@${escapeHtml(u)}</div>`)
+        .map((u) => {
+          const typing = Number(typingUntil.get(u) || 0) > now;
+          const label = displayNameForUser(u, users.get(u));
+          const shown = label ? escapeHtml(label) : `<span class="muted">(hidden)</span>`;
+          return `<div class="small">${shown}${typing ? ` <span class="muted">(typing...)</span>` : ""}</div>`;
+        })
         .join("");
 
       const role = String(ctx.getRole() || "").toLowerCase();
       const me = String(ctx.getUser() || "").trim().toLowerCase();
-      const canManage = role === "owner" || role === "moderator" || (activeMap.owner && me && activeMap.owner === me);
+      const canManage = isMapStaffRole(role) || (activeMap.owner && me && activeMap.owner === me);
       // Moderators/owners can edit maps even if legacy maps have no owner set.
       const canEditMap = canManage;
       const showSettings = canManage;
@@ -834,16 +1820,25 @@
         (Array.isArray(activeMap.fallThroughs) ? activeMap.fallThroughs.length : 0);
       const walkiesEnabled = Boolean(activeMap.walkiesEnabled);
       const ttrpgEnabled = Boolean(activeMap.ttrpgEnabled);
+      const focusSupported = featureEnabled("focusMode");
+      const gmOverlaySupported = featureEnabled("gmOverlay");
+      const walkieV2Supported = featureEnabled("walkieV2");
+      const canUseGmTools = Boolean(ttrpgEnabled && canManageTtrpg);
+      const meUser = users.get(me) || null;
+      const meAvatar = normalizeAvatarState(meUser?.avatar || null);
+      const avatarDraft = ensureAvatarEditorDraft(meAvatar);
       const fogCount = Array.isArray(activeMap.hiddenMasks) ? activeMap.hiddenMasks.length : 0;
       const shortcutHintHtml = `
         <div class="mapHint">
           Shortcuts:<br/>
-          Move: <b>WASD</b> / arrows, Chat: <b>T</b><br/>
+          Move: <b>WASD</b> / arrows, Chat: <b>T</b>${focusSupported ? `, Focus: <b>F</b>` : ""}, Cinematic: <b>C</b>${canManageTtrpg ? `, GM UI: <b>G</b>` : ""}<br/>
           ${walkiesEnabled ? `Walkie: hold <b>~</b><br/>` : ""}
+          Emotes: <b>Alt+1..5</b> (if configured)<br/>
           ${ttrpgEnabled && canManageTtrpg ? `Tools: <b>V</b> select, <b>P</b> place, hold <b>Space</b> pan<br/>Transform: <b>Q/E</b> rotate, <b>Z/X</b> scale<br/>` : ""}
           Leave: click <b>Back</b>
         </div>
       `;
+      const avatarEditorHtml = avatarEditorOpen ? renderAvatarEditorModal(avatarDraft, isMapStaffRole(role) || avatarPresetsCanManage) : "";
       let polyModalHtml = "";
       if (canEditMap && editMode) {
         try {
@@ -918,19 +1913,69 @@
           ` : ""}
         `
         : "";
+      const modeLabel = gmMode === "polygon" ? "Polygon" : gmMode === "place" ? "Place" : gmMode === "select" ? "Select" : "Play";
+      const inspectorHtml = gmOverlaySupported && gmOverlayVisible && inspectorOpen
+        ? `<div class="mapInspectorDrawer" id="mapsInspectorDrawer">
+            <div class="mapInspectorTitle">Inspector</div>
+            <div class="small muted">Mode: <b>${escapeHtml(modeLabel)}</b></div>
+            <div class="small muted">Users: <b>${Number(activeMap.userCount || users.size)}</b>${activeMap.live ? ` • <span style="color:#8fffd0">LIVE</span>` : ""}</div>
+            <div class="small muted">Map: <b>${escapeHtml(activeMap.id || "")}</b></div>
+            <div class="small muted">Tools: ${canUseGmTools ? "enabled" : "waiting for GM/TTRPG mode"}</div>
+            <div class="small muted" style="margin-top:8px;">Command palette: <span class="tag">/</span> or <span class="tag">Ctrl/Cmd+K</span></div>
+          </div>`
+        : `<div class="mapInspectorDrawer hidden" id="mapsInspectorDrawer"></div>`;
+      const hotbarHtml = gmOverlaySupported && gmOverlayVisible
+        ? `<div class="mapGmHotbar ${walkiesEnabled ? "raiseForWalkie" : ""}">
+          <div class="mapGmHotbarInner">
+            <button type="button" class="${gmMode === "play" ? "primary" : "ghost"} smallBtn" data-gm-mode="play" title="1">Play</button>
+            <button type="button" class="${gmMode === "select" ? "primary" : "ghost"} smallBtn" data-gm-mode="select" ${canUseGmTools ? "" : "disabled"} title="2">Select</button>
+            <button type="button" class="${gmMode === "place" ? "primary" : "ghost"} smallBtn" data-gm-mode="place" ${canUseGmTools ? "" : "disabled"} title="3">Place</button>
+            <button type="button" class="${gmMode === "polygon" ? "primary" : "ghost"} smallBtn" data-gm-mode="polygon" ${canUseGmTools ? "" : "disabled"} title="4">Polygon</button>
+            <button type="button" class="${inspectorOpen ? "primary" : "ghost"} smallBtn" data-gm-inspector="1">Inspector</button>
+          </div>
+        </div>`
+        : "";
       mapsPanel.innerHTML = `
         <div class="mapsRoomWrap">
         <div class="mapView">
           <div class="mapCanvasWrap">
             <canvas class="mapCanvas" id="mapsCanvas"></canvas>
-            <div class="mapChatOverlay hidden" id="mapsChatOverlay">
-              <input id="mapsChatInput" placeholder="Say something..." />
-              <button type="button" class="primary" id="mapsChatSend">Send</button>
+            <div class="mapGmTopLeft">
+              <div class="mapModePill"><b>${escapeHtml(activeMap.title || activeMap.id || "Map")}</b><span class="tag">${escapeHtml(modeLabel)}</span></div>
+            </div>
+            <div class="mapCornerTools">
+              <button type="button" class="ghost smallBtn" data-mapback="1">Back</button>
+              <button type="button" class="${cinematicMode ? "primary" : "ghost"} smallBtn" data-mapcinematic="1">${cinematicMode ? "Exit cinematic" : "Cinematic"}</button>
+              ${gmOverlaySupported && canUseGmTools ? `<button type="button" class="${gmOverlayVisible ? "primary" : "ghost"} smallBtn" data-gm-overlay="1">${gmOverlayVisible ? "Hide GM" : "GM UI"}</button>` : ""}
+              ${focusSupported ? `<button type="button" class="${isFocusMode ? "primary" : "ghost"} smallBtn" data-mapfocus="1">${isFocusMode ? "Exit focus" : "Focus"}</button>` : ""}
+            </div>
+            ${inspectorHtml}
+            ${hotbarHtml}
+            <div class="mapChatOverlay hidden ${gmOverlaySupported && gmOverlayVisible ? "raiseForHotbar" : walkiesEnabled ? "raiseForWalkie" : ""}" id="mapsChatOverlay">
+              <div class="mapChatToolbar">
+                <button type="button" class="ghost smallBtn mapChatDragHandle" id="mapsChatDragHandle" title="Drag chat overlay">Drag</button>
+                <div class="mapChatScopeRow">
+                  <button type="button" class="${mapChatScope === "local" ? "primary" : "ghost"} smallBtn" id="mapsChatScopeLocal">Local</button>
+                  <button type="button" class="${mapChatScope === "global" ? "primary" : "ghost"} smallBtn" id="mapsChatScopeGlobal">Global</button>
+                </div>
+                <div class="mapChatOpacity">
+                  <span class="small muted">Opacity</span>
+                  <input id="mapsChatOpacity" type="range" min="0.25" max="1" step="0.05" value="${escapeHtml(String(clamp(mapChatOverlayOpacity, 0.25, 1).toFixed(2)))}" />
+                </div>
+                <button type="button" class="ghost smallBtn" id="mapsChatReset" title="Reset chat overlay position and opacity">Reset</button>
+                <button type="button" class="ghost smallBtn" id="mapsChatClose" title="Close">✕</button>
+              </div>
+              <div class="mapChatFeed" id="mapsChatFeed"><div class="small muted">No ${mapChatScope} messages yet.</div></div>
+              <div class="row" style="gap:8px;">
+                <input id="mapsChatInput" placeholder="Say something..." />
+                <button type="button" class="primary" id="mapsChatSend">Send</button>
+              </div>
             </div>
             <div class="mapWalkieBar ${walkiesEnabled ? "" : "hidden"}" id="mapsWalkieBar">
               <div class="mapWalkieBarInner">
                 <button type="button" class="primary mapWalkieBtn" id="mapsWalkieBtn">Hold to talk</button>
-                <div class="mapWalkieHint">or hold <b>~</b></div>
+                <div class="mapWalkieHint" id="mapsWalkieHint">or hold ~</div>
+                <div class="mapWalkieHint ${walkieV2Supported ? "" : "hidden"}" id="mapsWalkieStatus"></div>
               </div>
             </div>
           </div>
@@ -939,7 +1984,7 @@
               <div>${title}</div>
               <button type="button" class="ghost smallBtn" data-mapback="1">Back</button>
             </div>
-            <div class="small muted">${users.size} in room</div>
+            <div class="small muted">${Number(activeMap.userCount || users.size)} in room${activeMap.live ? ` • <span style="color:#8fffd0">LIVE</span>` : ""}</div>
             <div class="mapHudList">${list || `<div class="muted small">No one here yet.</div>`}</div>
             <div class="mapHint">
               Exits: <b>${escapeHtml(Array.isArray(activeMap.exits) ? activeMap.exits.length : 0)}</b>
@@ -959,12 +2004,29 @@
                 : ""
             }
             ${shortcutHintHtml}
+            <div class="panelDivider"></div>
+            <div class="small muted">Your avatar label</div>
+            <label style="margin-top:8px;">
+              <span class="small muted">Display name (optional)</span>
+              <input id="mapsDisplayNameInput" type="text" maxlength="32" placeholder="@${escapeHtml(me || "you")}" value="${escapeHtml(meAvatar.displayName || "")}" />
+            </label>
+            <label class="checkRow" style="margin-top:8px;">
+              <span>Show username label</span>
+              <input id="mapsShowUsernameToggle" type="checkbox" ${meAvatar.showUsername ? "checked" : ""} />
+            </label>
+            <div class="row" style="margin-top:8px; gap:8px;">
+              <button type="button" class="ghost smallBtn" id="mapsSaveAvatarBtn">Save</button>
+              <button type="button" class="ghost smallBtn" id="mapsOpenAvatarEditorBtn">Edit avatar...</button>
+              <div class="small muted" id="mapsAvatarStatus"></div>
+            </div>
             ${settingsHtml}
           </div>
         </div>
         <div class="mapDock ${ttrpgEnabled ? "" : "hidden"}" id="mapsTtrpgDock"></div>
         </div>
+        ${avatarEditorHtml}
       `;
+      setWalkieState(walkieState.phase || "idle", walkieState);
 
       if (editMode !== lastEditModeLogged) {
         lastEditModeLogged = editMode;
@@ -987,6 +2049,377 @@
       if (fogRevealToggle && fogCount) {
         fogRevealToggle.onchange = () => {
           setFogReveal(activeMap.id, Boolean(fogRevealToggle.checked));
+        };
+      }
+
+      const avatarDisplayNameInput = document.getElementById("mapsDisplayNameInput");
+      const avatarShowUsernameToggle = document.getElementById("mapsShowUsernameToggle");
+      const avatarSaveBtn = document.getElementById("mapsSaveAvatarBtn");
+      const openAvatarEditorBtn = document.getElementById("mapsOpenAvatarEditorBtn");
+      const avatarStatus = document.getElementById("mapsAvatarStatus");
+      if (avatarSaveBtn && avatarDisplayNameInput && avatarShowUsernameToggle) {
+        avatarSaveBtn.onclick = () => {
+          const displayName = String(avatarDisplayNameInput.value || "").replace(/\s+/g, " ").trim().slice(0, 32);
+          const showUsername = Boolean(avatarShowUsernameToggle.checked);
+          if (avatarStatus) avatarStatus.textContent = "Saving...";
+          ctx.send("setAvatar", { mode: "profile_token", displayName, showUsername });
+          const mine = me ? users.get(me) : null;
+          if (mine) {
+            mine.avatar = { mode: "profile_token", displayName, showUsername };
+            users.set(me, mine);
+          }
+          avatarEditorDraft = cloneAvatarForEditor({ mode: "profile_token", displayName, showUsername });
+          if (avatarStatus) avatarStatus.textContent = "Saved.";
+          renderMapView();
+        };
+      }
+      if (openAvatarEditorBtn) {
+        openAvatarEditorBtn.onclick = () => {
+          avatarEditorOpen = true;
+          avatarEditorDraft = cloneAvatarForEditor(users.get(me)?.avatar || meAvatar);
+          ctx.send("listAvatarPresets", {});
+          renderMapView();
+        };
+      }
+
+      const avatarEditorCloseBtn = document.getElementById("mapsAvatarEditorCloseBtn");
+      const avatarEditorCancelBtn = document.getElementById("mapsAvatarEditorCancelBtn");
+      const avatarEditorSaveBtn = document.getElementById("mapsAvatarEditorSaveBtn");
+      const avatarEditorDisplayName = document.getElementById("mapsAvatarEditorDisplayName");
+      const avatarEditorShowUsername = document.getElementById("mapsAvatarEditorShowUsername");
+      const avatarEditorMode = document.getElementById("mapsAvatarEditorMode");
+      const avatarEditorFrameInput = document.getElementById("mapsAvatarEditorFrameInput");
+      const avatarEditorSheetInput = document.getElementById("mapsAvatarEditorSheetInput");
+      const avatarEditorSheetCols = document.getElementById("mapsAvatarEditorSheetCols");
+      const avatarEditorSheetRows = document.getElementById("mapsAvatarEditorSheetRows");
+      const avatarEditorSheetLimit = document.getElementById("mapsAvatarEditorSheetLimit");
+      const avatarEditorDefaultFps = document.getElementById("mapsAvatarEditorDefaultFps");
+      const avatarEditorStateSelect = document.getElementById("mapsAvatarEditorStateSelect");
+      const avatarEditorAddStateBtn = document.getElementById("mapsAvatarEditorAddStateBtn");
+      const avatarEditorStateLoop = document.getElementById("mapsAvatarEditorStateLoop");
+      const avatarEditorStateFlip = document.getElementById("mapsAvatarEditorStateFlip");
+      const avatarEditorStateFps = document.getElementById("mapsAvatarEditorStateFps");
+      const avatarEditorRenderScale = document.getElementById("mapsAvatarEditorRenderScale");
+      const avatarEditorRenderScaleVal = document.getElementById("mapsAvatarEditorRenderScaleVal");
+      const avatarPresetSelect = document.getElementById("mapsAvatarPresetSelect");
+      const avatarPresetApplyBtn = document.getElementById("mapsAvatarPresetApplyBtn");
+      const avatarPresetRefreshBtn = document.getElementById("mapsAvatarPresetRefreshBtn");
+      const avatarPresetName = document.getElementById("mapsAvatarPresetName");
+      const avatarPresetPublished = document.getElementById("mapsAvatarPresetPublished");
+      const avatarPresetSaveBtn = document.getElementById("mapsAvatarPresetSaveBtn");
+      const avatarPresetDeleteBtn = document.getElementById("mapsAvatarPresetDeleteBtn");
+      const avatarEditorStatus = document.getElementById("mapsAvatarEditorStatus");
+
+      const closeAvatarEditor = (resetDraft) => {
+        avatarEditorOpen = false;
+        if (resetDraft) avatarEditorDraft = cloneAvatarForEditor(users.get(me)?.avatar || meAvatar);
+        renderMapView();
+      };
+      if (avatarEditorCloseBtn) avatarEditorCloseBtn.onclick = () => closeAvatarEditor(false);
+      if (avatarEditorCancelBtn) avatarEditorCancelBtn.onclick = () => closeAvatarEditor(true);
+
+      if (avatarEditorDisplayName) {
+        avatarEditorDisplayName.oninput = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.displayName = String(avatarEditorDisplayName.value || "").replace(/\s+/g, " ").trim().slice(0, 32);
+        };
+      }
+      if (avatarPresetSelect) {
+        avatarPresetSelect.onchange = () => {
+          avatarPresetSelectedId = String(avatarPresetSelect.value || "").trim().toLowerCase();
+          const selected = selectedAvatarPresetById(avatarPresetSelectedId);
+          if (avatarPresetName) avatarPresetName.value = selected?.name || "";
+          if (avatarPresetPublished) avatarPresetPublished.checked = selected ? Boolean(selected.published) : true;
+        };
+      }
+      if (avatarPresetRefreshBtn) {
+        avatarPresetRefreshBtn.onclick = () => {
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Refreshing presets...";
+          ctx.send("listAvatarPresets", {});
+        };
+      }
+      if (avatarPresetApplyBtn) {
+        avatarPresetApplyBtn.onclick = () => {
+          const id = String(avatarPresetSelect?.value || "").trim();
+          avatarPresetSelectedId = id.toLowerCase();
+          if (!id) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Select a preset first.";
+            return;
+          }
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Applying preset...";
+          ctx.send("applyAvatarPreset", { id });
+        };
+      }
+      if (avatarPresetSaveBtn) {
+        avatarPresetSaveBtn.onclick = () => {
+          const name = String(avatarPresetName?.value || "").replace(/\s+/g, " ").trim().slice(0, 40);
+          if (!name) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Preset name required.";
+            return;
+          }
+          const id = String(avatarPresetSelect?.value || "").trim();
+          avatarPresetSelectedId = id.toLowerCase();
+          const payload = collectAvatarPayloadFromDraft();
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Saving preset...";
+          ctx.send("upsertAvatarPreset", {
+            id,
+            name,
+            published: Boolean(avatarPresetPublished?.checked),
+            avatar: payload
+          });
+        };
+      }
+      if (avatarPresetDeleteBtn) {
+        avatarPresetDeleteBtn.onclick = () => {
+          const id = String(avatarPresetSelect?.value || "").trim();
+          avatarPresetSelectedId = id.toLowerCase();
+          if (!id) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Select a preset first.";
+            return;
+          }
+          if (!confirm("Delete this avatar preset?")) return;
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Deleting preset...";
+          ctx.send("deleteAvatarPreset", { id });
+        };
+      }
+      if (avatarEditorShowUsername) {
+        avatarEditorShowUsername.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.showUsername = Boolean(avatarEditorShowUsername.checked);
+        };
+      }
+      if (avatarEditorMode) {
+        avatarEditorMode.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.mode = String(avatarEditorMode.value || "") === "frame_animation" ? "frame_animation" : "profile_token";
+          renderMapView();
+        };
+      }
+      if (avatarEditorDefaultFps) {
+        avatarEditorDefaultFps.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          draft.frameAnimation.defaultFps = clamp(Number(avatarEditorDefaultFps.value || 8), 1, 24);
+        };
+      }
+      if (avatarEditorStateSelect) {
+        avatarEditorStateSelect.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          draft.frameAnimation.selectedState = String(avatarEditorStateSelect.value || "idle_down");
+          renderMapView();
+        };
+      }
+      if (avatarEditorAddStateBtn) {
+        avatarEditorAddStateBtn.onclick = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          const states = draft.frameAnimation.states || {};
+          if (Object.keys(states).length >= 24) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Max 24 states.";
+            return;
+          }
+          let i = 1;
+          let key = `state_${i}`;
+          while (states[key]) {
+            i += 1;
+            key = `state_${i}`;
+          }
+          states[key] = { frames: [], fps: draft.frameAnimation.defaultFps || 8, loop: true, flipXWithDirection: true };
+          draft.frameAnimation.states = states;
+          draft.frameAnimation.selectedState = key;
+          renderMapView();
+        };
+      }
+      if (avatarEditorStateLoop) {
+        avatarEditorStateLoop.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state) return;
+          state.loop = Boolean(avatarEditorStateLoop.checked);
+        };
+      }
+      if (avatarEditorStateFlip) {
+        avatarEditorStateFlip.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state) return;
+          state.flipXWithDirection = Boolean(avatarEditorStateFlip.checked);
+        };
+      }
+      if (avatarEditorStateFps) {
+        avatarEditorStateFps.onchange = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state) return;
+          state.fps = clamp(Number(avatarEditorStateFps.value || draft.frameAnimation.defaultFps || 8), 1, 24);
+        };
+      }
+      if (avatarEditorRenderScale) {
+        const apply = () => {
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          const next = clamp(Number(avatarEditorRenderScale.value || 1), 0.25, 4);
+          draft.frameAnimation.renderScale = next;
+          if (avatarEditorRenderScaleVal) avatarEditorRenderScaleVal.textContent = `${next.toFixed(2)}x`;
+        };
+        avatarEditorRenderScale.oninput = apply;
+        avatarEditorRenderScale.onchange = apply;
+      }
+      const applySheetImportSettings = () => {
+        const draft = ensureAvatarEditorDraft(meAvatar);
+        draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+        draft.frameAnimation.sheetImport = {
+          cols: Math.floor(clamp(Number(avatarEditorSheetCols?.value || 4), 1, 32)),
+          rows: Math.floor(clamp(Number(avatarEditorSheetRows?.value || 4), 1, 32)),
+          limit: Math.floor(clamp(Number(avatarEditorSheetLimit?.value || 24), 1, 96))
+        };
+        if (avatarEditorSheetCols) avatarEditorSheetCols.value = String(draft.frameAnimation.sheetImport.cols);
+        if (avatarEditorSheetRows) avatarEditorSheetRows.value = String(draft.frameAnimation.sheetImport.rows);
+        if (avatarEditorSheetLimit) avatarEditorSheetLimit.value = String(draft.frameAnimation.sheetImport.limit);
+      };
+      if (avatarEditorSheetCols) {
+        avatarEditorSheetCols.oninput = applySheetImportSettings;
+        avatarEditorSheetCols.onchange = applySheetImportSettings;
+      }
+      if (avatarEditorSheetRows) {
+        avatarEditorSheetRows.oninput = applySheetImportSettings;
+        avatarEditorSheetRows.onchange = applySheetImportSettings;
+      }
+      if (avatarEditorSheetLimit) {
+        avatarEditorSheetLimit.oninput = applySheetImportSettings;
+        avatarEditorSheetLimit.onchange = applySheetImportSettings;
+      }
+      if (avatarEditorFrameInput) {
+        avatarEditorFrameInput.onchange = async () => {
+          const file = avatarEditorFrameInput.files && avatarEditorFrameInput.files[0];
+          if (!file) return;
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          const stateName = draft.frameAnimation.selectedState || "idle_down";
+          const state = draft.frameAnimation.states[stateName] || { frames: [], fps: draft.frameAnimation.defaultFps || 8, loop: true, flipXWithDirection: true };
+          state.frames = Array.isArray(state.frames) ? state.frames : [];
+          if (state.frames.length >= 48) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Max 48 frames per state.";
+            avatarEditorFrameInput.value = "";
+            return;
+          }
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Uploading frame...";
+          try {
+            const url = await uploadSpriteImageFile(file);
+            state.frames.push({ url });
+            draft.frameAnimation.states[stateName] = state;
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Frame added.";
+            renderMapView();
+          } catch (err) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = String(err?.message || err);
+          } finally {
+            avatarEditorFrameInput.value = "";
+          }
+        };
+      }
+      if (avatarEditorSheetInput) {
+        avatarEditorSheetInput.onchange = async () => {
+          const file = avatarEditorSheetInput.files && avatarEditorSheetInput.files[0];
+          if (!file) return;
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          draft.frameAnimation = draft.frameAnimation || defaultFrameAnimationDraft();
+          const stateName = draft.frameAnimation.selectedState || "idle_down";
+          const state = draft.frameAnimation.states[stateName] || { frames: [], fps: draft.frameAnimation.defaultFps || 8, loop: true, flipXWithDirection: true };
+          state.frames = Array.isArray(state.frames) ? state.frames : [];
+          applySheetImportSettings();
+          const cols = Math.floor(clamp(Number(draft.frameAnimation.sheetImport?.cols || 4), 1, 32));
+          const rows = Math.floor(clamp(Number(draft.frameAnimation.sheetImport?.rows || 4), 1, 32));
+          const requestedLimit = Math.floor(clamp(Number(draft.frameAnimation.sheetImport?.limit || (cols * rows)), 1, 96));
+          const perStateRoom = Math.max(0, 48 - state.frames.length);
+          const totalRoom = Math.max(0, 220 - countDraftFrames(draft.frameAnimation));
+          const importLimit = Math.min(requestedLimit, perStateRoom, totalRoom);
+          if (importLimit < 1) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = "Frame limit reached.";
+            avatarEditorSheetInput.value = "";
+            return;
+          }
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Uploading sheet...";
+          try {
+            const [{ width, height }, url] = await Promise.all([readImageNaturalSizeFromFile(file), uploadSpriteImageFile(file)]);
+            const frameW = Math.floor(width / cols);
+            const frameH = Math.floor(height / rows);
+            if (frameW < 1 || frameH < 1) throw new Error("Sheet rows/cols are too large for this image.");
+            let added = 0;
+            for (let row = 0; row < rows && added < importLimit; row += 1) {
+              for (let col = 0; col < cols && added < importLimit; col += 1) {
+                state.frames.push({ url, sx: col * frameW, sy: row * frameH, sw: frameW, sh: frameH });
+                added += 1;
+              }
+            }
+            draft.frameAnimation.states[stateName] = state;
+            if (avatarEditorStatus) avatarEditorStatus.textContent = `Imported ${added} frame${added === 1 ? "" : "s"} from sheet.`;
+            renderMapView();
+          } catch (err) {
+            if (avatarEditorStatus) avatarEditorStatus.textContent = String(err?.message || err);
+          } finally {
+            avatarEditorSheetInput.value = "";
+          }
+        };
+      }
+      const frameUpBtns = mapsPanel.querySelectorAll("[data-avatar-frame-up]");
+      frameUpBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-avatar-frame-up") || -1);
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state || !Array.isArray(state.frames) || idx <= 0 || idx >= state.frames.length) return;
+          const tmp = state.frames[idx - 1];
+          state.frames[idx - 1] = state.frames[idx];
+          state.frames[idx] = tmp;
+          renderMapView();
+        });
+      });
+      const frameDownBtns = mapsPanel.querySelectorAll("[data-avatar-frame-down]");
+      frameDownBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-avatar-frame-down") || -1);
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state || !Array.isArray(state.frames) || idx < 0 || idx >= state.frames.length - 1) return;
+          const tmp = state.frames[idx + 1];
+          state.frames[idx + 1] = state.frames[idx];
+          state.frames[idx] = tmp;
+          renderMapView();
+        });
+      });
+      const frameRemoveBtns = mapsPanel.querySelectorAll("[data-avatar-frame-remove]");
+      frameRemoveBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-avatar-frame-remove") || -1);
+          const draft = ensureAvatarEditorDraft(meAvatar);
+          const stateName = draft.frameAnimation?.selectedState;
+          const state = stateName ? draft.frameAnimation?.states?.[stateName] : null;
+          if (!state || !Array.isArray(state.frames) || idx < 0 || idx >= state.frames.length) return;
+          state.frames.splice(idx, 1);
+          renderMapView();
+        });
+      });
+      if (avatarEditorSaveBtn) {
+        avatarEditorSaveBtn.onclick = () => {
+          const payload = collectAvatarPayloadFromDraft();
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Saving...";
+          ctx.send("setAvatar", payload);
+          const mine = me ? users.get(me) : null;
+          if (mine) {
+            mine.avatar = payload;
+            users.set(me, mine);
+          }
+          if (avatarStatus) avatarStatus.textContent = "Saved.";
+          if (avatarEditorStatus) avatarEditorStatus.textContent = "Saved.";
+          avatarEditorOpen = false;
+          avatarEditorDraft = cloneAvatarForEditor(payload);
+          renderMapView();
         };
       }
 
@@ -1064,10 +2497,12 @@
           panning = false;
           panStart = null;
           if (editMode) {
+            gmMode = "polygon";
             const list = polysForKind(activeMap, editKind);
             editTool = list.length ? "select" : "draw";
             devLog("info", "maps:editToggle on", { mapId: activeMap?.id || "", kind: editKind, tool: editTool });
           } else {
+            gmMode = "play";
             selectedPolyKind = "";
             selectedPolyIndex = -1;
             selectedVertexIndex = -1;
@@ -1331,7 +2766,6 @@
           if (!activeMap?.walkiesEnabled) return;
           try {
             await startWalkie();
-            walkieBtn.textContent = "Recording…";
           } catch (err) {
             ctx.toast("Walkie", String(err?.message || err));
           }
@@ -1339,7 +2773,6 @@
         const up = (e) => {
           if (e) e.preventDefault();
           stopWalkie();
-          walkieBtn.textContent = "Hold to talk";
         };
         walkieBtn.onpointerdown = down;
         walkieBtn.onpointerup = up;
@@ -2970,6 +4403,7 @@
       }
 
       // Players (draw in world coords -> screen coords)
+      const drawNowMs = Date.now();
       for (const [username, u] of users.entries()) {
         if (!u) continue;
         const rx = typeof u.x === "number" ? u.x : Number(u.tx || 0);
@@ -2982,31 +4416,103 @@
         const size = Math.max(18, Math.min(96, Math.floor(Number(activeMap?.avatarSize || 36))));
         const radius = Math.floor(size / 2);
         const color = typeof u.color === "string" && u.color ? u.color : "#ff3ea5";
+        const frameRender = resolveAvatarFrame(username, u, drawNowMs);
+        const frameImg = frameRender?.frameUrl ? getFrameImage(frameRender.frameUrl) : null;
+        let avatarHalfHeight = radius;
 
-        // Avatar circle
+        // Avatar render
         const img = getAvatarImage(username, u.image || "");
-        g.save();
-        g.beginPath();
-        g.arc(px, py, radius, 0, Math.PI * 2);
-        g.closePath();
-        g.clip();
-        if (img) {
+        if (frameRender && frameImg) {
+          const crop = frameRender?.crop || null;
+          const srcW = crop ? Number(crop.sw || 0) : Number(frameImg.naturalWidth || size);
+          const srcH = crop ? Number(crop.sh || 0) : Number(frameImg.naturalHeight || size);
+          const scale = clamp(Number(frameRender?.renderScale || 1), 0.25, 4.0);
+          const drawW = Math.max(1, Math.min(1024, Math.round(srcW * scale)));
+          const drawH = Math.max(1, Math.min(1024, Math.round(srcH * scale)));
+          avatarHalfHeight = Math.floor(drawH / 2);
+          g.save();
+          if (frameRender?.flipX) {
+            g.translate(px, py);
+            g.scale(-1, 1);
+            if (crop) g.drawImage(frameImg, crop.sx, crop.sy, crop.sw, crop.sh, -Math.floor(drawW / 2), -Math.floor(drawH / 2), drawW, drawH);
+            else g.drawImage(frameImg, -Math.floor(drawW / 2), -Math.floor(drawH / 2), drawW, drawH);
+          } else {
+            if (crop) g.drawImage(frameImg, crop.sx, crop.sy, crop.sw, crop.sh, px - Math.floor(drawW / 2), py - Math.floor(drawH / 2), drawW, drawH);
+            else g.drawImage(frameImg, px - Math.floor(drawW / 2), py - Math.floor(drawH / 2), drawW, drawH);
+          }
+          g.restore();
+        } else if (frameRender && !frameImg) {
+          const placeholder = Math.max(10, Math.floor(size * 0.8));
+          avatarHalfHeight = Math.floor(placeholder / 2);
+          g.fillStyle = "rgba(246,240,255,0.18)";
+          roundRect(g, px - placeholder / 2, py - placeholder / 2, placeholder, placeholder, 4);
+          g.fill();
+        } else if (img) {
+          g.save();
+          g.beginPath();
+          g.arc(px, py, radius, 0, Math.PI * 2);
+          g.closePath();
+          g.clip();
           g.drawImage(img, px - radius, py - radius, size, size);
+          g.restore();
+          g.strokeStyle = "rgba(255,255,255,0.28)";
+          g.lineWidth = 2;
+          g.beginPath();
+          g.arc(px, py, radius, 0, Math.PI * 2);
+          g.stroke();
         } else {
           g.fillStyle = color;
           g.beginPath();
           g.arc(px, py, radius, 0, Math.PI * 2);
           g.fill();
+          g.strokeStyle = "rgba(255,255,255,0.28)";
+          g.lineWidth = 2;
+          g.beginPath();
+          g.arc(px, py, radius, 0, Math.PI * 2);
+          g.stroke();
         }
-        g.restore();
-        g.strokeStyle = "rgba(255,255,255,0.28)";
-        g.lineWidth = 2;
-        g.beginPath();
-        g.arc(px, py, radius, 0, Math.PI * 2);
-        g.stroke();
+
+        const isTypingNow = Number(typingUntil.get(username) || 0) > drawNowMs;
+        if (isTypingNow) {
+          const dots = ".".repeat((Math.floor(drawNowMs / 360) % 3) + 1);
+          const dotY = py - (avatarHalfHeight + 46);
+          g.font = "700 13px system-ui, -apple-system, Segoe UI, sans-serif";
+          g.textAlign = "center";
+          g.fillStyle = "rgba(246,240,255,0.96)";
+          g.shadowColor = "rgba(0,0,0,0.6)";
+          g.shadowBlur = 6;
+          g.shadowOffsetY = 2;
+          g.fillText(dots, px, Math.max(14, dotY));
+          g.shadowBlur = 0;
+          g.shadowOffsetY = 0;
+        }
 
         // Username in user's color, with contrast highlight (bigger + darker for readability)
-        const nameText = `@${username}`;
+        const nameText = displayNameForUser(username, u);
+        if (!nameText) {
+          const bNoLabel = bubbles.get(`user:${username}`);
+          if (bNoLabel && bNoLabel.text) {
+            const text = String(bNoLabel.text);
+            const pad = 7;
+            g.font = "14px system-ui, -apple-system, Segoe UI, sans-serif";
+            const tw = Math.min(w - 20, Math.ceil(g.measureText(text).width) + pad * 2);
+            const th = 26;
+            const bx = Math.max(10, Math.min(w - 10 - tw, px - tw / 2));
+            const by = Math.max(10, py - (avatarHalfHeight + 64));
+            g.fillStyle = "rgba(10,9,14,0.88)";
+            g.strokeStyle = "rgba(246,240,255,0.14)";
+            roundRect(g, bx, by, tw, th, 12);
+            g.fill();
+            g.stroke();
+            g.fillStyle = "rgba(246,240,255,0.92)";
+            g.shadowColor = "rgba(0,0,0,0.55)";
+            g.shadowBlur = 6;
+            g.shadowOffsetY = 2;
+            g.fillText(text, bx + tw / 2, by + 18);
+            g.shadowBlur = 0;
+          }
+          continue;
+        }
         const nameColor = normalizeReadableColor(color);
         g.font = "700 15px system-ui, -apple-system, Segoe UI, sans-serif";
         g.textAlign = "center";
@@ -3014,7 +4520,7 @@
         const nameW = Math.ceil(nm.width) + 14;
         const nameH = 22;
         const nameX = px - nameW / 2;
-        const nameY = py - (radius + 30);
+        const nameY = py - (avatarHalfHeight + 30);
         const bg = chooseHighlightBg(nameColor);
         g.fillStyle = bg;
         g.strokeStyle = "rgba(255,255,255,0.10)";
@@ -3036,7 +4542,7 @@
           const tw = Math.min(w - 20, Math.ceil(g.measureText(text).width) + pad * 2);
           const th = 26;
           const bx = Math.max(10, Math.min(w - 10 - tw, px - tw / 2));
-          const by = Math.max(10, py - (radius + 64));
+          const by = Math.max(10, py - (avatarHalfHeight + 64));
           g.fillStyle = "rgba(10,9,14,0.88)";
           g.strokeStyle = "rgba(246,240,255,0.14)";
           roundRect(g, bx, by, tw, th, 12);
@@ -3372,7 +4878,15 @@
 
     function enterMap(mapId) {
       mode = "map";
+      applyFocusModeClass();
+      gmMode = "play";
+      inspectorOpen = false;
+      gmOverlayVisible = false;
       users.clear();
+      emoteUntil.clear();
+      avatarAnimRuntime.clear();
+      typingUntil.clear();
+      typingOpen = false;
       bubbles.clear();
       editMode = false;
       draftPoly = [];
@@ -3389,6 +4903,7 @@
       revealFog = getFogReveal(mapId);
       // Seed a known-good local position (will be replaced once we get roomState).
       localPos = { x: 0.5, y: 0.5 };
+      mapChatFeed = [];
       exitInside.clear();
       activeMap =
         maps.find((m) => m.id === mapId) || {
@@ -3412,13 +4927,20 @@
           walkiesEnabled: false
         };
       selectedPropId = "";
+      mapsCapabilities = null;
+      clearCapabilitiesRetry();
       renderMapView();
       ctx.send("join", { mapId });
+      requestCapabilitiesWithRetry("join-request");
     }
 
     function leaveMap() {
       ctx.send("leave", {});
       mode = "maps";
+      applyFocusModeClass();
+      gmMode = "play";
+      inspectorOpen = false;
+      gmOverlayVisible = false;
       activeMap = null;
       speakingAsPropId = "";
       if (appRoot) appRoot.classList.remove("mapsRoom");
@@ -3427,6 +4949,12 @@
       stopWalkie();
       stopAllWalkies();
       users.clear();
+      emoteUntil.clear();
+      avatarAnimRuntime.clear();
+      typingUntil.clear();
+      typingOpen = false;
+      clearCapabilitiesRetry();
+      mapChatFeed = [];
       bubbles.clear();
       keys.clear();
       stopLoop();
@@ -3456,9 +4984,38 @@
         ctx.send("deleteMap", { id });
         return;
       }
+      const focus = e.target.closest("[data-mapfocus]");
+      if (focus) {
+        if (!featureEnabled("focusMode")) return;
+        setFocusMode(!isFocusMode);
+        return;
+      }
+      const gmOverlayBtn = e.target.closest("[data-gm-overlay]");
+      if (gmOverlayBtn) {
+        if (!featureEnabled("gmOverlay")) return;
+        setGmOverlayVisible(!gmOverlayVisible);
+        return;
+      }
+      const gmModeBtn = e.target.closest("[data-gm-mode]");
+      if (gmModeBtn) {
+        const nextMode = String(gmModeBtn.getAttribute("data-gm-mode") || "").trim().toLowerCase();
+        if (nextMode) setGmMode(nextMode);
+        return;
+      }
+      const gmInspectorBtn = e.target.closest("[data-gm-inspector]");
+      if (gmInspectorBtn) {
+        inspectorOpen = !inspectorOpen;
+        renderMapView();
+        return;
+      }
       const back = e.target.closest("[data-mapback]");
       if (back) {
         leaveMap();
+        return;
+      }
+      const cinematicBtn = e.target.closest("[data-mapcinematic]");
+      if (cinematicBtn) {
+        setCinematicMode(!cinematicMode);
         return;
       }
     });
@@ -3467,25 +5024,165 @@
       const overlay = document.getElementById("mapsChatOverlay");
       const input = document.getElementById("mapsChatInput");
       const send = document.getElementById("mapsChatSend");
+      const closeBtn = document.getElementById("mapsChatClose");
+      const scopeLocalBtn = document.getElementById("mapsChatScopeLocal");
+      const scopeGlobalBtn = document.getElementById("mapsChatScopeGlobal");
+      const opacityRange = document.getElementById("mapsChatOpacity");
+      const resetBtn = document.getElementById("mapsChatReset");
+      const dragHandle = document.getElementById("mapsChatDragHandle");
+      const canvasWrap = document.querySelector(".mapCanvasWrap");
       const walkieBar = document.getElementById("mapsWalkieBar");
       if (!overlay || !input || !send) return;
+      const clampOverlayToCanvas = () => {
+        if (!overlay || !canvasWrap) return;
+        const parentRect = canvasWrap.getBoundingClientRect();
+        if (parentRect.width <= 0 || parentRect.height <= 0) return;
+        const width = Math.max(180, Math.min(parentRect.width - 16, overlay.offsetWidth || 320));
+        const height = Math.max(56, Math.min(parentRect.height - 16, overlay.offsetHeight || 120));
+        if (overlay.style.right !== "auto") overlay.style.right = "auto";
+        if (!overlay.style.left || overlay.style.left === "auto") overlay.style.left = "12px";
+        if (!overlay.style.top || overlay.style.top === "auto") {
+          const baseBottom = overlay.classList.contains("raiseForHotbar") ? 126 : overlay.classList.contains("raiseForWalkie") ? 68 : 12;
+          overlay.style.top = `${Math.max(8, parentRect.height - height - baseBottom)}px`;
+        }
+        const currentLeft = Number.parseFloat(overlay.style.left || "12");
+        const currentTop = Number.parseFloat(overlay.style.top || "12");
+        const maxLeft = Math.max(8, parentRect.width - width - 8);
+        const maxTop = Math.max(8, parentRect.height - height - 8);
+        const clampedLeft = Math.max(8, Math.min(maxLeft, Number.isFinite(currentLeft) ? currentLeft : 12));
+        const clampedTop = Math.max(8, Math.min(maxTop, Number.isFinite(currentTop) ? currentTop : 12));
+        overlay.style.left = `${Math.round(clampedLeft)}px`;
+        overlay.style.top = `${Math.round(clampedTop)}px`;
+        overlay.style.bottom = "auto";
+        mapChatOverlayPos = { x: Math.round(clampedLeft), y: Math.round(clampedTop) };
+      };
       overlay.classList.toggle("hidden", !open);
+      typingOpen = Boolean(open);
       if (walkieBar) walkieBar.classList.toggle("hidden", Boolean(open) || !Boolean(activeMap?.walkiesEnabled));
       if (open) {
         input.value = "";
         input.focus();
+        typingLastSentAt = 0;
+        overlay.style.setProperty("--maps-chat-overlay-alpha", String(clamp(mapChatOverlayOpacity, 0.25, 1)));
+        if (mapChatOverlayPos && Number.isFinite(mapChatOverlayPos.x) && Number.isFinite(mapChatOverlayPos.y)) {
+          overlay.style.left = `${Math.round(mapChatOverlayPos.x)}px`;
+          overlay.style.top = `${Math.round(mapChatOverlayPos.y)}px`;
+          overlay.style.right = "auto";
+          overlay.style.bottom = "auto";
+        } else {
+          overlay.style.left = "12px";
+          overlay.style.right = "auto";
+          overlay.style.top = "";
+          overlay.style.bottom = "";
+        }
+        requestAnimationFrame(clampOverlayToCanvas);
+        renderMapChatFeedDom();
       } else {
+        if (activeMap?.id) ctx.send("typing", { mapId: activeMap.id, isTyping: false });
         input.blur();
+        mapChatOverlayDrag = null;
+        writeMapChatOverlayPrefs();
       }
-      send.onclick = () => {
+      const renderScopeButtons = () => {
+        if (scopeLocalBtn) scopeLocalBtn.classList.toggle("primary", mapChatScope === "local");
+        if (scopeLocalBtn) scopeLocalBtn.classList.toggle("ghost", mapChatScope !== "local");
+        if (scopeGlobalBtn) scopeGlobalBtn.classList.toggle("primary", mapChatScope === "global");
+        if (scopeGlobalBtn) scopeGlobalBtn.classList.toggle("ghost", mapChatScope !== "global");
+      };
+      renderScopeButtons();
+      if (scopeLocalBtn) {
+        scopeLocalBtn.onclick = () => {
+          mapChatScope = "local";
+          writeMapChatOverlayPrefs();
+          renderScopeButtons();
+          renderMapChatFeedDom();
+        };
+      }
+      if (scopeGlobalBtn) {
+        scopeGlobalBtn.onclick = () => {
+          mapChatScope = "global";
+          writeMapChatOverlayPrefs();
+          renderScopeButtons();
+          renderMapChatFeedDom();
+        };
+      }
+      if (opacityRange) {
+        const applyOpacity = () => {
+          mapChatOverlayOpacity = clamp(Number(opacityRange.value || mapChatOverlayOpacity), 0.25, 1);
+          overlay.style.setProperty("--maps-chat-overlay-alpha", String(mapChatOverlayOpacity));
+          writeMapChatOverlayPrefs();
+        };
+        opacityRange.oninput = applyOpacity;
+        opacityRange.onchange = applyOpacity;
+      }
+      if (resetBtn) {
+        resetBtn.onclick = () => {
+          mapChatOverlayOpacity = 0.92;
+          mapChatOverlayPos = null;
+          if (opacityRange) opacityRange.value = mapChatOverlayOpacity.toFixed(2);
+          overlay.style.setProperty("--maps-chat-overlay-alpha", String(mapChatOverlayOpacity));
+          overlay.style.left = "12px";
+          overlay.style.right = "auto";
+          overlay.style.top = "";
+          overlay.style.bottom = "";
+          requestAnimationFrame(clampOverlayToCanvas);
+          writeMapChatOverlayPrefs();
+        };
+      }
+      if (closeBtn) closeBtn.onclick = () => setChatOverlayOpen(false);
+      if (dragHandle) {
+        const onPointerMove = (ev) => {
+          if (!mapChatOverlayDrag) return;
+          const parentRect = mapChatOverlayDrag.parentRect;
+          const overlayRect = overlay.getBoundingClientRect();
+          const maxLeft = Math.max(8, parentRect.width - overlayRect.width - 8);
+          const maxTop = Math.max(8, parentRect.height - overlayRect.height - 8);
+          const nx = Math.max(8, Math.min(maxLeft, mapChatOverlayDrag.startLeft + (ev.clientX - mapChatOverlayDrag.startX)));
+          const ny = Math.max(8, Math.min(maxTop, mapChatOverlayDrag.startTop + (ev.clientY - mapChatOverlayDrag.startY)));
+          overlay.style.left = `${Math.round(nx)}px`;
+          overlay.style.right = "auto";
+          overlay.style.top = `${Math.round(ny)}px`;
+          overlay.style.bottom = "auto";
+          mapChatOverlayPos = { x: Math.round(nx), y: Math.round(ny) };
+        };
+        const onPointerUp = () => {
+          if (!mapChatOverlayDrag) return;
+          mapChatOverlayDrag = null;
+          clampOverlayToCanvas();
+          writeMapChatOverlayPrefs();
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+        };
+        dragHandle.onpointerdown = (ev) => {
+          if (!canvasWrap) return;
+          const rect = overlay.getBoundingClientRect();
+          const parentRect = canvasWrap.getBoundingClientRect();
+          mapChatOverlayDrag = {
+            startX: ev.clientX,
+            startY: ev.clientY,
+            startLeft: rect.left - parentRect.left,
+            startTop: rect.top - parentRect.top,
+            parentRect
+          };
+          window.addEventListener("pointermove", onPointerMove);
+          window.addEventListener("pointerup", onPointerUp);
+        };
+      }
+      const submitChat = () => {
         const text = String(input.value || "").trim();
         if (!text) return;
+        if (activeMap?.id) ctx.send("typing", { mapId: activeMap.id, isTyping: false });
         const me = String(ctx.getUser() || "").trim().toLowerCase();
         const actorPropId = speakingAsPropId ? String(speakingAsPropId) : "";
         if (actorPropId) bubbles.set(`token:${actorPropId}`, { text: text.slice(0, 120), actorType: "token", actorPropId, expiresAt: Date.now() + 4000 });
         else if (me) bubbles.set(`user:${me}`, { text: text.slice(0, 120), actorType: "user", username: me, expiresAt: Date.now() + 4000 });
-        ctx.send("say", { text, actorPropId });
-        setChatOverlayOpen(false);
+        ctx.send("chatSend", { mapId: activeMap?.id || "", text, scope: mapChatScope });
+        ctx.send("say", { text, actorPropId, scope: mapChatScope });
+        input.value = "";
+        input.focus();
+      };
+      send.onclick = () => {
+        submitChat();
       };
       input.onkeydown = (ev) => {
         if (ev.key === "Escape") {
@@ -3494,24 +5191,97 @@
         }
         if (ev.key === "Enter") {
           ev.preventDefault();
-          const text = String(input.value || "").trim();
-          if (!text) return;
-          const me = String(ctx.getUser() || "").trim().toLowerCase();
-          const actorPropId = speakingAsPropId ? String(speakingAsPropId) : "";
-          if (actorPropId) bubbles.set(`token:${actorPropId}`, { text: text.slice(0, 120), actorType: "token", actorPropId, expiresAt: Date.now() + 4000 });
-          else if (me) bubbles.set(`user:${me}`, { text: text.slice(0, 120), actorType: "user", username: me, expiresAt: Date.now() + 4000 });
-          ctx.send("say", { text, actorPropId });
-          setChatOverlayOpen(false);
+          submitChat();
         }
       };
+      input.oninput = () => {
+        if (!activeMap?.id || !typingOpen) return;
+        const text = String(input.value || "");
+        const now = Date.now();
+        const wantsTyping = text.trim().length > 0;
+        if (!wantsTyping) {
+          ctx.send("typing", { mapId: activeMap.id, isTyping: false });
+          typingLastSentAt = now;
+          return;
+        }
+        if (now - typingLastSentAt < 600) return;
+        typingLastSentAt = now;
+        ctx.send("typing", { mapId: activeMap.id, isTyping: true });
+      };
+    }
+
+    function shouldDeferMapRerenderForChat() {
+      if (!typingOpen) return false;
+      const overlay = document.getElementById("mapsChatOverlay");
+      return Boolean(overlay && !overlay.classList.contains("hidden"));
     }
 
     window.addEventListener("keydown", (e) => {
       if (mode !== "map") return;
       // This is a user gesture; try to unlock audio playback early.
       ensureAudioReady();
+      const focusSupported = featureEnabled("focusMode");
+      const gmOverlaySupported = featureEnabled("gmOverlay");
       const overlay = document.getElementById("mapsChatOverlay");
       const overlayOpen = overlay && !overlay.classList.contains("hidden");
+      const editingText = isTextEditingElement(document.activeElement);
+      if (editingText) return;
+      if (!overlayOpen && !editMode && e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-5]$/.test(e.code)) {
+        e.preventDefault();
+        const idx = Number(String(e.code).replace("Digit", "")) - 1;
+        if (idx >= 0) ctx.send("avatarEmote", { mapId: activeMap?.id || "", index: idx });
+        return;
+      }
+      if (!editingText && !overlayOpen && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (!gmOverlaySupported || !gmOverlayVisible) {
+          // With overlay hidden, reserve number keys for normal typing/navigation.
+        } else if (e.code === "Digit1") {
+          e.preventDefault();
+          setGmMode("play");
+          return;
+        } else if (e.code === "Digit2") {
+          e.preventDefault();
+          setGmMode("select");
+          return;
+        } else if (e.code === "Digit3") {
+          e.preventDefault();
+          setGmMode("place");
+          return;
+        } else if (e.code === "Digit4") {
+          e.preventDefault();
+          setGmMode("polygon");
+          return;
+        }
+      }
+      if (!overlayOpen && gmOverlaySupported && gmOverlayVisible && (e.key === "/" || ((e.ctrlKey || e.metaKey) && e.code === "KeyK"))) {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastPaletteToastAt > 1200) {
+          lastPaletteToastAt = now;
+          ctx.toast("Maps", "Command palette coming soon.");
+        }
+        return;
+      }
+      if (focusSupported && e.code === "KeyF") {
+        e.preventDefault();
+        setFocusMode(!isFocusMode);
+        return;
+      }
+      if (!overlayOpen && !editMode && !e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyC") {
+        e.preventDefault();
+        setCinematicMode(!cinematicMode);
+        return;
+      }
+      if (!overlayOpen && !editMode && !e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyG" && gmOverlaySupported && canManageTtrpg) {
+        e.preventDefault();
+        setGmOverlayVisible(!gmOverlayVisible);
+        return;
+      }
+      if (focusSupported && !overlayOpen && !editMode && e.key === "Escape" && isFocusMode) {
+        e.preventDefault();
+        setFocusMode(false);
+        return;
+      }
       if (editMode) {
         if (e.key === "Escape") {
           draftPoly = [];
@@ -3591,36 +5361,37 @@
       if (activeMap?.walkiesEnabled && !overlayOpen && !editMode && e.code === "Backquote") {
         e.preventDefault();
         startWalkie().catch((err) => ctx.toast("Walkie", String(err?.message || err)));
-        const btn = document.getElementById("mapsWalkieBtn");
-        if (btn) btn.textContent = "Recording…";
         return;
       }
-      if (e.code === "KeyT" && !overlayOpen) {
+      if (e.code === "KeyT" && !overlayOpen && !cinematicMode) {
         e.preventDefault();
         setChatOverlayOpen(true);
         return;
       }
-      if (!overlayOpen && !editMode && activeMap?.ttrpgEnabled && canManageTtrpg) {
+      if (!overlayOpen && !editMode && gmOverlaySupported && gmOverlayVisible && activeMap?.ttrpgEnabled && canManageTtrpg) {
         if (e.code === "KeyV") {
           e.preventDefault();
           ttrpgTool = "select";
+          gmMode = "select";
           renderMapView();
           return;
         }
         if (e.code === "KeyP") {
           e.preventDefault();
           ttrpgTool = "place";
+          gmMode = "place";
           renderMapView();
           return;
         }
         if (e.code === "Space") {
           e.preventDefault();
           ttrpgTool = "pan";
+          gmMode = "play";
           renderMapView();
           return;
         }
       }
-      if (!overlayOpen && !editMode && activeMap?.ttrpgEnabled && canManageTtrpg && (e.code === "KeyQ" || e.code === "KeyE")) {
+      if (!overlayOpen && !editMode && gmOverlaySupported && gmOverlayVisible && activeMap?.ttrpgEnabled && canManageTtrpg && (e.code === "KeyQ" || e.code === "KeyE")) {
         e.preventDefault();
         const step = e.shiftKey ? 45 : 15;
         const dir = e.code === "KeyQ" ? -1 : 1;
@@ -3647,7 +5418,7 @@
           return;
         }
       }
-      if (!overlayOpen && !editMode && activeMap?.ttrpgEnabled && canManageTtrpg && (e.code === "KeyZ" || e.code === "KeyX")) {
+      if (!overlayOpen && !editMode && gmOverlaySupported && gmOverlayVisible && activeMap?.ttrpgEnabled && canManageTtrpg && (e.code === "KeyZ" || e.code === "KeyX")) {
         e.preventDefault();
         const delta = e.shiftKey ? 0.2 : 0.1;
         const dir = e.code === "KeyZ" ? -1 : 1;
@@ -3676,14 +5447,14 @@
     window.addEventListener("keyup", (e) => {
       if (mode !== "map") return;
       keys.delete(e.code);
+      if (isTextEditingElement(document.activeElement)) return;
       if (activeMap?.ttrpgEnabled && canManageTtrpg && e.code === "Space" && ttrpgTool === "pan") {
         ttrpgTool = "select";
+        gmMode = "select";
         renderMapView();
       }
       if (activeMap?.walkiesEnabled && e.code === "Backquote") {
         stopWalkie();
-        const btn = document.getElementById("mapsWalkieBtn");
-        if (btn) btn.textContent = "Hold to talk";
       }
     });
 
@@ -3699,7 +5470,62 @@
 
       if (type === "plugin:maps:mapsList") {
         maps = Array.isArray(msg.maps) ? msg.maps : [];
+        if (mode === "map" && activeMap?.id) {
+          const current = maps.find((m) => String(m.id || "").trim().toLowerCase() === String(activeMap.id || ""));
+          if (current) {
+            activeMap.userCount = Number(current.userCount || 0) || 0;
+            activeMap.live = Boolean(current.live);
+            activeMap.lastActiveAt = Number(current.lastActiveAt || 0) || 0;
+          }
+        }
         if (mode === "maps") renderMapsList();
+        return;
+      }
+
+      if (type === "plugin:maps:capabilities") {
+        mapsCapabilities = msg && typeof msg === "object" ? msg : null;
+        clearCapabilitiesRetry();
+        if (!featureEnabled("gmOverlay")) {
+          gmOverlayVisible = false;
+          inspectorOpen = false;
+          gmMode = "play";
+          editMode = false;
+        }
+        if (!featureEnabled("focusMode")) {
+          isFocusMode = false;
+          applyFocusModeClass();
+        }
+        devLog("info", "maps:capabilities", mapsCapabilities);
+        if (mode === "map" && activeMap) renderMapView();
+        return;
+      }
+
+      if (type === "plugin:maps:avatarPresets") {
+        avatarPresets = normalizeAvatarPresetList(msg?.presets);
+        avatarPresetsCanManage = Boolean(msg?.canManage);
+        if (!avatarPresets.some((preset) => preset.id === avatarPresetSelectedId)) {
+          avatarPresetSelectedId = "";
+        }
+        if (mode === "map" && avatarEditorOpen) renderMapView();
+        return;
+      }
+
+      if (type === "plugin:maps:avatarPresetsUpdated") {
+        ctx.send("listAvatarPresets", {});
+        return;
+      }
+
+      if (type === "plugin:maps:avatarSet") {
+        const me = String(ctx.getUser() || "").trim().toLowerCase();
+        if (!me) return;
+        const mine = users.get(me);
+        const normalized = normalizeAvatarState(msg?.avatar || null);
+        if (mine) {
+          mine.avatar = normalized;
+          users.set(me, mine);
+        }
+        avatarEditorDraft = cloneAvatarForEditor(normalized);
+        if (mode === "map") renderMapView();
         return;
       }
 
@@ -3724,7 +5550,10 @@
             ttrpgEnabled: Boolean(msg.map.ttrpgEnabled),
             sprites: Array.isArray(msg.map.sprites) ? msg.map.sprites : [],
             props: Array.isArray(msg.map.props) ? msg.map.props : [],
-            walkiesEnabled: Boolean(msg.map.walkiesEnabled)
+            walkiesEnabled: Boolean(msg.map.walkiesEnabled),
+            userCount: Number(msg?.presence?.userCount || 0) || 0,
+            live: Boolean(msg?.presence?.live),
+            lastActiveAt: Number(msg?.presence?.lastActiveAt || 0) || 0
           };
           ttrpgDockCollapsed = readDockCollapsed(activeMap.id);
           revealFog = getFogReveal(activeMap.id);
@@ -3746,6 +5575,8 @@
           }
           renderMapView();
         }
+        if (activeMap?.id) ctx.send("chatHistoryReq", { mapId: activeMap.id });
+        requestCapabilitiesWithRetry("join-ok");
         return;
       }
 
@@ -3764,7 +5595,7 @@
         if (Object.prototype.hasOwnProperty.call(patch, "hiddenMasks")) activeMap.hiddenMasks = Array.isArray(patch.hiddenMasks) ? patch.hiddenMasks : [];
         if (Object.prototype.hasOwnProperty.call(patch, "occluders")) activeMap.occluders = Array.isArray(patch.occluders) ? patch.occluders : [];
         if (Object.prototype.hasOwnProperty.call(patch, "fallThroughs")) activeMap.fallThroughs = Array.isArray(patch.fallThroughs) ? patch.fallThroughs : [];
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
@@ -3773,7 +5604,7 @@
         const mapId = String(msg.mapId || "").trim().toLowerCase();
         if (!activeMap || mapId !== String(activeMap.id || "")) return;
         selfInvisible = Boolean(msg.invisible);
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
@@ -3786,7 +5617,7 @@
           if (!name) continue;
           const tx = Number(raw?.x || 0);
           const ty = Number(raw?.y || 0);
-          const prev = users.get(name) || { x: tx, y: ty, tx, ty, color: "", image: "" };
+          const prev = users.get(name) || { x: tx, y: ty, tx, ty, color: "", image: "", avatar: null };
           prev.tx = tx;
           prev.ty = ty;
           // Initialize render position on first sight.
@@ -3796,15 +5627,90 @@
           }
           prev.color = raw?.color || prev.color || "";
           prev.image = raw?.image || prev.image || "";
+          prev.avatar = normalizeAvatarState(raw?.avatar || prev.avatar || null);
           next.set(name, prev);
         }
         users = next;
+        typingUntil.clear();
+        for (const rawName of Array.isArray(msg.typingUsers) ? msg.typingUsers : []) {
+          const name = String(rawName || "").trim().toLowerCase();
+          if (!name) continue;
+          typingUntil.set(name, Date.now() + 4500);
+        }
+        if (activeMap && msg.presence && typeof msg.presence === "object") {
+          activeMap.userCount = Number(msg.presence.userCount || users.size) || users.size;
+          activeMap.live = Boolean(msg.presence.live);
+          activeMap.lastActiveAt = Number(msg.presence.lastActiveAt || 0) || 0;
+        }
         const me = (self || String(ctx.getUser() || "")).trim().toLowerCase();
         const mine = me ? users.get(me) : null;
         if (mine) {
           // Keep local prediction, but if we're brand new, seed from server once.
           if (!Number.isFinite(localPos?.x) || !Number.isFinite(localPos?.y)) localPos = { x: Number(mine.tx || 0.5), y: Number(mine.ty || 0.5) };
         }
+        renderMapView();
+        return;
+      }
+
+      if (type === "plugin:maps:chatHistory") {
+        if (mode !== "map") return;
+        const mapId = String(msg.mapId || "").trim().toLowerCase();
+        if (!activeMap || mapId !== String(activeMap.id || "")) return;
+        const scope = String(msg.scope || "local").trim().toLowerCase();
+        if (scope === "global") {
+          replaceMapChatGlobalHistory(Array.isArray(msg.messages) ? msg.messages : []);
+          renderMapChatFeedDom();
+        }
+        return;
+      }
+
+      if (type === "plugin:maps:chatMessage") {
+        if (mode !== "map") return;
+        const mapId = String(msg.mapId || "").trim().toLowerCase();
+        if (!activeMap || mapId !== String(activeMap.id || "")) return;
+        pushMapChatFeedEntry(msg.scope, msg.message);
+        renderMapChatFeedDom();
+        return;
+      }
+
+      if (type === "plugin:maps:typing") {
+        if (mode !== "map") return;
+        const mapId = String(msg.mapId || "").trim().toLowerCase();
+        if (!activeMap || mapId !== String(activeMap.id || "")) return;
+        const username = String(msg.username || "").trim().toLowerCase();
+        if (!username) return;
+        if (Boolean(msg.isTyping)) {
+          const expiresAt = Number(msg.expiresAt || 0) || Date.now() + 4500;
+          typingUntil.set(username, expiresAt);
+        } else {
+          typingUntil.delete(username);
+        }
+        renderMapView();
+        return;
+      }
+
+      if (type === "plugin:maps:avatarEmote") {
+        if (mode !== "map") return;
+        const mapId = String(msg.mapId || "").trim().toLowerCase();
+        if (!activeMap || mapId !== String(activeMap.id || "")) return;
+        const username = String(msg.username || "").trim().toLowerCase();
+        const state = String(msg.state || "").trim();
+        const until = Number(msg.until || 0) || 0;
+        if (!username || !state || !until) return;
+        emoteUntil.set(username, { state, until, loop: Boolean(msg.loop) });
+        renderMapView();
+        return;
+      }
+
+      if (type === "plugin:maps:avatarChanged") {
+        if (mode !== "map") return;
+        const mapId = String(msg.mapId || "").trim().toLowerCase();
+        if (!activeMap || mapId !== String(activeMap.id || "")) return;
+        const username = String(msg.username || "").trim().toLowerCase();
+        if (!username) return;
+        const prev = users.get(username) || { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, color: "", image: "", avatar: null };
+        prev.avatar = normalizeAvatarState(msg?.avatar || prev.avatar || null);
+        users.set(username, prev);
         renderMapView();
         return;
       }
@@ -3818,7 +5724,7 @@
         if (me && username === me) return;
         const tx = Number(msg.x || 0);
         const ty = Number(msg.y || 0);
-        const prev = users.get(username) || { x: tx, y: ty, tx, ty, color: "", image: "" };
+        const prev = users.get(username) || { x: tx, y: ty, tx, ty, color: "", image: "", avatar: null };
         prev.tx = tx;
         prev.ty = ty;
         if (typeof prev.x !== "number" || typeof prev.y !== "number") {
@@ -3992,4 +5898,5 @@
     }
   });
 })();
+
 
