@@ -2922,9 +2922,9 @@ button:disabled {
 .chat.isSkinnyChat .chatMsg .content {
   font-size: 12px;
   line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat.isSkinnyChat .chatMsg .content img,

@@ -3087,8 +3087,8 @@ function initRackLayout() {
 
   // Hotbar interactions
   if (dockHotbarEl) {
-    dockHotbarEl.onmouseenter = () => showHotbar(true);
-    dockHotbarEl.onmouseleave = () => showHotbar(false);
+    dockHotbarEl.onmouseenter = null;
+    dockHotbarEl.onmouseleave = null;
     // Docked items must be restored via drag-and-drop (click does nothing), but the "+" orb is clickable.
     dockHotbarEl.onclick = (e) => {
       if (dockHotbarEl.dataset.dragging === "1") return;
@@ -3317,13 +3317,8 @@ function initRackLayout() {
     });
   }
 
-  // Reveal hotbar when cursor is near bottom if there are docked items.
-  window.addEventListener("mousemove", (e) => {
-    if (!dockHotbarEl) return;
-    if (!rackLayoutEnabled) return;
-    const nearBottom = e.clientY > window.innerHeight - 80;
-    showHotbar(Boolean(nearBottom));
-  });
+  // Keep hotbar visible in rack mode to avoid layout jank from auto-hide.
+  if (rackLayoutEnabled) showHotbar(true);
 
   // First enable: seed state from the selected preset so users immediately get a sensible layout.
   if (!hadState) {

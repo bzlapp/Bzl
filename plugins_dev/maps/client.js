@@ -65,8 +65,6 @@
       .mapsTabBtn { margin-left: 10px; }
       .mapsPanel.hidden { display: none; }
       .mapsPanel { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display:flex; flex-direction: column; }
-      .app.mapsRoom .chat { display: none !important; }
-      .app.mapsRoom .chatResizeHandle { display: none !important; }
       /* Keep core resize handles working in map mode by preserving grid areas. */
       @media (min-width: 761px) {
         .app.mapsRoom {
@@ -502,7 +500,7 @@
         gmMode = "play";
         editMode = false;
         ttrpgTool = "select";
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
       if (!canUseTools) return;
@@ -510,14 +508,14 @@
         gmMode = "select";
         editMode = false;
         ttrpgTool = "select";
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
       if (target === "place") {
         gmMode = "place";
         editMode = false;
         ttrpgTool = "place";
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
       if (target === "polygon") {
@@ -1789,8 +1787,6 @@
       if (!mapsPanel) return;
       if (mode !== "map" || !activeMap) return;
       if (appRoot) appRoot.classList.add("mapsRoom");
-      if (chatPanel) chatPanel.classList.add("hidden");
-      if (chatResizeHandle) chatResizeHandle.classList.add("hidden");
       const title = escapeHtml(activeMap.title || activeMap.id);
       const now = Date.now();
       const list = Array.from(users.keys())
@@ -1965,9 +1961,8 @@
                 <button type="button" class="ghost smallBtn" id="mapsChatReset" title="Reset chat overlay position and opacity">Reset</button>
                 <button type="button" class="ghost smallBtn" id="mapsChatClose" title="Close">✕</button>
               </div>
-              <div class="mapChatFeed" id="mapsChatFeed"><div class="small muted">No ${mapChatScope} messages yet.</div></div>
               <div class="row" style="gap:8px;">
-                <input id="mapsChatInput" placeholder="Say something..." />
+                <input id="mapsChatInput" placeholder="Say something..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
                 <button type="button" class="primary" id="mapsChatSend">Send</button>
               </div>
             </div>
@@ -5005,7 +5000,7 @@
       const gmInspectorBtn = e.target.closest("[data-gm-inspector]");
       if (gmInspectorBtn) {
         inspectorOpen = !inspectorOpen;
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
       const back = e.target.closest("[data-mapback]");
@@ -5077,6 +5072,7 @@
         }
         requestAnimationFrame(clampOverlayToCanvas);
         renderMapChatFeedDom();
+        keys.clear();
       } else {
         if (activeMap?.id) ctx.send("typing", { mapId: activeMap.id, isTyping: false });
         input.blur();
@@ -5185,6 +5181,7 @@
         submitChat();
       };
       input.onkeydown = (ev) => {
+        ev.stopPropagation();
         if (ev.key === "Escape") {
           ev.preventDefault();
           setChatOverlayOpen(false);
@@ -5195,6 +5192,7 @@
         }
       };
       input.oninput = () => {
+        keys.clear();
         if (!activeMap?.id || !typingOpen) return;
         const text = String(input.value || "");
         const now = Date.now();
@@ -5216,6 +5214,15 @@
       return Boolean(overlay && !overlay.classList.contains("hidden"));
     }
 
+    function isTypingLockActive() {
+      if (!typingOpen) return false;
+      const overlay = document.getElementById("mapsChatOverlay");
+      if (!overlay || overlay.classList.contains("hidden")) return false;
+      const activeEl = document.activeElement;
+      if (!activeEl) return false;
+      return Boolean(activeEl.id === "mapsChatInput" || overlay.contains(activeEl));
+    }
+
     window.addEventListener("keydown", (e) => {
       if (mode !== "map") return;
       // This is a user gesture; try to unlock audio playback early.
@@ -5225,6 +5232,17 @@
       const overlay = document.getElementById("mapsChatOverlay");
       const overlayOpen = overlay && !overlay.classList.contains("hidden");
       const editingText = isTextEditingElement(document.activeElement);
+      if (overlayOpen && e.key === "Escape") {
+        e.preventDefault();
+        setChatOverlayOpen(false);
+        return;
+      }
+      if (isTypingLockActive()) {
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Backquote"].includes(e.code)) {
+          e.preventDefault();
+        }
+        return;
+      }
       if (editingText) return;
       if (!overlayOpen && !editMode && e.altKey && !e.ctrlKey && !e.metaKey && /^Digit[1-5]$/.test(e.code)) {
         e.preventDefault();
@@ -5648,7 +5666,7 @@
           // Keep local prediction, but if we're brand new, seed from server once.
           if (!Number.isFinite(localPos?.x) || !Number.isFinite(localPos?.y)) localPos = { x: Number(mine.tx || 0.5), y: Number(mine.ty || 0.5) };
         }
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
@@ -5685,7 +5703,7 @@
         } else {
           typingUntil.delete(username);
         }
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
@@ -5698,7 +5716,7 @@
         const until = Number(msg.until || 0) || 0;
         if (!username || !state || !until) return;
         emoteUntil.set(username, { state, until, loop: Boolean(msg.loop) });
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
@@ -5711,7 +5729,7 @@
         const prev = users.get(username) || { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, color: "", image: "", avatar: null };
         prev.avatar = normalizeAvatarState(msg?.avatar || prev.avatar || null);
         users.set(username, prev);
-        renderMapView();
+        if (!shouldDeferMapRerenderForChat()) renderMapView();
         return;
       }
 
