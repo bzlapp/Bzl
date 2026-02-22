@@ -9085,8 +9085,10 @@ async function tryGetMicrophoneTrack() {
   }
 }
 
-async function ensureStreamAudioForKind(media, kind) {
+async function ensureStreamAudioForKind(media, kind, opts = null) {
   if (!media) return media;
+  const options = opts && typeof opts === "object" ? opts : {};
+  const includeMicForScreen = options.includeMicForScreen !== false;
   const audioTracks = media.getAudioTracks();
   const hasAudio = audioTracks.length > 0;
   if (kind === "audio" || kind === "webcam") {
@@ -9096,8 +9098,9 @@ async function ensureStreamAudioForKind(media, kind) {
     return media;
   }
   if (kind === "screen") {
+    if (!includeMicForScreen) return media;
     const micTrack = await tryGetMicrophoneTrack();
-    if (micTrack && !hasAudio) media.addTrack(micTrack);
+    if (micTrack) media.addTrack(micTrack);
   }
   return media;
 }
@@ -9120,17 +9123,30 @@ async function startStreamHost(post) {
   try {
     if (!navigator.mediaDevices) throw new Error("Media devices are unavailable in this browser.");
     let media = null;
+    let includeMicForScreen = true;
     if (kind === "screen") {
       media = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      try {
+        const remembered = readBoolPref("bzl_stream_screen_include_mic", true);
+        const ask = window.confirm(
+          remembered
+            ? "Include your microphone with screen share? (Recommended)"
+            : "Include your microphone with screen share?"
+        );
+        includeMicForScreen = Boolean(ask);
+        writeBoolPref("bzl_stream_screen_include_mic", includeMicForScreen);
+      } catch {
+        includeMicForScreen = true;
+      }
     } else if (kind === "audio") {
       media = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } else {
       media = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     }
     if (!media) throw new Error("No stream media available.");
-    media = await ensureStreamAudioForKind(media, kind);
+    media = await ensureStreamAudioForKind(media, kind, { includeMicForScreen });
     if (!media.getAudioTracks().length) {
-      throw new Error("No audio track available. Allow microphone access to go live with sound.");
+      throw new Error("No audio track available. Share system audio and/or allow microphone access to go live with sound.");
     }
 
     leaveActiveStream(false);
