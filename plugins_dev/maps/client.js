@@ -473,6 +473,7 @@
 
     function setFocusMode(on, persist = true) {
       if (Boolean(on) && !featureEnabled("focusMode")) return;
+      const wasFocusMode = Boolean(isFocusMode);
       isFocusMode = Boolean(on) && featureEnabled("focusMode");
       if (persist) writeFocusModePref(isFocusMode);
       if (isFocusMode) {
@@ -480,7 +481,17 @@
         editMode = false;
       }
       applyFocusModeClass();
-      if (mode === "map") renderMapView();
+      if (mode === "map" && isFocusMode && !wasFocusMode) {
+        // Entering focus can change layout density and tool mode, so rerender once.
+        renderMapView();
+      } else if (mode === "map") {
+        const focusBtn = mapsPanel?.querySelector?.("[data-mapfocus]");
+        if (focusBtn) {
+          focusBtn.textContent = isFocusMode ? "Exit focus" : "Focus";
+          focusBtn.classList.toggle("primary", isFocusMode);
+          focusBtn.classList.toggle("ghost", !isFocusMode);
+        }
+      }
     }
 
     function setCinematicMode(on) {
@@ -5293,11 +5304,6 @@
       if (!overlayOpen && !editMode && !e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyG" && gmOverlaySupported && canManageTtrpg) {
         e.preventDefault();
         setGmOverlayVisible(!gmOverlayVisible);
-        return;
-      }
-      if (focusSupported && !overlayOpen && !editMode && e.key === "Escape" && isFocusMode) {
-        e.preventDefault();
-        setFocusMode(false);
         return;
       }
       if (editMode) {
