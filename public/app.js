@@ -8951,6 +8951,51 @@ async function handleStreamViewerJoinMessage(msg) {
   }
 }
 
+async function tryGetMicrophoneTrack() {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") return null;
+  try {
+    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const track = micStream.getAudioTracks()[0] || null;
+    if (!track) {
+      try {
+        for (const t of micStream.getTracks()) t.stop();
+      } catch {}
+      return null;
+    }
+    track.addEventListener(
+      "ended",
+      () => {
+        try {
+          for (const t of micStream.getTracks()) {
+            if (t.id !== track.id) t.stop();
+          }
+        } catch {}
+      },
+      { once: true }
+    );
+    return track;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureStreamAudioForKind(media, kind) {
+  if (!media) return media;
+  const audioTracks = media.getAudioTracks();
+  const hasAudio = audioTracks.length > 0;
+  if (kind === "audio" || kind === "webcam") {
+    if (hasAudio) return media;
+    const micTrack = await tryGetMicrophoneTrack();
+    if (micTrack) media.addTrack(micTrack);
+    return media;
+  }
+  if (kind === "screen") {
+    const micTrack = await tryGetMicrophoneTrack();
+    if (micTrack && !hasAudio) media.addTrack(micTrack);
+  }
+  return media;
+}
+
 async function startStreamHost(post) {
   if (!post || !isStreamPost(post)) return;
   if (!streamEnabled) {
@@ -8977,6 +9022,10 @@ async function startStreamHost(post) {
       media = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     }
     if (!media) throw new Error("No stream media available.");
+    media = await ensureStreamAudioForKind(media, kind);
+    if (!media.getAudioTracks().length) {
+      throw new Error("No audio track available. Allow microphone access to go live with sound.");
+    }
 
     leaveActiveStream(false);
     streamCurrentPostId = String(post.id || "");
