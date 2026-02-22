@@ -152,6 +152,11 @@ const streamStagePrimaryBtn = document.getElementById("streamStagePrimary");
 const streamStageVideoEl = document.getElementById("streamStageVideo");
 const streamStageAudioEl = document.getElementById("streamStageAudio");
 const streamStagePlaceholderEl = document.getElementById("streamStagePlaceholder");
+const streamVoiceControlsEl = document.getElementById("streamVoiceControls");
+const streamVoiceJoinToggleEl = document.getElementById("streamVoiceJoinToggle");
+const streamVoiceMuteBtn = document.getElementById("streamVoiceMuteBtn");
+const streamVoiceDeafenBtn = document.getElementById("streamVoiceDeafenBtn");
+const streamVoiceUsersEl = document.getElementById("streamVoiceUsers");
 const chatMessagesEl = document.getElementById("chatMessages");
 const typingIndicator = document.getElementById("typingIndicator");
 const chatForm = document.getElementById("chatForm");
@@ -324,6 +329,14 @@ let streamLocalMedia = null;
 let streamRemoteMedia = null;
 let streamRemoteKind = "webcam";
 const streamPeerByClientId = new Map();
+const streamRemoteMediaByClientId = new Map();
+const streamPeerUsernameByClientId = new Map();
+const streamRemoteAudioByClientId = new Map();
+const streamPeerVolumeByClientId = new Map();
+let streamVoiceMedia = null;
+let streamVoiceJoined = false;
+let streamVoiceMuted = false;
+let streamVoiceDeafened = false;
 const SESSION_TOKEN_KEY = "bzl_session_token";
 const CLIENT_IMAGE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const CLIENT_AUDIO_UPLOAD_MAX_BYTES = 150 * 1024 * 1024;
@@ -8881,8 +8894,21 @@ function closeStreamPeer(clientId) {
   const id = String(clientId || "").trim();
   if (!id) return;
   const pc = streamPeerByClientId.get(id);
-  if (!pc) return;
   streamPeerByClientId.delete(id);
+  streamRemoteMediaByClientId.delete(id);
+  streamPeerUsernameByClientId.delete(id);
+  const remoteAudioEl = streamRemoteAudioByClientId.get(id);
+  if (remoteAudioEl) {
+    try {
+      remoteAudioEl.pause();
+    } catch {
+      // ignore
+    }
+    remoteAudioEl.srcObject = null;
+    remoteAudioEl.remove();
+  }
+  streamRemoteAudioByClientId.delete(id);
+  if (!pc) return;
   try {
     pc.onicecandidate = null;
     pc.onconnectionstatechange = null;
@@ -8921,6 +8947,131 @@ function clearStreamMediaPreview() {
   streamRemoteMedia = null;
 }
 
+function ensureRemoteAudioEl(clientId) {
+  const id = String(clientId || "").trim();
+  if (!id) return null;
+  const existing = streamRemoteAudioByClientId.get(id);
+  if (existing) return existing;
+  const el = document.createElement("audio");
+  el.autoplay = true;
+  el.controls = false;
+  el.preload = "none";
+  el.className = "streamStageAudio hidden";
+  streamRemoteAudioByClientId.set(id, el);
+  streamStageEl?.appendChild(el);
+  return el;
+}
+
+function updateStreamOutputMuteState() {
+  const deafened = Boolean(streamVoiceDeafened);
+  const hostingPreview = streamCurrentRole === "host";
+  if (streamStageAudioEl) streamStageAudioEl.muted = deafened || hostingPreview;
+  if (streamStageVideoEl) streamStageVideoEl.muted = deafened || hostingPreview;
+  for (const el of streamRemoteAudioByClientId.values()) {
+    el.muted = deafened;
+  }
+}
+
+function updateStreamLocalMuteState() {
+  const media = streamCurrentRole === "host" ? streamLocalMedia : streamVoiceMedia;
+  const tracks = media && typeof media.getAudioTracks === "function" ? media.getAudioTracks() : [];
+  for (const track of tracks) track.enabled = !streamVoiceMuted;
+}
+
+function streamDisplayNameForClientId(peerClientId) {
+  const id = String(peerClientId || "").trim();
+  if (!id) return "Unknown";
+  if (id === String(clientId || "").trim()) return `${loggedInUser ? `@${loggedInUser}` : "You"} (you)`;
+  const username = String(streamPeerUsernameByClientId.get(id) || "").trim();
+  return username ? `@${username}` : `Peer ${id.slice(0, 6)}`;
+}
+
+function renderStreamVoiceUsers() {
+  if (!streamVoiceUsersEl) return;
+  const rows = [];
+  for (const [peerId, audioEl] of streamRemoteAudioByClientId.entries()) {
+    if (!audioEl || peerId === streamCurrentHostClientId) continue;
+    const vol = Math.max(0, Math.min(1, Number(streamPeerVolumeByClientId.get(peerId) ?? audioEl.volume ?? 1)));
+    rows.push({ peerId, label: streamDisplayNameForClientId(peerId), vol });
+  }
+  if (!rows.length) {
+    streamVoiceUsersEl.innerHTML = `<div>No active voice peers.</div>`;
+    return;
+  }
+  streamVoiceUsersEl.innerHTML = rows
+    .map(
+      (row) => `<label class="streamVoiceUserRow">
+        <span>${escapeHtml(row.label)}</span>
+        <input type="range" min="0" max="100" step="1" value="${escapeHtml(String(Math.round(row.vol * 100)))}" data-streamvol="${escapeHtml(row.peerId)}" />
+      </label>`
+    )
+    .join("");
+}
+
+function renderStreamVoiceControls(post, isHosting, isViewing) {
+  if (!streamVoiceControlsEl) return;
+  const streamPost = post && isStreamPost(post) ? post : null;
+  const enabled = Boolean(streamPost && (isHosting || isViewing));
+  streamVoiceControlsEl.classList.toggle("hidden", !enabled);
+  if (!enabled) return;
+  if (streamVoiceJoinToggleEl) {
+    streamVoiceJoinToggleEl.disabled = isHosting;
+    streamVoiceJoinToggleEl.checked = isHosting ? true : Boolean(streamVoiceJoined);
+  }
+  if (streamVoiceMuteBtn) {
+    streamVoiceMuteBtn.disabled = !(isHosting || streamVoiceJoined);
+    streamVoiceMuteBtn.textContent = streamVoiceMuted ? "Unmute mic" : "Mute mic";
+  }
+  if (streamVoiceDeafenBtn) {
+    streamVoiceDeafenBtn.disabled = !(isHosting || isViewing);
+    streamVoiceDeafenBtn.textContent = streamVoiceDeafened ? "Undeafen" : "Deafen";
+  }
+  renderStreamVoiceUsers();
+}
+
+function addVoiceTracksToPeer(peerClientId) {
+  const id = String(peerClientId || "").trim();
+  if (!id) return;
+  const pc = streamPeerByClientId.get(id);
+  if (!pc) return;
+  const media = streamCurrentRole === "host" ? streamLocalMedia : streamVoiceMedia;
+  if (!media || typeof media.getAudioTracks !== "function") return;
+  const tracks = media.getAudioTracks();
+  if (!tracks.length) return;
+  for (const track of tracks) {
+    const hasSender = pc
+      .getSenders()
+      .some((sender) => sender?.track && sender.track.id === track.id && sender.track.kind === "audio");
+    if (hasSender) continue;
+    try {
+      pc.addTrack(track, media);
+    } catch {
+      // ignore addTrack failures
+    }
+  }
+}
+
+async function renegotiateStreamPeer(peerClientId) {
+  const id = String(peerClientId || "").trim();
+  if (!id) return;
+  const pc = streamPeerByClientId.get(id);
+  if (!pc || !streamCurrentPostId || !ws || ws.readyState !== WebSocket.OPEN) return;
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    ws.send(
+      JSON.stringify({
+        type: "streamSignal",
+        postId: streamCurrentPostId,
+        targetClientId: id,
+        signal: { type: "offer", sdp: String(offer.sdp || "") },
+      })
+    );
+  } catch (e) {
+    console.warn("stream renegotiation failed:", e?.message || e);
+  }
+}
+
 function attachStreamPreview(stream, kind, local = false) {
   const streamObj = stream && typeof stream.getTracks === "function" ? stream : null;
   if (!streamObj) {
@@ -8940,6 +9091,7 @@ function attachStreamPreview(stream, kind, local = false) {
       streamStageAudioEl.muted = Boolean(local);
       streamStageAudioEl.play?.().catch(() => {});
     }
+    updateStreamOutputMuteState();
     return;
   }
   if (streamStageAudioEl) {
@@ -8952,6 +9104,7 @@ function attachStreamPreview(stream, kind, local = false) {
     streamStageVideoEl.muted = Boolean(local);
     streamStageVideoEl.play?.().catch(() => {});
   }
+  updateStreamOutputMuteState();
 }
 
 function streamCanHostPost(post) {
@@ -8963,13 +9116,22 @@ function streamCanHostPost(post) {
 function streamResetState(keepPostId = false) {
   closeAllStreamPeers();
   stopStreamTracks(streamLocalMedia);
+  stopStreamTracks(streamVoiceMedia);
   streamLocalMedia = null;
+  streamVoiceMedia = null;
+  streamVoiceJoined = false;
+  streamVoiceMuted = false;
+  streamVoiceDeafened = false;
   streamRemoteMedia = null;
   streamRemoteHostClientId = "";
   streamCurrentHostClientId = "";
   streamCurrentRole = "idle";
+  streamRemoteMediaByClientId.clear();
+  streamPeerUsernameByClientId.clear();
+  streamPeerVolumeByClientId.clear();
   if (!keepPostId) streamCurrentPostId = "";
   clearStreamMediaPreview();
+  renderStreamVoiceUsers();
 }
 
 function leaveActiveStream(sendSignal = true) {
@@ -9012,12 +9174,24 @@ function createStreamPeer(targetClientId) {
     );
   };
   pc.ontrack = (evt) => {
-    if (streamCurrentRole !== "viewer") return;
     const remote = evt.streams && evt.streams[0] ? evt.streams[0] : null;
     if (!remote) return;
-    streamRemoteMedia = remote;
-    attachStreamPreview(remote, streamRemoteKind, false);
-    if (streamStagePlaceholderEl) streamStagePlaceholderEl.classList.add("hidden");
+    streamRemoteMediaByClientId.set(target, remote);
+    if (target === streamCurrentHostClientId && streamCurrentRole !== "host") {
+      streamRemoteMedia = remote;
+      attachStreamPreview(remote, streamRemoteKind, false);
+      if (streamStagePlaceholderEl) streamStagePlaceholderEl.classList.add("hidden");
+    } else {
+      const remoteAudioEl = ensureRemoteAudioEl(target);
+      if (remoteAudioEl) {
+        remoteAudioEl.srcObject = remote;
+        const savedVolume = Number(streamPeerVolumeByClientId.get(target));
+        remoteAudioEl.volume = Number.isFinite(savedVolume) ? Math.max(0, Math.min(1, savedVolume)) : 1;
+        remoteAudioEl.play?.().catch(() => {});
+      }
+      updateStreamOutputMuteState();
+      renderStreamVoiceUsers();
+    }
   };
   pc.onconnectionstatechange = () => {
     const state = String(pc.connectionState || "");
@@ -9031,6 +9205,8 @@ function createStreamPeer(targetClientId) {
         // ignore
       }
     }
+  } else if (streamVoiceJoined && streamVoiceMedia) {
+    addVoiceTracksToPeer(target);
   }
   return pc;
 }
@@ -9048,6 +9224,7 @@ async function handleStreamSignalMessage(msg) {
   try {
     if (type === "offer") {
       await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: String(signal.sdp || "") }));
+      if (streamCurrentRole === "host" || streamVoiceJoined) addVoiceTracksToPeer(fromClientId);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       ws?.send(
@@ -9072,27 +9249,32 @@ async function handleStreamSignalMessage(msg) {
   }
 }
 
-async function handleStreamViewerJoinMessage(msg) {
+async function handleStreamPeerJoinMessage(msg) {
   const postId = String(msg.postId || "").trim();
-  const viewerClientId = String(msg.viewerClientId || "").trim();
-  if (!postId || !viewerClientId) return;
-  if (streamCurrentRole !== "host" || streamCurrentPostId !== postId) return;
-  const pc = createStreamPeer(viewerClientId);
+  const peerClientId = String(msg.peerClientId || msg.viewerClientId || "").trim();
+  const peerUsername = String(msg.peerUsername || msg.viewerUsername || "").trim();
+  const initiateOffer = msg.initiateOffer === true;
+  if (!postId || !peerClientId) return;
+  if (streamCurrentRole === "idle" || streamCurrentPostId !== postId) return;
+  if (peerUsername) streamPeerUsernameByClientId.set(peerClientId, peerUsername);
+  const pc = createStreamPeer(peerClientId);
   if (!pc) return;
+  if (!initiateOffer) return;
   try {
+    if (streamCurrentRole === "host" || streamVoiceJoined) addVoiceTracksToPeer(peerClientId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     ws?.send(
       JSON.stringify({
         type: "streamSignal",
         postId,
-        targetClientId: viewerClientId,
+        targetClientId: peerClientId,
         signal: { type: "offer", sdp: String(offer.sdp || "") },
       })
     );
   } catch (e) {
     console.warn("stream offer failed:", e?.message || e);
-    closeStreamPeer(viewerClientId);
+    closeStreamPeer(peerClientId);
   }
 }
 
@@ -9142,6 +9324,49 @@ async function ensureStreamAudioForKind(media, kind, opts = null) {
     if (micTrack) media.addTrack(micTrack);
   }
   return media;
+}
+
+async function enableStreamVoice() {
+  if (streamCurrentRole !== "viewer" || !streamCurrentPostId) return false;
+  if (streamVoiceJoined && streamVoiceMedia) {
+    updateStreamLocalMuteState();
+    return true;
+  }
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    toast("Voice", "Microphone access is not available in this browser.");
+    return false;
+  }
+  try {
+    const media = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    if (!media.getAudioTracks().length) {
+      stopStreamTracks(media);
+      toast("Voice", "No microphone track available.");
+      return false;
+    }
+    streamVoiceMedia = media;
+    streamVoiceJoined = true;
+    updateStreamLocalMuteState();
+    for (const peerId of streamPeerByClientId.keys()) {
+      addVoiceTracksToPeer(peerId);
+      renegotiateStreamPeer(peerId);
+    }
+    renderChatPanel(false);
+    return true;
+  } catch (e) {
+    toast("Voice", String(e?.message || "Unable to access microphone."));
+    return false;
+  }
+}
+
+function disableStreamVoice() {
+  if (!streamVoiceJoined && !streamVoiceMedia) return;
+  streamVoiceJoined = false;
+  stopStreamTracks(streamVoiceMedia);
+  streamVoiceMedia = null;
+  for (const peerId of streamPeerByClientId.keys()) {
+    renegotiateStreamPeer(peerId);
+  }
+  renderChatPanel(false);
 }
 
 async function startStreamHost(post) {
@@ -9194,6 +9419,11 @@ async function startStreamHost(post) {
     streamRemoteKind = kind;
     streamCurrentHostClientId = String(clientId || "");
     streamLocalMedia = media;
+    streamVoiceJoined = true;
+    streamVoiceMuted = false;
+    streamVoiceDeafened = false;
+    updateStreamLocalMuteState();
+    updateStreamOutputMuteState();
     for (const track of media.getTracks()) {
       track.onended = () => {
         if (streamCurrentRole === "host" && streamCurrentPostId === String(post.id || "")) leaveActiveStream(true);
@@ -9226,6 +9456,9 @@ function joinStream(post) {
   streamRemoteKind = normalizeStreamKind(post.streamKind || "webcam");
   streamCurrentHostClientId = "";
   streamRemoteHostClientId = "";
+  streamVoiceJoined = false;
+  streamVoiceMuted = false;
+  streamVoiceDeafened = false;
   if (streamStagePlaceholderEl) {
     streamStagePlaceholderEl.classList.remove("hidden");
     streamStagePlaceholderEl.textContent = "Connecting to stream...";
@@ -9238,6 +9471,7 @@ function renderStreamStage(post) {
   const streamPost = post && isStreamPost(post) ? post : null;
   if (!streamPost) {
     if (streamStageEl) streamStageEl.classList.add("hidden");
+    if (streamVoiceControlsEl) streamVoiceControlsEl.classList.add("hidden");
     return;
   }
   if (streamStageEl) streamStageEl.classList.remove("hidden");
@@ -9252,7 +9486,7 @@ function renderStreamStage(post) {
   }
   if (streamStageStatusEl) {
     if (isHosting) streamStageStatusEl.textContent = "You are live.";
-    else if (isViewing) streamStageStatusEl.textContent = streamRemoteMedia ? "Watching live stream." : "Connecting...";
+    else if (isViewing) streamStageStatusEl.textContent = streamRemoteMedia ? "Watching live stream. Voice room connected." : "Connecting...";
     else if (live) streamStageStatusEl.textContent = "Live now. Join to watch.";
     else if (canHost) streamStageStatusEl.textContent = "Offline. Start a stream for this hive.";
     else streamStageStatusEl.textContent = "Stream is offline.";
@@ -9278,6 +9512,7 @@ function renderStreamStage(post) {
         ? "Tap Go live to start screen share, webcam, or audio stream."
         : "Waiting for the stream owner to go live.";
   }
+  renderStreamVoiceControls(streamPost, isHosting, isViewing);
 }
 
 function canWalkieTalkNow() {
@@ -11531,20 +11766,32 @@ function onWsMessage(evt) {
     streamCurrentHostClientId = String(msg.hostClientId || "");
     streamRemoteHostClientId = streamCurrentHostClientId;
     streamRemoteKind = normalizeStreamKind(msg.kind || "webcam");
+    const peers = Array.isArray(msg.peerClientIds) ? msg.peerClientIds : [];
+    const peerUsers = msg.peerUsernames && typeof msg.peerUsernames === "object" ? msg.peerUsernames : {};
+    for (const peerIdRaw of peers) {
+      const peerId = String(peerIdRaw || "").trim();
+      if (!peerId || peerId === String(clientId || "")) continue;
+      const peerName = String(peerUsers[peerId] || "").trim();
+      if (peerName) streamPeerUsernameByClientId.set(peerId, peerName);
+      handleStreamPeerJoinMessage({ postId, peerClientId: peerId, peerUsername: peerName, initiateOffer: true });
+    }
     renderChatPanel(false);
     return;
   }
 
-  if (msg.type === "streamViewerJoin") {
-    handleStreamViewerJoinMessage(msg);
+  if (msg.type === "streamPeerJoin" || msg.type === "streamViewerJoin") {
+    handleStreamPeerJoinMessage(msg);
     return;
   }
 
-  if (msg.type === "streamViewerLeave") {
+  if (msg.type === "streamPeerLeave" || msg.type === "streamViewerLeave") {
     const postId = String(msg.postId || "").trim();
-    const viewerClientId = String(msg.viewerClientId || "").trim();
-    if (!postId || !viewerClientId) return;
-    if (streamCurrentRole === "host" && streamCurrentPostId === postId) closeStreamPeer(viewerClientId);
+    const peerClientId = String(msg.peerClientId || msg.viewerClientId || "").trim();
+    if (!postId || !peerClientId) return;
+    if (streamCurrentPostId === postId) {
+      closeStreamPeer(peerClientId);
+      renderStreamVoiceUsers();
+    }
     return;
   }
 
@@ -12688,6 +12935,48 @@ streamStagePrimaryBtn?.addEventListener("click", () => {
   const live = Boolean(streamLiveByPostId.get(postId) ?? post.streamLive);
   if (live) joinStream(post);
   else startStreamHost(post);
+});
+
+streamVoiceJoinToggleEl?.addEventListener("change", async () => {
+  const enabled = Boolean(streamVoiceJoinToggleEl.checked);
+  if (streamCurrentRole !== "viewer") {
+    streamVoiceJoinToggleEl.checked = streamCurrentRole === "host";
+    return;
+  }
+  if (enabled) {
+    const ok = await enableStreamVoice();
+    if (!ok) streamVoiceJoinToggleEl.checked = false;
+  } else {
+    disableStreamVoice();
+    streamVoiceJoinToggleEl.checked = false;
+  }
+  renderChatPanel(false);
+});
+
+streamVoiceMuteBtn?.addEventListener("click", () => {
+  if (!(streamCurrentRole === "host" || streamVoiceJoined)) return;
+  streamVoiceMuted = !streamVoiceMuted;
+  updateStreamLocalMuteState();
+  renderChatPanel(false);
+});
+
+streamVoiceDeafenBtn?.addEventListener("click", () => {
+  if (!(streamCurrentRole === "host" || streamCurrentRole === "viewer")) return;
+  streamVoiceDeafened = !streamVoiceDeafened;
+  updateStreamOutputMuteState();
+  renderChatPanel(false);
+});
+
+streamVoiceUsersEl?.addEventListener("input", (e) => {
+  const input = e.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const peerId = String(input.getAttribute("data-streamvol") || "").trim();
+  if (!peerId) return;
+  const volPct = Math.max(0, Math.min(100, Number(input.value) || 0));
+  const vol = volPct / 100;
+  streamPeerVolumeByClientId.set(peerId, vol);
+  const audioEl = streamRemoteAudioByClientId.get(peerId);
+  if (audioEl) audioEl.volume = vol;
 });
 
 walkieRecordBtn?.addEventListener("pointerdown", (e) => {

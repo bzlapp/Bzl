@@ -403,6 +403,17 @@
             <button id="streamStagePrimary" class="ghost smallBtn" type="button">Join stream</button>
           </div>
           <div id="streamStageStatus" class="small muted">Stream is offline.</div>
+          <div id="streamVoiceControls" class="streamVoiceControls hidden" aria-label="Voice controls">
+            <label class="checkRow streamVoiceToggleRow">
+              <span>Join voice</span>
+              <input id="streamVoiceJoinToggle" type="checkbox" />
+            </label>
+            <div class="row streamVoiceButtonsRow">
+              <button id="streamVoiceMuteBtn" class="ghost smallBtn" type="button">Mute mic</button>
+              <button id="streamVoiceDeafenBtn" class="ghost smallBtn" type="button">Deafen</button>
+            </div>
+            <div id="streamVoiceUsers" class="streamVoiceUsers small muted"></div>
+          </div>
           <video id="streamStageVideo" class="streamStageVideo hidden" playsinline autoplay controls muted></video>
           <audio id="streamStageAudio" class="streamStageAudio hidden" autoplay controls></audio>
           <div id="streamStagePlaceholder" class="streamStagePlaceholder small muted">Open a stream hive to watch, or start a stream if you own the post.</div>

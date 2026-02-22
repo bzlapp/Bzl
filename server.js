@@ -2845,17 +2845,24 @@ function endStreamSession(postId, reason = "ended") {
   return true;
 }
 
-function detachViewerFromStream(postId, clientId, notifyHost = true) {
+function notifyStreamPeerLeave(postId, session, leavingClientId) {
+  if (!session) return;
+  const targets = new Set([session.hostClientId, ...(session.viewers || [])]);
+  targets.delete(leavingClientId);
+  const payload = JSON.stringify({ type: "streamPeerLeave", postId, peerClientId: leavingClientId });
+  for (const targetId of targets) {
+    const target = findSocketByClientId(targetId);
+    if (!target || target.readyState !== target.OPEN) continue;
+    target.send(payload);
+  }
+}
+
+function detachViewerFromStream(postId, clientId, notifyPeers = true) {
   const session = streamSessionsByPostId.get(postId);
   if (!session) return false;
   if (!session.viewers.has(clientId)) return false;
   session.viewers.delete(clientId);
-  if (notifyHost) {
-    const host = findSocketByClientId(session.hostClientId);
-    if (host && host.readyState === host.OPEN) {
-      host.send(JSON.stringify({ type: "streamViewerLeave", postId, viewerClientId: clientId }));
-    }
-  }
+  if (notifyPeers) notifyStreamPeerLeave(postId, session, clientId);
   sendStreamState(postId);
   return true;
 }
@@ -5112,6 +5119,16 @@ wss.on("connection", (ws, req) => {
         ws.send(JSON.stringify({ type: "streamJoinAck", postId, live: false }));
         return;
       }
+      const participantIds = new Set([session.hostClientId, ...(session.viewers || [])]);
+      participantIds.delete(ws.clientId);
+      const peerClientIds = [];
+      const peerUsernames = {};
+      for (const peerId of participantIds) {
+        const peerWs = findSocketByClientId(peerId);
+        if (!peerWs) continue;
+        peerClientIds.push(peerId);
+        peerUsernames[peerId] = normalizeUsername(peerWs.user?.username || "") || "";
+      }
       if (session.hostClientId !== ws.clientId) {
         session.viewers.add(ws.clientId);
       }
@@ -5123,20 +5140,22 @@ wss.on("connection", (ws, req) => {
           hostClientId: session.hostClientId,
           hostUsername: session.hostUsername,
           kind: sanitizePostStreamKind(POST_MODE_STREAM, session.kind),
-          viewerCount: session.viewers.size
+          viewerCount: session.viewers.size,
+          peerClientIds,
+          peerUsernames
         })
       );
       if (session.hostClientId !== ws.clientId) {
-        const host = findSocketByClientId(session.hostClientId);
-        if (host && host.readyState === host.OPEN) {
-          host.send(
-            JSON.stringify({
-              type: "streamViewerJoin",
-              postId,
-              viewerClientId: ws.clientId,
-              viewerUsername: normalizeUsername(ws.user?.username || "") || ""
-            })
-          );
+        const peerJoinPayload = JSON.stringify({
+          type: "streamPeerJoin",
+          postId,
+          peerClientId: ws.clientId,
+          peerUsername: normalizeUsername(ws.user?.username || "") || ""
+        });
+        for (const peerId of participantIds) {
+          const peerWs = findSocketByClientId(peerId);
+          if (!peerWs || peerWs.readyState !== peerWs.OPEN) continue;
+          peerWs.send(peerJoinPayload);
         }
       }
       sendStreamState(postId);
@@ -5159,11 +5178,8 @@ wss.on("connection", (ws, req) => {
       const signal = msg.signal;
       if (!signal || typeof signal !== "object") return;
 
-      const senderIsHost = session.hostClientId === ws.clientId;
-      const senderIsViewer = session.viewers.has(ws.clientId);
-      if (!senderIsHost && !senderIsViewer) return;
-      if (senderIsHost && !session.viewers.has(targetClientId)) return;
-      if (senderIsViewer && targetClientId !== session.hostClientId) return;
+      const participants = new Set([session.hostClientId, ...(session.viewers || [])]);
+      if (!participants.has(ws.clientId) || !participants.has(targetClientId)) return;
 
       const target = findSocketByClientId(targetClientId);
       if (!target || target.readyState !== target.OPEN) return;
