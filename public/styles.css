@@ -3841,6 +3841,25 @@ button:disabled {
   pointer-events: none;
 }
 
+.onboardingGateHint {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--bad) 55%, var(--line) 45%);
+  background: linear-gradient(180deg, rgba(255, 77, 138, 0.16), rgba(255, 77, 138, 0.07));
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.onboardingGateText {
+  color: color-mix(in oklab, var(--text) 92%, white 8%);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .guidedTourCard {
   position: absolute;
   left: 50%;

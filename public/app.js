@@ -118,6 +118,7 @@ const mobileSortCycleBtn = document.getElementById("mobileSortCycle");
 const clearFilterBtn = document.getElementById("clearFilter");
 const feedEl = document.getElementById("feed");
 const hiveTabsEl = document.getElementById("hiveTabs");
+const onboardingGateHintEl = document.getElementById("onboardingGateHint");
 const onboardingPanelEl = document.getElementById("onboardingPanel");
 const onboardingPanelBodyEl = document.getElementById("onboardingPanelBody");
 const onboardingPanelAcceptBtn = document.getElementById("onboardingPanelAccept");
@@ -6680,6 +6681,57 @@ function onboardingNeedsAcceptanceNow() {
   return Boolean(onboardingState.needsAcceptance || Number(onboardingState.acceptedRulesVersion || 0) < Number(onboardingState.rulesVersion || 1));
 }
 
+function onboardingBlocksReadingNow() {
+  return Boolean(loggedInUser && onboardingNeedsAcceptanceNow() && onboardingState.blockReadUntilAccepted);
+}
+
+function openOnboardingView() {
+  onboardingViewerTab = "about";
+  renderOnboardingPanel();
+  if (isMobileScreenMode()) {
+    const layout = loadMobileLayout();
+    layout.active = "onboarding";
+    saveMobileLayout(layout);
+    setMobileScreen("onboarding");
+    renderMobileNav();
+    return;
+  }
+  if (rackLayoutEnabled) {
+    try {
+      if (
+        layoutPresetEl instanceof HTMLSelectElement &&
+        Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "onboardingDefault")
+      ) {
+        if (layoutPresetEl.value !== "onboardingDefault") layoutPresetEl.value = "onboardingDefault";
+        applyPreset("onboardingDefault");
+      }
+      restorePanelToWorkspaceSlot("onboarding", "workspaceLeftSlot");
+      restorePanelToWorkspaceSlot("hives", "workspaceRightSlot");
+    } catch {
+      // ignore layout failures
+    }
+  }
+  try {
+    onboardingPanelEl?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  } catch {
+    // ignore
+  }
+}
+
+function renderOnboardingGateHint() {
+  if (!(onboardingGateHintEl instanceof HTMLElement)) return;
+  const show = onboardingBlocksReadingNow();
+  onboardingGateHintEl.classList.toggle("hidden", !show);
+  if (!show) {
+    onboardingGateHintEl.innerHTML = "";
+    return;
+  }
+  onboardingGateHintEl.innerHTML = `
+    <div class="onboardingGateText">This instance requires that you read and accept its guidelines before you can view posts.</div>
+    <button type="button" class="ghost smallBtn" data-onboarding-open="1">Go to Onboarding</button>
+  `;
+}
+
 function onboardingSeverityLabel(severity) {
   const s = String(severity || "").toLowerCase();
   if (s === "critical") return "Critical";
@@ -6907,6 +6959,7 @@ function setAuthUi() {
   codeRow.classList.toggle("hidden", !registrationEnabled);
   registerBtn.classList.toggle("hidden", !(registrationEnabled || canRegisterFirstUser));
   if (appRoot) appRoot.classList.toggle("authLockedWorkspace", !loggedInUser);
+  renderOnboardingGateHint();
   renderOnboardingCard();
   renderModPanel();
   if (tourBtn instanceof HTMLButtonElement) {
@@ -10886,6 +10939,12 @@ feedEl.addEventListener("click", (e) => {
     if (!ok) return;
     ws.send(JSON.stringify({ type: "deletePostSelf", postId }));
   }
+});
+
+onboardingGateHintEl?.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.("button[data-onboarding-open]");
+  if (!btn) return;
+  openOnboardingView();
 });
 
 window.addEventListener("keydown", (e) => {
