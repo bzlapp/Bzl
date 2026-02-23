@@ -3796,6 +3796,159 @@ button:disabled {
   }
 }
 
+.guidedTourOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  pointer-events: none;
+}
+
+.guidedTourShade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at var(--tour-x, 50%) var(--tour-y, 50%),
+      rgba(255, 255, 255, 0.16) 0,
+      rgba(255, 255, 255, 0.1) calc(var(--tour-r, 240px) * 0.3),
+      rgba(4, 6, 15, 0.08) calc(var(--tour-r, 240px) * 0.64),
+      rgba(4, 6, 15, 0.46) calc(var(--tour-r, 240px) + 48px)
+    ),
+    rgba(4, 6, 15, 0.5);
+  transition: background-position 160ms ease, background-size 160ms ease;
+}
+
+.guidedTourFocus {
+  position: absolute;
+  left: var(--tour-left, -9999px);
+  top: var(--tour-top, -9999px);
+  width: var(--tour-w, 0px);
+  height: var(--tour-h, 0px);
+  border-radius: var(--tour-br, 12px);
+  border: 1px solid color-mix(in oklab, white 35%, var(--accent2) 65%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.06) 55%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 14px 38px rgba(0, 0, 0, 0.24),
+    0 0 56px rgba(255, 125, 205, 0.26);
+  backdrop-filter: brightness(1.28) saturate(1.12);
+  -webkit-backdrop-filter: brightness(1.28) saturate(1.12);
+  pointer-events: none;
+}
+
+.guidedTourCard {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 24px));
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, var(--line));
+  background: color-mix(in oklab, var(--panel) 94%, #020204 6%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  padding: 12px 14px;
+  pointer-events: auto;
+}
+
+.guidedTourStep {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--accent2) 55%, var(--text) 45%);
+  margin-bottom: 4px;
+}
+
+.guidedTourTitle {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.guidedTourBody {
+  line-height: 1.45;
+}
+
+.guidedTourTask {
+  margin-top: 10px;
+  font-size: 13px;
+  color: color-mix(in oklab, var(--good) 70%, var(--text) 30%);
+}
+
+.guidedTourStatus {
+  margin-top: 6px;
+  min-height: 18px;
+}
+
+.guidedTourDontShow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  user-select: none;
+}
+
+.guidedTourDontShow input[type="checkbox"] {
+  transform: translateY(0.5px);
+}
+
+.guidedTourActions {
+  margin-top: 8px;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tourTargetPulse {
+  outline: 4px solid color-mix(in oklab, var(--accent) 88%, white 12%);
+  outline-offset: 5px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2), 0 0 42px rgba(255, 62, 165, 0.45), 0 0 92px rgba(184, 75, 255, 0.35);
+  animation: tourPulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes tourPulse {
+  from {
+    outline-color: color-mix(in oklab, var(--accent) 90%, white 10%);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2), 0 0 42px rgba(255, 62, 165, 0.45), 0 0 92px rgba(184, 75, 255, 0.35);
+  }
+  to {
+    outline-color: color-mix(in oklab, var(--accent2) 86%, white 14%);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28), 0 0 58px rgba(255, 62, 165, 0.55), 0 0 120px rgba(184, 75, 255, 0.45);
+  }
+}
+
+.app.authLockedWorkspace .main,
+.app.authLockedWorkspace #rightRack {
+  filter: blur(24px) saturate(0.45) brightness(0.5) contrast(0.9);
+  pointer-events: none;
+  user-select: none;
+}
+
+.app.authLockedWorkspace .peopleToggle,
+.app.authLockedWorkspace .rightRackToggle,
+.app.authLockedWorkspace .sideRackToggle {
+  display: none !important;
+}
+
+@media (max-width: 780px) {
+  .guidedTourCard {
+    width: calc(100vw - 14px);
+    left: 7px;
+    right: 7px;
+    bottom: 8px;
+    transform: none;
+    padding: 10px;
+  }
+
+  .guidedTourTitle {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

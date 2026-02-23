@@ -45,6 +45,7 @@ const chatModToggleEl = document.getElementById("chatModToggle");
 const poweredByVersionEl = document.getElementById("poweredByVersion");
 
 const authHint = document.getElementById("authHint");
+const accountPanel = document.getElementById("accountPanel");
 const onboardingCard = document.getElementById("onboardingCard");
 const onboardingBody = document.getElementById("onboardingBody");
 const onboardingAcceptBtn = document.getElementById("onboardingAccept");
@@ -56,6 +57,7 @@ const authPass = document.getElementById("authPass");
 const codeRow = document.getElementById("codeRow");
 const authCode = document.getElementById("authCode");
 const registerBtn = document.getElementById("registerBtn");
+const tourBtn = document.getElementById("tourBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 const profileImageInput = document.getElementById("profileImage");
@@ -85,6 +87,7 @@ const mediaModalClose = document.getElementById("mediaModalClose");
 const mediaModalStatus = document.getElementById("mediaModalStatus");
 const shortcutHelpModal = document.getElementById("shortcutHelpModal");
 const shortcutHelpCloseBtn = document.getElementById("shortcutHelpClose");
+const sidebarScrollEl = document.querySelector(".sidebarScroll");
 
 const newPostForm = document.getElementById("newPostForm");
 const pollinatePanel = document.getElementById("pollinatePanel");
@@ -338,6 +341,8 @@ let streamVoiceJoined = false;
 let streamVoiceMuted = false;
 let streamVoiceDeafened = false;
 const SESSION_TOKEN_KEY = "bzl_session_token";
+const TOUR_SEEN_VERSION = 1;
+const TOUR_TASK_POLL_MS = 500;
 const CLIENT_IMAGE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const CLIENT_AUDIO_UPLOAD_MAX_BYTES = 150 * 1024 * 1024;
 let allowedPostReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂", "⭐"];
@@ -355,6 +360,25 @@ const HIVES_VIEW_MODE_KEY = "bzl_hivesViewMode";
 const HIVES_LIST_AUTO_THRESHOLD_PX = 520;
 let lastHivesWidthPx = 0;
 let hivesResizeObserver = null;
+let guidedTourOverlayEl = null;
+let guidedTourCardEl = null;
+let guidedTourFocusEl = null;
+let guidedTourStepEl = null;
+let guidedTourTitleEl = null;
+let guidedTourBodyEl = null;
+let guidedTourTaskEl = null;
+let guidedTourStatusEl = null;
+let guidedTourDontShowEl = null;
+let guidedTourPrevBtn = null;
+let guidedTourNextBtn = null;
+let guidedTourSkipBtn = null;
+let guidedTourTargetEl = null;
+let guidedTourTaskTimer = null;
+let guidedTourAutoAdvanceTimer = null;
+let guidedTourStepContext = {};
+let guidedTourAutoStartedForUser = "";
+let guidedTourState = { active: false, index: 0, steps: [], startedSignedIn: false };
+let guestAuthPanelRevealed = false;
 
 function isOwnerRole(role) {
   return String(role || "").toLowerCase() === "owner";
@@ -6854,6 +6878,7 @@ function renderOnboardingCard() {
 
 function setAuthUi() {
   if (loggedInUser) {
+    guestAuthPanelRevealed = false;
     userLabel.innerHTML = renderUserPill(loggedInUser);
     logoutBtn.classList.remove("hidden");
     const roleText = loggedInRole && loggedInRole !== "member" ? ` (${loggedInRole})` : "";
@@ -6881,8 +6906,499 @@ function setAuthUi() {
 
   codeRow.classList.toggle("hidden", !registrationEnabled);
   registerBtn.classList.toggle("hidden", !(registrationEnabled || canRegisterFirstUser));
+  if (appRoot) appRoot.classList.toggle("authLockedWorkspace", !loggedInUser);
   renderOnboardingCard();
   renderModPanel();
+  if (tourBtn instanceof HTMLButtonElement) {
+    tourBtn.textContent = shouldAutoShowGuidedTour(loggedInUser) ? "Tour" : "Tour (replay)";
+  }
+  if (!loggedInUser) revealAuthPanelForGuests();
+}
+
+function normalizeTourUser(raw) {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, "")
+    .slice(0, 64);
+}
+
+function guidedTourStorageKey(user = loggedInUser) {
+  const who = normalizeTourUser(user) || "guest";
+  return `bzl_guidedTour_pref_v${TOUR_SEEN_VERSION}:${location.host}:${who}`;
+}
+
+function readGuidedTourPref(user = loggedInUser) {
+  const fallback = { completed: false, dontShow: false };
+  try {
+    const raw = localStorage.getItem(guidedTourStorageKey(user));
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    return {
+      completed: Boolean(parsed.completed),
+      dontShow: Boolean(parsed.dontShow),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeGuidedTourPref(user = loggedInUser, patch = {}) {
+  const current = readGuidedTourPref(user);
+  const next = {
+    completed: Object.prototype.hasOwnProperty.call(patch, "completed") ? Boolean(patch.completed) : current.completed,
+    dontShow: Object.prototype.hasOwnProperty.call(patch, "dontShow") ? Boolean(patch.dontShow) : current.dontShow,
+  };
+  try {
+    localStorage.setItem(guidedTourStorageKey(user), JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function shouldAutoShowGuidedTour(user = loggedInUser) {
+  const pref = readGuidedTourPref(user);
+  return !pref.completed && !pref.dontShow;
+}
+
+function revealAuthPanelForGuests() {
+  if (loggedInUser) return;
+  if (guestAuthPanelRevealed) return;
+  const target = accountPanel instanceof HTMLElement ? accountPanel : authForm;
+  if (!(target instanceof HTMLElement)) return;
+  try {
+    if (sidebarScrollEl instanceof HTMLElement) {
+      const top = Math.max(0, target.offsetTop - 16);
+      sidebarScrollEl.scrollTo({ top, behavior: "smooth" });
+    } else {
+      target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+    guestAuthPanelRevealed = true;
+  } catch {
+    // ignore
+  }
+}
+
+function clearGuidedTourTarget() {
+  if (guidedTourTargetEl instanceof HTMLElement) {
+    guidedTourTargetEl.classList.remove("tourTargetPulse");
+  }
+  guidedTourTargetEl = null;
+  if (guidedTourOverlayEl instanceof HTMLElement) {
+    guidedTourOverlayEl.style.removeProperty("--tour-x");
+    guidedTourOverlayEl.style.removeProperty("--tour-y");
+    guidedTourOverlayEl.style.removeProperty("--tour-r");
+    guidedTourOverlayEl.style.removeProperty("--tour-left");
+    guidedTourOverlayEl.style.removeProperty("--tour-top");
+    guidedTourOverlayEl.style.removeProperty("--tour-w");
+    guidedTourOverlayEl.style.removeProperty("--tour-h");
+    guidedTourOverlayEl.style.removeProperty("--tour-br");
+  }
+  if (guidedTourFocusEl instanceof HTMLElement) guidedTourFocusEl.classList.add("hidden");
+}
+
+function clearGuidedTourTimers() {
+  if (guidedTourTaskTimer) {
+    clearInterval(guidedTourTaskTimer);
+    guidedTourTaskTimer = null;
+  }
+  if (guidedTourAutoAdvanceTimer) {
+    clearTimeout(guidedTourAutoAdvanceTimer);
+    guidedTourAutoAdvanceTimer = null;
+  }
+}
+
+function updateGuidedTourSpotlight() {
+  if (!(guidedTourOverlayEl instanceof HTMLElement) || !(guidedTourTargetEl instanceof HTMLElement)) return;
+  const rect = guidedTourTargetEl.getBoundingClientRect();
+  const cx = Math.max(0, Math.min(window.innerWidth, rect.left + rect.width / 2));
+  const cy = Math.max(0, Math.min(window.innerHeight, rect.top + rect.height / 2));
+  const radius = Math.max(180, Math.ceil(Math.max(rect.width, rect.height) * 0.75));
+  const pad = 12;
+  const left = Math.max(0, Math.floor(rect.left - pad));
+  const top = Math.max(0, Math.floor(rect.top - pad));
+  const width = Math.max(24, Math.ceil(rect.width + pad * 2));
+  const height = Math.max(24, Math.ceil(rect.height + pad * 2));
+  const borderRadius = Math.max(10, Math.min(18, Math.floor(Math.min(width, height) * 0.08)));
+  guidedTourOverlayEl.style.setProperty("--tour-x", `${Math.round(cx)}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-y", `${Math.round(cy)}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-r", `${radius}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-left", `${left}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-top", `${top}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-w", `${width}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-h", `${height}px`);
+  guidedTourOverlayEl.style.setProperty("--tour-br", `${borderRadius}px`);
+  if (guidedTourFocusEl instanceof HTMLElement) guidedTourFocusEl.classList.remove("hidden");
+}
+
+function ensureGuidedTourUi() {
+  if (guidedTourOverlayEl instanceof HTMLElement) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "guidedTourOverlay";
+  overlay.className = "guidedTourOverlay hidden";
+  overlay.innerHTML = `
+    <div class="guidedTourShade"></div>
+    <div class="guidedTourFocus hidden" id="guidedTourFocus"></div>
+    <div class="guidedTourCard">
+      <div class="guidedTourStep" id="guidedTourStep"></div>
+      <div class="guidedTourTitle" id="guidedTourTitle"></div>
+      <div class="guidedTourBody small" id="guidedTourBody"></div>
+      <div class="guidedTourTask" id="guidedTourTask"></div>
+      <div class="guidedTourStatus small muted" id="guidedTourStatus"></div>
+      <label class="guidedTourDontShow small muted">
+        <input type="checkbox" id="guidedTourDontShow" />
+        <span>Don't show this tour again</span>
+      </label>
+      <div class="row guidedTourActions">
+        <button type="button" class="ghost smallBtn" id="guidedTourPrev">Back</button>
+        <button type="button" class="primary smallBtn" id="guidedTourNext">Next</button>
+        <button type="button" class="ghost smallBtn" id="guidedTourSkip">End tour</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  guidedTourOverlayEl = overlay;
+  guidedTourCardEl = overlay.querySelector(".guidedTourCard");
+  guidedTourFocusEl = overlay.querySelector("#guidedTourFocus");
+  guidedTourStepEl = overlay.querySelector("#guidedTourStep");
+  guidedTourTitleEl = overlay.querySelector("#guidedTourTitle");
+  guidedTourBodyEl = overlay.querySelector("#guidedTourBody");
+  guidedTourTaskEl = overlay.querySelector("#guidedTourTask");
+  guidedTourStatusEl = overlay.querySelector("#guidedTourStatus");
+  guidedTourDontShowEl = overlay.querySelector("#guidedTourDontShow");
+  guidedTourPrevBtn = overlay.querySelector("#guidedTourPrev");
+  guidedTourNextBtn = overlay.querySelector("#guidedTourNext");
+  guidedTourSkipBtn = overlay.querySelector("#guidedTourSkip");
+
+  guidedTourPrevBtn?.addEventListener("click", () => guidedTourGo(-1));
+  guidedTourNextBtn?.addEventListener("click", () => guidedTourGo(1));
+  guidedTourSkipBtn?.addEventListener("click", () => stopGuidedTour({ completed: false }));
+  window.addEventListener("resize", () => {
+    if (guidedTourState.active) updateGuidedTourSpotlight();
+  });
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (guidedTourState.active) updateGuidedTourSpotlight();
+    },
+    true
+  );
+}
+
+function tourCanMakePermanent() {
+  return Boolean(loggedInUser) && (isStaffRole(loggedInRole) || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts));
+}
+
+function buildGuidedTourSteps({ startedSignedIn = Boolean(loggedInUser) } = {}) {
+  const canPermanent = tourCanMakePermanent();
+  const onboardingEnabled = Boolean(normalizeInstanceBranding(instanceBranding)?.onboarding?.enabled);
+  const permanentNote = canPermanent
+    ? "This instance allows you to set TTL to 0, which makes a hive permanent."
+    : "Permanent hives use TTL 0, but only when the instance owner enables it for members.";
+
+  return [
+    ...(!startedSignedIn
+      ? [
+          {
+            title: "Create your account first",
+            selector: "#accountPanel",
+            body:
+              "You can only browse a Bzl instance until you create an account and sign in. Use this Account area to register, then sign in. After that, the full workstation unlocks.",
+            taskLabel: "Required: create/sign in to an account before continuing.",
+            requireTask: true,
+            taskCheck: () => Boolean(loggedInUser),
+          },
+        ]
+      : []),
+    ...(!startedSignedIn && onboardingEnabled
+      ? [
+          {
+            title: "Read About and Rules",
+            selector: "#onboardingPanel",
+            body:
+              "After creating your account, read the community About and Rules here. Some communities require acceptance before posting/chat; others keep acceptance optional.",
+            taskLabel: "Optional task: open the Rules tab (and accept if required).",
+            onEnter: () => {
+              try {
+                if (
+                  rackLayoutEnabled &&
+                  layoutPresetEl instanceof HTMLSelectElement &&
+                  Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "social")
+                ) {
+                  if (layoutPresetEl.value !== "social") layoutPresetEl.value = "social";
+                  applyPreset("social");
+                }
+                restorePanelToWorkspaceSlot("onboarding", "workspaceRightSlot");
+              } catch {
+                // ignore panel/layout errors
+              }
+              onboardingViewerTab = "about";
+              renderOnboardingPanel();
+            },
+            taskCheck: () => onboardingViewerTab === "rules" || !onboardingRequiresAcceptance() || !onboardingNeedsAcceptanceNow(),
+          },
+        ]
+      : []),
+    {
+      title: "Welcome to the workspace",
+      selector: "#mainWorkspaceRack",
+      body:
+        "Bzl works like a panel workstation. Hives, chat, profile, moderation, and plugins can live in different panels you can arrange for your flow.",
+      taskLabel: "Optional task: click New Hive so the composer opens.",
+      taskCheck: () => Boolean(composerOpen),
+    },
+    {
+      title: "View toggles and layout control",
+      selector: "#viewPanel",
+      body:
+        "These toggles control your UI: rack mode, side/right racks, reactions, hints, and connection behavior. This is your personal workspace setup.",
+      taskLabel: "Optional task: change any view toggle once.",
+      onEnter: () => {
+        guidedTourStepContext.toggleBaseline = [
+          Boolean(toggleRackLayoutEl?.checked),
+          Boolean(toggleSideRackEl?.checked),
+          Boolean(toggleRightRackEl?.checked),
+          Boolean(toggleReactionsEl?.checked),
+          Boolean(enableHintsEl?.checked),
+          Boolean(stayConnectedEl?.checked),
+        ].join("|");
+      },
+      taskCheck: () => {
+        const current = [
+          Boolean(toggleRackLayoutEl?.checked),
+          Boolean(toggleSideRackEl?.checked),
+          Boolean(toggleRightRackEl?.checked),
+          Boolean(toggleReactionsEl?.checked),
+          Boolean(enableHintsEl?.checked),
+          Boolean(stayConnectedEl?.checked),
+        ].join("|");
+        return current !== String(guidedTourStepContext.toggleBaseline || "");
+      },
+    },
+    {
+      title: "Create a hive",
+      selector: "#pollinatePanel",
+      body:
+        "Use this composer to make a hive: title, body, collection, keywords, and TTL. This is the main way you start a conversation. If this panel is not visible, switch layout preset to Creator (Hives + New Hive), or open both panels manually and use New Hive.",
+      taskLabel: "Optional task: enter a title and add body text in New Hive.",
+      onEnter: () => {
+        let appliedCreator = false;
+        try {
+          const canUseCreator =
+            rackLayoutEnabled &&
+            layoutPresetEl instanceof HTMLSelectElement &&
+            Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "creator");
+          if (canUseCreator) {
+            if (layoutPresetEl.value !== "creator") layoutPresetEl.value = "creator";
+            applyPreset("creator");
+            appliedCreator = true;
+          }
+        } catch {
+          // ignore preset apply failures
+        }
+        if (!appliedCreator) setComposerOpen(true);
+        guidedTourStepContext.creatorPresetApplied = appliedCreator;
+      },
+      taskCheck: () => String(postTitleInput?.value || "").trim().length >= 3 && String(editor?.innerText || "").trim().length >= 3,
+    },
+    {
+      title: "TTL and permanent hives",
+      selector: "#ttlMinutes",
+      body: `TTL is how long a hive lives before auto-expiring. ${permanentNote}`,
+      taskLabel: canPermanent
+        ? "Optional task: set TTL to 0 to try permanent mode."
+        : "Optional task: change TTL minutes once.",
+      onEnter: () => {
+        guidedTourStepContext.initialTtl = Number(ttlMinutesEl?.value || 60);
+      },
+      taskCheck: () => {
+        const ttl = Number(ttlMinutesEl?.value || 0);
+        if (!Number.isFinite(ttl)) return false;
+        if (canPermanent) return ttl === 0;
+        return ttl !== Number(guidedTourStepContext.initialTtl || 60);
+      },
+    },
+    {
+      title: "Every hive has a chat room",
+      selector: "#feed",
+      body:
+        "Think of each hive card as its own chat room. Open any hive and hit Chat to join that room. Activity on the card reflects what is happening in that chat.",
+      taskLabel: "Optional task: open Chat on any hive.",
+      taskCheck: () => Boolean(activeChatPostId),
+    },
+    {
+      title: "Your first post: introduce yourself",
+      selector: "#newPostForm",
+      body:
+        "Finish by creating an intro hive in General so others know who joined. Keep it short and friendly, then send it.",
+      taskLabel: "Optional task: post in General from this account.",
+      onEnter: () => {
+        guidedTourStepContext.introStartAt = Date.now();
+      },
+      taskCheck: () => {
+        const me = String(loggedInUser || "").trim().toLowerCase();
+        if (!me) return false;
+        const cutoff = Number(guidedTourStepContext.introStartAt || 0);
+        for (const post of posts.values()) {
+          if (!post || typeof post !== "object") continue;
+          if (String(post.author || "").trim().toLowerCase() !== me) continue;
+          if (String(post.collectionId || "").trim().toLowerCase() !== "general") continue;
+          const createdAt = Number(post.createdAt || 0);
+          if (createdAt > 0 && createdAt >= cutoff) return true;
+        }
+        return false;
+      },
+    },
+    {
+      title: "Open source and support",
+      selector: "#accountPanel",
+      body:
+        'Bzl is open source: <a href="https://github.com/bzlapp/Bzl/" target="_blank" rel="noopener noreferrer">github.com/bzlapp/Bzl</a><br><br>For bug reports and support questions, use Discord or the official Bzl instance: <a href="https://chat.bzl.one" target="_blank" rel="noopener noreferrer">chat.bzl.one</a> (Registration Code: <b>bzl</b>).',
+      taskLabel: "",
+      taskCheck: null,
+    },
+  ];
+}
+
+function guidedTourTaskSatisfied(step) {
+  if (!step || typeof step.taskCheck !== "function") return false;
+  try {
+    return Boolean(step.taskCheck());
+  } catch {
+    return false;
+  }
+}
+
+function guidedTourGo(delta) {
+  if (!guidedTourState.active) return;
+  const current = guidedTourCurrentStep();
+  if (Number(delta || 0) > 0 && current?.requireTask && !guidedTourTaskSatisfied(current)) {
+    if (guidedTourStatusEl) guidedTourStatusEl.textContent = "Complete the required step to continue.";
+    return;
+  }
+  const next = Math.max(0, Math.min(guidedTourState.steps.length - 1, guidedTourState.index + Number(delta || 0)));
+  if (next === guidedTourState.index && delta > 0 && next >= guidedTourState.steps.length - 1) {
+    stopGuidedTour({ completed: true });
+    return;
+  }
+  guidedTourState.index = next;
+  renderGuidedTourStep();
+}
+
+function guidedTourCurrentStep() {
+  if (!guidedTourState.active) return null;
+  return guidedTourState.steps[guidedTourState.index] || null;
+}
+
+function renderGuidedTourStep() {
+  const step = guidedTourCurrentStep();
+  if (!step) return;
+
+  clearGuidedTourTimers();
+  clearGuidedTourTarget();
+  guidedTourStepContext = {};
+
+  if (typeof step.onEnter === "function") {
+    try {
+      step.onEnter();
+    } catch {
+      // ignore task baseline errors
+    }
+  }
+
+  if (guidedTourStepEl) guidedTourStepEl.textContent = `Step ${guidedTourState.index + 1} / ${guidedTourState.steps.length}`;
+  if (guidedTourTitleEl) guidedTourTitleEl.textContent = step.title || "Tour";
+  if (guidedTourBodyEl) guidedTourBodyEl.innerHTML = step.body || "";
+  if (guidedTourTaskEl) guidedTourTaskEl.textContent = step.taskLabel || "";
+  if (guidedTourStatusEl) {
+    guidedTourStatusEl.textContent = step.taskLabel
+      ? step.requireTask
+        ? "This step is required to continue."
+        : "Do the task or press Next."
+      : "";
+  }
+
+  const selector = String(step.selector || "").trim();
+  const target = selector ? document.querySelector(selector) : null;
+  if (target instanceof HTMLElement) {
+    guidedTourTargetEl = target;
+    guidedTourTargetEl.classList.add("tourTargetPulse");
+    try {
+      guidedTourTargetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    } catch {
+      // ignore
+    }
+    updateGuidedTourSpotlight();
+  }
+
+  if (guidedTourPrevBtn) guidedTourPrevBtn.disabled = guidedTourState.index <= 0;
+  if (guidedTourNextBtn) {
+    guidedTourNextBtn.textContent = guidedTourState.index >= guidedTourState.steps.length - 1 ? "Finish" : "Next";
+    guidedTourNextBtn.disabled = Boolean(step.requireTask && !guidedTourTaskSatisfied(step));
+  }
+
+  if (typeof step.taskCheck === "function") {
+    guidedTourTaskTimer = setInterval(() => {
+      if (!guidedTourState.active) return;
+      const current = guidedTourCurrentStep();
+      if (!current || current !== step) return;
+      const ok = guidedTourTaskSatisfied(step);
+      if (guidedTourNextBtn) guidedTourNextBtn.disabled = Boolean(step.requireTask && !ok);
+      if (!ok) return;
+      clearGuidedTourTimers();
+      if (guidedTourStatusEl) guidedTourStatusEl.textContent = "Task complete. Moving on...";
+      guidedTourAutoAdvanceTimer = setTimeout(() => guidedTourGo(1), 420);
+    }, TOUR_TASK_POLL_MS);
+  }
+}
+
+function startGuidedTour({ auto = false } = {}) {
+  ensureGuidedTourUi();
+  const startedSignedIn = Boolean(loggedInUser);
+  guidedTourState = { active: true, index: 0, steps: buildGuidedTourSteps({ startedSignedIn }), startedSignedIn };
+  if (guidedTourOverlayEl instanceof HTMLElement) guidedTourOverlayEl.classList.remove("hidden");
+  document.body.classList.add("tourActive");
+  if (guidedTourDontShowEl instanceof HTMLInputElement) guidedTourDontShowEl.checked = false;
+  if (!auto) toast("Tour", "Tour started. Complete optional tasks or press Next.");
+  renderGuidedTourStep();
+}
+
+function stopGuidedTour({ completed = false, seenUser = loggedInUser } = {}) {
+  const wasActive = Boolean(guidedTourState.active);
+  clearGuidedTourTimers();
+  clearGuidedTourTarget();
+  if (guidedTourOverlayEl instanceof HTMLElement) guidedTourOverlayEl.classList.add("hidden");
+  document.body.classList.remove("tourActive");
+  guidedTourState = { active: false, index: 0, steps: [], startedSignedIn: false };
+  if (wasActive) {
+    const suppressFuture = Boolean(guidedTourDontShowEl instanceof HTMLInputElement && guidedTourDontShowEl.checked);
+    if (completed) {
+      writeGuidedTourPref(seenUser, { completed: true, dontShow: false });
+    } else if (suppressFuture) {
+      writeGuidedTourPref(seenUser, { dontShow: true });
+    }
+    if (tourBtn instanceof HTMLButtonElement) {
+      tourBtn.textContent = shouldAutoShowGuidedTour(seenUser) ? "Tour" : "Tour (replay)";
+    }
+    if (completed) toast("Tour", "Tour complete. Welcome to Bzl.");
+  }
+}
+
+function maybeAutoStartGuidedTour() {
+  const user = normalizeTourUser(loggedInUser || "guest");
+  if (!user) return;
+  if (guidedTourState.active) return;
+  if (!shouldAutoShowGuidedTour(user)) return;
+  if (guidedTourAutoStartedForUser === user) return;
+  guidedTourAutoStartedForUser = user;
+  setTimeout(() => {
+    const currentUser = normalizeTourUser(loggedInUser || "guest");
+    if (!currentUser || currentUser !== user) return;
+    if (!guidedTourState.active) startGuidedTour({ auto: true });
+  }, 550);
 }
 
 function roleLabel(role) {
@@ -9906,6 +10422,8 @@ registerBtn.addEventListener("click", () => {
   ws.send(JSON.stringify({ type: "register", username, password, code }));
 });
 
+tourBtn?.addEventListener("click", () => startGuidedTour({ auto: false }));
+
 logoutBtn.addEventListener("click", () => ws.send(JSON.stringify({ type: "logout" })));
 
 profileImageInput.addEventListener("change", async () => {
@@ -11648,6 +12166,7 @@ function onWsMessage(evt) {
     renderLanHint();
     renderPeoplePanel();
     renderCenterPanels();
+    maybeAutoStartGuidedTour();
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
     return;
   }
@@ -12031,10 +12550,12 @@ function onWsMessage(evt) {
     if (rackLayoutEnabled) applyDockState();
     updateLayoutPresetOptions();
     renderOnboardingCard();
+    maybeAutoStartGuidedTour();
     return;
   }
 
   if (msg.type === "logoutOk") {
+    const priorUser = loggedInUser;
     setSessionToken("");
     leaveActiveStream(false);
     loggedInUser = null;
@@ -12054,7 +12575,10 @@ function onWsMessage(evt) {
     modLog = [];
     setUserPrefs({ starredPostIds: [], hiddenPostIds: [] });
     activeHiveView = "all";
+    guidedTourAutoStartedForUser = "";
+    stopGuidedTour({ completed: false, seenUser: priorUser });
     setAuthUi();
+    maybeAutoStartGuidedTour();
     renderFeed();
     renderLanHint();
     renderPeoplePanel();
