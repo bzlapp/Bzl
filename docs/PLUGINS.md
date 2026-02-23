@@ -14,6 +14,7 @@ Use this quick reference when packaging releases or deciding what to enable by d
 | `library` | Shelf/Reader workflow, text + PDF style content management, community borrowing/return flow | Any instance | Best used as persistent knowledge + story archive. |
 | `radio` | Community radio stations with uploaded tracks and shared listening | Any instance | Requires upload storage; tune in from panel UI. |
 | `dice` | Shared dice roller (`XdY+Z`) broadcast to connected users | Any instance | Lightweight RP/TTRPG utility. |
+| `godot` | Template plugin for hosting a bundled Godot HTML5 export from `godotapp/` | Any instance | Put your export files in `plugins_dev/godot/godotapp/` before build. |
 | `directory-server` | Public directory endpoint + moderation queue for listings (`/api/plugins/directory-server/list`) | **Directory host instance only** | Acts as the central directory service. |
 | `directory-publisher` | Sends this instance announcement payloads to a directory server | Any instance that wants listing | Configure directory URL + instance URL/name, then publish. |
 
@@ -43,6 +44,10 @@ This repo includes starter plugins and zip builders:
 - Dice: `plugins_dev/dice/`
   - Build: `node scripts/build-dice-plugin.js`
   - Upload: `dist/plugins/dice.zip`
+- Godot: `plugins_dev/godot/`
+  - Build: `node scripts/build-godot-plugin.js`
+  - Upload: `dist/plugins/godot.zip`
+  - Bundle app: place your Godot HTML5 export in `plugins_dev/godot/godotapp/` (entry file must be `index.html`)
 - Directory Server (draft): `plugins_dev/directory-server/`
   - Build: `node scripts/build-directory-server-plugin.js`
   - Upload: `dist/plugins/directory-server.zip`

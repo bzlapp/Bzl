@@ -1,0 +1,9 @@
+{
+  "id": "godot",
+  "name": "Godot Panel",
+  "version": "0.1.0",
+  "description": "Embeds a Godot HTML5 export in a sandboxed panel with basic host lifecycle messaging.",
+  "entryClient": "client.js",
+  "entryServer": "server.js",
+  "permissions": ["ui"]
+}

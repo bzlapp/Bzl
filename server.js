@@ -3353,6 +3353,10 @@ function readRequestBodyToFile(req, filePath, maxBytes) {
       out.end(() => finish(null, bytes));
     });
 
+    req.on("aborted", () => finish(new Error("REQUEST_ABORTED")));
+    req.on("close", () => {
+      if (!done && !req.complete) finish(new Error("REQUEST_ABORTED"));
+    });
     req.on("error", (e) => finish(e));
     out.on("error", (e) => finish(e));
   });
@@ -3828,17 +3832,28 @@ function servePluginFile(req, res, pathname) {
         ? "text/css; charset=utf-8"
         : ext === ".js"
           ? "text/javascript; charset=utf-8"
-          : ext === ".json"
-            ? "application/json; charset=utf-8"
-            : ext === ".png"
-              ? "image/png"
-              : ext === ".jpg" || ext === ".jpeg"
-                ? "image/jpeg"
-                : ext === ".gif"
-                  ? "image/gif"
-                  : ext === ".webp"
-                    ? "image/webp"
-                    : "application/octet-stream";
+          : ext === ".mjs"
+            ? "text/javascript; charset=utf-8"
+            : ext === ".json"
+              ? "application/json; charset=utf-8"
+              : ext === ".wasm"
+                ? "application/wasm"
+                : ext === ".svg"
+                  ? "image/svg+xml"
+                : ext === ".png"
+                  ? "image/png"
+                  : ext === ".jpg" || ext === ".jpeg"
+                    ? "image/jpeg"
+                    : ext === ".gif"
+                      ? "image/gif"
+                      : ext === ".webp"
+                        ? "image/webp"
+                        : "application/octet-stream";
+
+  // Template app exports under /plugins/<id>/godotapp/* must be embeddable in-app.
+  if (rel.startsWith("godotapp/")) {
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  }
 
   res.writeHead(200, { "Content-Type": contentType, "Cache-Control": "no-store" });
   fs.createReadStream(filePath).pipe(res);

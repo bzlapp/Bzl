@@ -10951,16 +10951,33 @@ modBodyEl?.addEventListener("click", (e) => {
       renderModPanel();
       return;
     }
+    const maxZipBytes = 50 * 1024 * 1024;
+    const fileSize = Number(file.size || 0);
+    if (fileSize > maxZipBytes) {
+      pluginAdminStatus = `Plugin zip is too large (${Math.ceil(fileSize / (1024 * 1024))}MB). Max is 50MB.`;
+      renderModPanel();
+      return;
+    }
     pluginAdminBusy = true;
-    pluginAdminStatus = "Uploading plugin...";
+    pluginAdminStatus = `Uploading plugin (${Math.ceil(fileSize / 1024)} KB)...`;
     renderModPanel();
     (async () => {
+      const controller = new AbortController();
+      const timeoutMs = 2 * 60 * 1000;
+      const timeout = setTimeout(() => {
+        try {
+          controller.abort(new Error("UPLOAD_TIMEOUT"));
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
       try {
         const res = await fetch("/api/plugin-install", {
           method: "POST",
           headers: { "Content-Type": "application/zip", Authorization: `Bearer ${token}` },
           body: file,
           credentials: "same-origin",
+          signal: controller.signal,
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json || !json.ok) {
@@ -10976,8 +10993,17 @@ modBodyEl?.addEventListener("click", (e) => {
         renderModPanel();
       } catch (err) {
         pluginAdminBusy = false;
-        pluginAdminStatus = "Install failed.";
+        const message = String(err?.message || "");
+        if (message.includes("UPLOAD_TIMEOUT")) {
+          pluginAdminStatus = "Upload timed out after 2 minutes. Try a smaller zip or better network.";
+        } else if (String(err?.name || "") === "AbortError") {
+          pluginAdminStatus = "Upload was interrupted.";
+        } else {
+          pluginAdminStatus = `Install failed: ${message || "unknown error"}`;
+        }
         renderModPanel();
+      } finally {
+        clearTimeout(timeout);
       }
     })();
     return;
