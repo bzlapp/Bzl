@@ -9,8 +9,8 @@
   <body>
       <div class="app">
         <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
-        <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show people">People</button>
-        <button id="showRightRack" class="ghost smallBtn rightRackToggle hidden" type="button" title="Show right rack">Right</button>
+        <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show members list">Members</button>
+        <button id="showRightRack" class="ghost smallBtn rightRackToggle hidden" type="button" title="Show members list">Members</button>
         <aside class="sidebar">
         <div class="sidebarScroll">
           <div class="brand">
@@ -28,7 +28,7 @@
 
         <section id="viewPanel" class="panel">
           <div class="panelTitle">View</div>
-          <div class="uiHint">Use layout presets for quick panel setups. Shortcuts: <b>[</b>/<b>]</b> cycle presets, <b>-</b>/<b>=</b> cycle hives/chats in the active panel, <b>?</b> opens shortcut help.</div>
+          <div class="uiHint">Use layout presets for quick panel setups. Shortcuts: <b>[</b>/<b>]</b> cycle presets, <b>-</b>/<b>=</b> cycle hives/chats in the active panel, <b>R</b> toggles Members list, <b>?</b> opens shortcut help.</div>
           <label class="checkRow" style="margin-top:8px;">
             <span>Rack layout (experimental)</span>
             <input id="toggleRackLayout" type="checkbox" />
@@ -51,7 +51,7 @@
             <input id="toggleSideRack" type="checkbox" checked />
           </label>
           <label class="checkRow" style="margin-top:8px;">
-            <span>Right rack</span>
+            <span>Members list</span>
             <input id="toggleRightRack" type="checkbox" checked />
           </label>
           <label class="checkRow" style="margin-top:8px;">
@@ -91,17 +91,100 @@
                   <option value="lg">Large</option>
                 </select>
               </label>
-              <label style="margin-top:10px;">
-                <span>Device layout</span>
-                <select id="deviceLayout">
-                  <option value="auto" selected>Auto</option>
-                  <option value="widescreen">16:9 / 16:10</option>
-                  <option value="fourThree">4:3</option>
-                  <option value="threeTwo">3:2</option>
-                  <option value="ultrawide">Ultrawide</option>
-                  <option value="portrait">Portrait</option>
-                </select>
-              </label>
+              <div class="appearanceWorkbench">
+                <div class="appearanceWorkbenchHeader">
+                  <div class="small">Look & feel</div>
+                  <div class="small muted">Personal (this browser)</div>
+                </div>
+                <div class="appearanceWorkbenchRow">
+                  <label class="grow">
+                    <span>Theme preset</span>
+                    <select id="appearancePreset">
+                      <option value="">(choose...)</option>
+                    </select>
+                  </label>
+                  <div class="row" style="align-items:flex-end;gap:8px;">
+                    <button id="appearanceApplyPreset" class="ghost smallBtn" type="button">Apply</button>
+                    <button id="appearanceResetPreview" class="ghost smallBtn" type="button">Reset</button>
+                  </div>
+                </div>
+                <div class="appearanceColorGrid">
+                  <label>
+                    <span>Background</span>
+                    <input id="appearanceBg" type="color" />
+                  </label>
+                  <label>
+                    <span>Panel</span>
+                    <input id="appearancePanel" type="color" />
+                  </label>
+                  <label>
+                    <span>Text</span>
+                    <input id="appearanceText" type="color" />
+                  </label>
+                  <label>
+                    <span>Accent</span>
+                    <input id="appearanceAccent" type="color" />
+                  </label>
+                  <label>
+                    <span>Accent 2</span>
+                    <input id="appearanceAccent2" type="color" />
+                  </label>
+                  <label>
+                    <span>Success</span>
+                    <input id="appearanceGood" type="color" />
+                  </label>
+                  <label>
+                    <span>Danger</span>
+                    <input id="appearanceBad" type="color" />
+                  </label>
+                </div>
+                <div class="appearanceWorkbenchRow">
+                  <label>
+                    <span>Muted %</span>
+                    <input id="appearanceMutedPct" type="number" min="0" max="100" />
+                  </label>
+                  <label>
+                    <span>Divider %</span>
+                    <input id="appearanceLinePct" type="number" min="0" max="100" />
+                  </label>
+                  <label>
+                    <span>Panel tint %</span>
+                    <input id="appearancePanel2Pct" type="number" min="0" max="100" />
+                  </label>
+                </div>
+                <div class="appearanceWorkbenchRow">
+                  <label class="grow">
+                    <span>Body font</span>
+                    <select id="appearanceFontBody">
+                      <option value="system">System (sans)</option>
+                      <option value="clean">Clean sans</option>
+                      <option value="humanist">Humanist</option>
+                      <option value="rounded">Rounded</option>
+                      <option value="condensed">Condensed</option>
+                      <option value="serif">Serif</option>
+                      <option value="slab">Slab serif</option>
+                      <option value="mono">Monospace</option>
+                      <option value="lcd">LCD / Digital</option>
+                    </select>
+                  </label>
+                  <label class="grow">
+                    <span>Mono font</span>
+                    <select id="appearanceFontMono">
+                      <option value="mono">Monospace</option>
+                      <option value="system">System</option>
+                      <option value="clean">Clean sans</option>
+                      <option value="humanist">Humanist</option>
+                      <option value="rounded">Rounded</option>
+                      <option value="lcd">LCD / Digital</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="appearanceWorkbenchActions">
+                  <button id="appearanceSave" class="primary smallBtn" type="button">Save look</button>
+                  <button id="appearanceClear" class="ghost smallBtn" type="button">Use server default</button>
+                </div>
+                <div id="appearanceStatus" class="small muted"></div>
+              </div>
             </div>
           </details>
         </section>
@@ -498,7 +581,7 @@
     <aside id="peopleDrawer" class="peopleDrawer hidden">
       <div id="peopleResizeHandle" class="peopleResizeHandle" title="Drag to resize people panel" aria-hidden="true"></div>
       <div class="panelHeader">
-        <div class="panelTitle">People</div>
+        <div class="panelTitle">Members list</div>
         <button id="closePeople" class="ghost smallBtn" type="button">Close</button>
       </div>
       <div class="peopleTabs">
@@ -521,7 +604,7 @@
       <button type="button" data-mobilescreen="account">Account</button>
       <button type="button" data-mobilescreen="hives">Hives</button>
       <button type="button" data-mobilescreen="chat">Chat</button>
-      <button id="mobileFourthBtn" type="button" data-mobilescreen="people">People</button>
+      <button id="mobileFourthBtn" type="button" data-mobilescreen="people">Members</button>
       <button type="button" data-mobilescreen="profile">Profile</button>
       <button type="button" data-mobilescreen="more">More</button>
     </div>
@@ -678,6 +761,8 @@
         <div class="modalBody shortcutHelpBody">
           <div><span class="tag">[ / ]</span> Cycle layout presets</div>
           <div><span class="tag">- / =</span> Cycle hives or chats in active panel</div>
+          <div><span class="tag">Arrows</span> Hover panel: Up size, Left/Right move, Down dock. Hover hotbar: Up restore.</div>
+          <div><span class="tag">R</span> Toggle Members list rail</div>
           <div><span class="tag">?</span> Open this shortcut help</div>
           <div><span class="tag">`</span> Hold for walkie talkie (when enabled)</div>
           <div><span class="tag">Esc</span> Close menus/modals</div>

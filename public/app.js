@@ -32,6 +32,24 @@ const toggleRightRackEl = document.getElementById("toggleRightRack");
 const layoutPresetEl = document.getElementById("layoutPreset");
 const uiScaleEl = document.getElementById("uiScale");
 const deviceLayoutEl = document.getElementById("deviceLayout");
+const appearancePresetEl = document.getElementById("appearancePreset");
+const appearanceApplyPresetBtn = document.getElementById("appearanceApplyPreset");
+const appearanceResetPreviewBtn = document.getElementById("appearanceResetPreview");
+const appearanceBgEl = document.getElementById("appearanceBg");
+const appearancePanelEl = document.getElementById("appearancePanel");
+const appearanceTextEl = document.getElementById("appearanceText");
+const appearanceAccentEl = document.getElementById("appearanceAccent");
+const appearanceAccent2El = document.getElementById("appearanceAccent2");
+const appearanceGoodEl = document.getElementById("appearanceGood");
+const appearanceBadEl = document.getElementById("appearanceBad");
+const appearanceMutedPctEl = document.getElementById("appearanceMutedPct");
+const appearanceLinePctEl = document.getElementById("appearanceLinePct");
+const appearancePanel2PctEl = document.getElementById("appearancePanel2Pct");
+const appearanceFontBodyEl = document.getElementById("appearanceFontBody");
+const appearanceFontMonoEl = document.getElementById("appearanceFontMono");
+const appearanceSaveBtn = document.getElementById("appearanceSave");
+const appearanceClearBtn = document.getElementById("appearanceClear");
+const appearanceStatusEl = document.getElementById("appearanceStatus");
 const stayConnectedEl = document.getElementById("stayConnected");
 const enableHintsEl = document.getElementById("enableHints");
 const chatEnterModeEl = document.getElementById("chatEnterMode");
@@ -214,6 +232,7 @@ const FORCE_RACK_MODE = true;
 // Display prefs (device layout + text scale)
 const UI_SCALE_KEY = "bzl_uiScale"; // "auto" | "xs" | "sm" | "md" | "lg"
 const DEVICE_LAYOUT_KEY = "bzl_deviceLayout"; // "auto" | "widescreen" | "fourThree" | "threeTwo" | "ultrawide" | "portrait"
+const USER_APPEARANCE_KEY = "bzl_userAppearance_v1";
 
 /** @type {Map<string, any>} */
 const posts = new Map();
@@ -409,6 +428,8 @@ const RACK_SIDE_COLLAPSED_KEY = "bzl_rackLayout_sideCollapsed";
 const RACK_RIGHT_COLLAPSED_KEY = "bzl_rackLayout_rightCollapsed";
 const WORKSPACE_EXPANDED_PRIMARY_KEY = "bzl_workspace_expandedPrimary";
 const WORKSPACE_EXPANDED_DISPLACED_KEY = "bzl_workspace_expandedDisplaced";
+const WORKSPACE_INFINITE_MODE = true;
+const RIGHT_RACK_FIXED_PANEL_ID = "people";
 
 /**
  * @typedef {{
@@ -425,12 +446,21 @@ let rackLayoutState = {
   presetId: "onboardingDefault",
   docked: { bottom: [] },
   racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
+  panelSizes: {},
 };
 let rackLayoutEnabled = false;
 let rightRackEl = null;
 let mainRack = null;
 let mainSideRack = null;
 const WORKSPACE_ACTIVE_PRIMARY_KEY = "bzl_workspace_activePrimary";
+
+function workspaceInfiniteMode() {
+  return Boolean(rackLayoutEnabled && WORKSPACE_INFINITE_MODE);
+}
+
+function isRightRackFixedPanel(panelId) {
+  return String(panelId || "").trim() === RIGHT_RACK_FIXED_PANEL_ID;
+}
 
 function readBoolPref(key, fallback = false) {
   try {
@@ -710,6 +740,7 @@ function setSideCollapsed(collapsed, opts) {
   if (persist) writeBoolPref(RACK_SIDE_COLLAPSED_KEY, Boolean(collapsed));
   if (updateControls && toggleSideRackEl) toggleSideRackEl.checked = !Boolean(collapsed);
   updateSideRackEmptyState();
+  updateWorkspaceMinView();
 }
 
 function setRightCollapsed(collapsed, opts) {
@@ -720,6 +751,7 @@ function setRightCollapsed(collapsed, opts) {
   appRoot.classList.toggle("rightCollapsed", Boolean(collapsed));
   if (persist) writeBoolPref(RACK_RIGHT_COLLAPSED_KEY, Boolean(collapsed));
   if (updateControls && toggleRightRackEl) toggleRightRackEl.checked = !Boolean(collapsed);
+  updateWorkspaceMinView();
 }
 
 function updateSideRackEmptyState() {
@@ -744,6 +776,173 @@ function registerCorePanel(def) {
   const defaultRack = typeof def?.defaultRack === "string" ? def.defaultRack : "right";
   const element = def?.element instanceof HTMLElement ? def.element : null;
   panelRegistry.set(id, { id, title, icon, source: "core", role, defaultRack, element });
+}
+
+function normalizeWorkspacePanelSize(size) {
+  const raw = String(size || "").trim().toLowerCase();
+  if (raw === "skinny" || raw === "full") return raw;
+  return "half";
+}
+
+function panelAllowsSkinnyWorkspaceSize(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (id === "moderation") return false;
+  return true;
+}
+
+function panelWorkspaceSize(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return "half";
+  const sizes = rackLayoutState?.panelSizes && typeof rackLayoutState.panelSizes === "object" ? rackLayoutState.panelSizes : {};
+  const normalized = normalizeWorkspacePanelSize(sizes[id] || "half");
+  if (normalized === "skinny" && !panelAllowsSkinnyWorkspaceSize(id)) return "half";
+  return normalized;
+}
+
+function workspaceHalfPanelWidthPx() {
+  return Math.min(680, Math.max(340, Math.round(window.innerWidth * 0.74)));
+}
+
+function workspaceSkinnyPanelWidthPx() {
+  return Math.min(360, Math.max(220, Math.round(window.innerWidth * 0.42)));
+}
+
+function workspaceSidePanelsEnabled() {
+  if (!appRoot) return false;
+  return !(appRoot.classList.contains("sideCollapsed") && appRoot.classList.contains("rightCollapsed"));
+}
+
+function ensureWorkspaceMinSpacer() {
+  const workspace = ensureWorkspaceStripRack();
+  if (!(workspace instanceof HTMLElement)) return null;
+  let spacer = workspace.querySelector?.(":scope > .workspaceMinSpacer");
+  if (!(spacer instanceof HTMLElement)) {
+    spacer = document.createElement("div");
+    spacer.className = "workspaceMinSpacer";
+    workspace.appendChild(spacer);
+  }
+  if (workspace.lastElementChild !== spacer) workspace.appendChild(spacer);
+  return spacer;
+}
+
+function panelWorkspaceWidthPx(panelId) {
+  const size = panelWorkspaceSize(panelId);
+  const half = workspaceHalfPanelWidthPx();
+  if (size === "full") return half * 2;
+  if (size === "skinny") return workspaceSkinnyPanelWidthPx();
+  return half;
+}
+
+function updateWorkspaceMinView() {
+  if (!workspaceInfiniteMode()) return;
+  const workspace = ensureWorkspaceStripRack();
+  if (!(workspace instanceof HTMLElement)) return;
+  const spacer = ensureWorkspaceMinSpacer();
+  if (!(spacer instanceof HTMLElement)) return;
+  const panelIds = Array.from(workspace.querySelectorAll(":scope > .rackPanel:not(.hidden)"))
+    .map((el) => String(el?.dataset?.panelId || "").trim())
+    .filter(Boolean);
+  const currentWidth = panelIds.reduce((sum, id) => sum + panelWorkspaceWidthPx(id), 0);
+  const half = workspaceHalfPanelWidthPx();
+  const minRequired = workspaceSidePanelsEnabled() ? half * 2 + workspaceSkinnyPanelWidthPx() : half * 2;
+  const deficit = Math.max(0, Math.round(minRequired - currentWidth));
+  spacer.style.width = `${deficit}px`;
+}
+
+function installWorkspaceScrollSnapStep() {
+  const workspace = ensureWorkspaceStripRack();
+  if (!(workspace instanceof HTMLElement)) return;
+  if (workspace.dataset.snapStepInstalled === "1") return;
+  workspace.dataset.snapStepInstalled = "1";
+  let snapTimer = null;
+  workspace.addEventListener("scroll", () => {
+    if (!workspaceInfiniteMode()) return;
+    if (appRoot?.classList.contains("rackIsDragging")) return;
+    if (snapTimer) clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      const step = workspaceHalfPanelWidthPx();
+      if (!step) return;
+      const current = workspace.scrollLeft;
+      const maxScroll = Math.max(0, workspace.scrollWidth - workspace.clientWidth);
+      let target = Math.round(current / step) * step;
+      target = Math.max(0, Math.min(maxScroll, target));
+      const nearRightEdge = maxScroll > 0 && current >= maxScroll - Math.max(28, Math.round(step * 0.45));
+      if (nearRightEdge) target = maxScroll;
+      if (Math.abs(target - current) < 4) return;
+      workspace.scrollTo({ left: target, behavior: "smooth" });
+    }, 90);
+  });
+}
+
+function refreshPanelSizeButtons(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  const size = panelWorkspaceSize(id);
+  const allowSkinny = panelAllowsSkinnyWorkspaceSize(id);
+  const root = getPanelElement(id);
+  if (!(root instanceof HTMLElement)) return;
+  for (const btn of root.querySelectorAll(`[data-panelsize][data-panelid="${cssEscape(id)}"]`)) {
+    const btnSize = normalizeWorkspacePanelSize(btn.getAttribute("data-panelsize") || "");
+    if (btnSize === "skinny") btn.disabled = !allowSkinny;
+    btn.classList.toggle("isActive", btnSize === size);
+  }
+}
+
+function applyPanelWorkspaceSize(panelEl) {
+  const el = panelEl instanceof HTMLElement ? panelEl : null;
+  if (!el) return;
+  const panelId = String(el.dataset.panelId || "").trim();
+  const inWorkspace = el.parentElement && String(el.parentElement.id || "") === "mainWorkspaceRack";
+  el.classList.toggle("workspaceSizeSkinny", Boolean(inWorkspace && panelWorkspaceSize(panelId) === "skinny"));
+  el.classList.toggle("workspaceSizeHalf", Boolean(inWorkspace && panelWorkspaceSize(panelId) === "half"));
+  el.classList.toggle("workspaceSizeFull", Boolean(inWorkspace && panelWorkspaceSize(panelId) === "full"));
+  refreshPanelSizeButtons(panelId);
+}
+
+function applyAllWorkspacePanelSizes() {
+  const workspace = ensureWorkspaceStripRack();
+  if (!(workspace instanceof HTMLElement)) return;
+  for (const panel of workspace.querySelectorAll(":scope > .rackPanel")) applyPanelWorkspaceSize(panel);
+  updateWorkspaceMinView();
+}
+
+function setPanelWorkspaceSize(panelId, size) {
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  let next = normalizeWorkspacePanelSize(size);
+  if (next === "skinny" && !panelAllowsSkinnyWorkspaceSize(id)) next = "half";
+  if (!rackLayoutState.panelSizes || typeof rackLayoutState.panelSizes !== "object") rackLayoutState.panelSizes = {};
+  rackLayoutState.panelSizes[id] = next;
+  saveRackLayoutState();
+  const panelEl = getPanelElement(id);
+  if (panelEl) applyPanelWorkspaceSize(panelEl);
+}
+
+function panelCanUseWorkspaceSizes(panelId) {
+  const id = String(panelId || "").trim();
+  if (!id) return false;
+  if (id.startsWith("chat:")) return true;
+  return true;
+}
+
+function installPanelSizeButtons(headerEl, panelId) {
+  if (!(headerEl instanceof HTMLElement)) return;
+  const id = String(panelId || "").trim();
+  if (!id) return;
+  if (!panelCanUseWorkspaceSizes(id)) return;
+  const row = headerEl.querySelector(".row") || headerEl;
+  if (row.querySelector(`[data-panelsizerow="${cssEscape(id)}"]`)) return;
+  const wrap = document.createElement("div");
+  wrap.className = "panelSizeControls";
+  wrap.setAttribute("data-panelsizerow", id);
+  wrap.innerHTML = `
+    <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="skinny" data-panelid="${escapeHtml(id)}" title="Skinny width">S</button>
+    <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="half" data-panelid="${escapeHtml(id)}" title="Half width">H</button>
+    <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="full" data-panelid="${escapeHtml(id)}" title="Full width">F</button>
+  `;
+  row.appendChild(wrap);
+  refreshPanelSizeButtons(id);
 }
 
 function togglePanelSkinny(panelId) {
@@ -792,7 +991,7 @@ function togglePanelSkinny(panelId) {
 registerCorePanel({ id: "chat", title: "Chat", icon: "💬", role: "primary", defaultRack: "main", element: chatPanelEl });
 registerCorePanel({ id: "hives", title: "Hives", icon: "🐝", role: "primary", defaultRack: "main", element: hivesPanelEl });
 registerCorePanel({ id: "onboarding", title: "Onboarding", icon: "🧭", role: "primary", defaultRack: "main", element: onboardingPanelEl });
-registerCorePanel({ id: "people", title: "People", icon: "👥", role: "aux", defaultRack: "right", element: peopleDrawerEl });
+registerCorePanel({ id: "people", title: "Members list", icon: "👥", role: "aux", defaultRack: "right", element: peopleDrawerEl });
 registerCorePanel({ id: "moderation", title: "Moderation", icon: "🛡️", role: "aux", defaultRack: "right", element: modPanelEl });
 registerCorePanel({ id: "profile", title: "Profile", icon: "👤", role: "transient", defaultRack: "main", element: profileViewPanel });
 registerCorePanel({ id: "composer", title: "New Hive", icon: "✍️", role: "aux", defaultRack: "main", element: pollinatePanel });
@@ -973,158 +1172,158 @@ window.__bzlPanels = { panelRegistry };
 
 const PRESET_DEFS = {
   // Presets are hard-applied (exact placement). Anything not explicitly placed starts in the hotbar.
-  // Workspace uses two full-height primary slots (left + right). No vertical splits.
+  // In workspace-infinite mode, these arrays are merged into one ordered strip.
   onboardingDefault: {
     presetId: "onboardingDefault",
     label: "Onboarding (Default)",
     group: "user",
-    workspaceLeftOrder: ["onboarding"],
-    workspaceRightOrder: ["hives"],
-    sideOrder: ["chat", "profile", "composer"],
+    workspaceLeftOrder: ["onboarding", "hives"],
+    workspaceRightOrder: ["chat", "people"],
+    sideOrder: ["composer", "profile"],
     sideCollapsed: false,
-    rightOrder: ["people"],
+    rightOrder: ["pluginRack"],
     dockBottom: ["pluginRack", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   social: {
     presetId: "social",
     label: "Default (Social)",
     group: "user",
-    workspaceLeftOrder: ["hives"],
-    workspaceRightOrder: ["chat"],
-    sideOrder: ["profile", "composer"],
+    workspaceLeftOrder: ["hives", "chat"],
+    workspaceRightOrder: ["people", "profile"],
+    sideOrder: ["composer", "pluginRack"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["onboarding"],
+    dockBottom: ["maps", "library-browser", "library-shelf", "library-reader"],
   },
   chatFocus: {
     presetId: "chatFocus",
     label: "Chat Focus",
     group: "user",
-    workspaceLeftOrder: ["chat"],
-    workspaceRightOrder: [],
+    workspaceLeftOrder: ["chat", "hives"],
+    workspaceRightOrder: ["people", "profile"],
     expandedPrimary: "chat",
-    sideOrder: ["profile"],
+    sideOrder: ["composer"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "hives", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   browse: {
     presetId: "browse",
     label: "Browse",
     group: "user",
-    workspaceLeftOrder: ["hives"],
-    workspaceRightOrder: [],
+    workspaceLeftOrder: ["hives", "chat"],
+    workspaceRightOrder: ["profile", "people"],
     expandedPrimary: "hives",
-    sideOrder: ["chat"],
+    sideOrder: ["composer", "pluginRack"],
     sideCollapsed: true,
-    rightOrder: ["profile"],
-    dockBottom: ["pluginRack", "people", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["onboarding"],
+    dockBottom: ["maps", "library-browser", "library-shelf", "library-reader"],
   },
   creator: {
     presetId: "creator",
     label: "Creator",
     group: "user",
-    workspaceLeftOrder: ["hives"],
-    workspaceRightOrder: ["composer"],
+    workspaceLeftOrder: ["hives", "composer"],
+    workspaceRightOrder: ["chat", "people"],
     composerOpen: true,
-    sideOrder: ["people"],
+    sideOrder: ["profile", "pluginRack"],
     sideCollapsed: true,
-    rightOrder: ["profile"],
-    dockBottom: ["pluginRack", "chat", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["onboarding"],
+    dockBottom: ["maps", "library-browser", "library-shelf", "library-reader"],
   },
   mapsSession: {
     presetId: "mapsSession",
     label: "Maps Session",
     group: "user",
-    workspaceLeftOrder: ["maps"], // if installed
-    workspaceRightOrder: ["chat"],
-    sideOrder: ["hives"],
+    workspaceLeftOrder: ["maps", "chat"], // if installed
+    workspaceRightOrder: ["hives", "people"],
+    sideOrder: ["profile", "composer"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "library-browser", "library-shelf", "library-reader"],
   },
   quiet: {
     presetId: "quiet",
     label: "Quiet (No People)",
     group: "user",
-    workspaceLeftOrder: ["hives"],
-    workspaceRightOrder: ["profile"],
-    sideOrder: ["composer"],
+    workspaceLeftOrder: ["hives", "profile"],
+    workspaceRightOrder: ["composer", "library-reader"],
+    sideOrder: [],
     sideCollapsed: true,
     rightOrder: [],
     rightCollapsed: true,
-    dockBottom: ["pluginRack", "chat", "people", "maps", "library-browser", "library-shelf", "library-reader"],
+    dockBottom: ["pluginRack", "chat", "people", "maps", "library-browser", "library-shelf", "onboarding"],
   },
   readingNook: {
     presetId: "readingNook",
     label: "Reading Nook",
     group: "user",
-    workspaceLeftOrder: ["library-reader"],
-    workspaceRightOrder: ["library-shelf"],
-    sideOrder: ["profile"],
+    workspaceLeftOrder: ["library-reader", "library-shelf"],
+    workspaceRightOrder: ["library-browser", "chat"],
+    sideOrder: ["profile", "people"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "hives", "chat", "composer", "maps", "library-browser"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["hives", "composer", "maps", "onboarding"],
   },
   libraryCurator: {
     presetId: "libraryCurator",
     label: "Library Curator",
     group: "user",
-    workspaceLeftOrder: ["library-browser"],
-    workspaceRightOrder: ["library-shelf"],
-    sideOrder: ["profile"],
+    workspaceLeftOrder: ["library-browser", "library-shelf"],
+    workspaceRightOrder: ["library-reader", "hives"],
+    sideOrder: ["chat", "profile"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "hives", "chat", "composer", "maps", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["people", "composer", "maps", "onboarding"],
   },
   ops: {
     presetId: "ops",
     label: "Ops",
     group: "mod",
     modOnly: true,
-    workspaceLeftOrder: ["moderation"],
-    workspaceRightOrder: ["chat"],
-    sideOrder: ["hives"],
+    workspaceLeftOrder: ["moderation", "chat"],
+    workspaceRightOrder: ["hives", "people"],
+    sideOrder: ["profile", "composer"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   reportsFocus: {
     presetId: "reportsFocus",
     label: "Reports Focus",
     group: "mod",
     modOnly: true,
-    workspaceLeftOrder: ["moderation"],
-    workspaceRightOrder: [],
+    workspaceLeftOrder: ["moderation", "chat"],
+    workspaceRightOrder: ["hives", "people"],
     expandedPrimary: "moderation",
-    sideOrder: ["people"],
+    sideOrder: ["profile"],
     sideCollapsed: true,
-    rightOrder: ["chat"],
-    dockBottom: ["pluginRack", "hives", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   communityWatch: {
     presetId: "communityWatch",
     label: "Community Watch",
     group: "mod",
     modOnly: true,
-    workspaceLeftOrder: ["hives"],
-    workspaceRightOrder: ["moderation"],
-    sideOrder: ["chat"],
+    workspaceLeftOrder: ["hives", "moderation"],
+    workspaceRightOrder: ["chat", "people"],
+    sideOrder: ["profile", "composer"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "maps", "library-browser", "library-shelf", "library-reader"],
   },
   serverAdmin: {
     presetId: "serverAdmin",
     label: "Server Admin",
     group: "mod",
     modOnly: true,
-    workspaceLeftOrder: ["moderation"],
-    workspaceRightOrder: ["hives"],
-    sideOrder: ["chat"],
+    workspaceLeftOrder: ["moderation", "hives"],
+    workspaceRightOrder: ["chat", "people"],
+    sideOrder: ["composer", "profile"],
     sideCollapsed: true,
-    rightOrder: ["people"],
-    dockBottom: ["pluginRack", "profile", "composer", "maps", "library-browser", "library-shelf", "library-reader"],
+    rightOrder: ["pluginRack"],
+    dockBottom: ["onboarding", "maps", "library-browser", "library-shelf", "library-reader"],
   },
 };
 
@@ -1220,6 +1419,7 @@ function loadRackLayoutState() {
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
         pluginRackWidgets: [],
         lastRackByPanelId: {},
+        panelSizes: {},
       };
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== 2)
@@ -1230,6 +1430,7 @@ function loadRackLayoutState() {
         racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
         pluginRackWidgets: [],
         lastRackByPanelId: {},
+        panelSizes: {},
       };
     const bottom = Array.isArray(parsed?.docked?.bottom) ? parsed.docked.bottom.map((x) => String(x || "")).filter(Boolean) : [];
     const pluginRackWidgets = Array.isArray(parsed?.pluginRackWidgets)
@@ -1248,7 +1449,16 @@ function loadRackLayoutState() {
       if (!id || !rackId) continue;
       lastRackByPanelId[id] = rackId;
     }
-    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right }, pluginRackWidgets, lastRackByPanelId };
+    const panelSizesRaw = parsed?.panelSizes && typeof parsed.panelSizes === "object" ? parsed.panelSizes : {};
+    const panelSizes = {};
+    for (const [k, v] of Object.entries(panelSizesRaw)) {
+      const id = String(k || "").trim();
+      const size = String(v || "").trim().toLowerCase();
+      if (!id) continue;
+      if (size !== "skinny" && size !== "half" && size !== "full") continue;
+      panelSizes[id] = size;
+    }
+    return { version: 2, presetId, docked: { bottom }, racks: { workspaceLeft, workspaceRight, side, right }, pluginRackWidgets, lastRackByPanelId, panelSizes };
   } catch {
     return {
       version: 2,
@@ -1257,6 +1467,7 @@ function loadRackLayoutState() {
       racks: { workspaceLeft: [], workspaceRight: [], side: [], right: [] },
       pluginRackWidgets: [],
       lastRackByPanelId: {},
+      panelSizes: {},
     };
   }
 }
@@ -1272,6 +1483,21 @@ function saveRackLayoutState() {
 function ensureWorkspaceSlots() {
   const workspace = mainWorkspaceRackEl || document.getElementById("mainWorkspaceRack");
   if (!workspace) return { left: null, right: null };
+  if (workspaceInfiniteMode()) {
+    const leftSlot = workspace.querySelector?.("#workspaceLeftSlot");
+    const rightSlot = workspace.querySelector?.("#workspaceRightSlot");
+    for (const slot of [leftSlot, rightSlot]) {
+      if (!(slot instanceof HTMLElement)) continue;
+      const kids = Array.from(slot.querySelectorAll(":scope > .rackPanel"));
+      for (const kid of kids) workspace.appendChild(kid);
+      try {
+        slot.remove();
+      } catch {
+        // ignore
+      }
+    }
+    return { left: workspace, right: workspace };
+  }
 
   let left = workspace.querySelector?.("#workspaceLeftSlot");
   let right = workspace.querySelector?.("#workspaceRightSlot");
@@ -1293,6 +1519,12 @@ function ensureWorkspaceSlots() {
     else workspace.appendChild(right);
   }
   return { left, right };
+}
+
+function ensureWorkspaceStripRack() {
+  if (!workspaceInfiniteMode()) return null;
+  const workspace = ensureMainRack();
+  return workspace instanceof HTMLElement ? workspace : null;
 }
 
 function panelTitle(panelId) {
@@ -1370,7 +1602,8 @@ function rackIdForPanelElement(panelEl) {
   if (!el) return "";
   const parent = el.parentElement;
   const id = parent && typeof parent.id === "string" ? parent.id : "";
-  if (id === "workspaceLeftSlot" || id === "workspaceRightSlot" || id === "mainSideRack" || id === "rightRack") return id;
+  if (id === "mainWorkspaceRack" || id === "workspaceLeftSlot" || id === "workspaceRightSlot" || id === "mainSideRack" || id === "rightRack")
+    return id;
   return "";
 }
 
@@ -1399,6 +1632,7 @@ function rememberPanelLastRack(panelId, rackId) {
 function dockPanel(panelId) {
   const id = String(panelId || "").trim();
   if (!id) return;
+  if (rackLayoutEnabled && isRightRackFixedPanel(id)) return;
   // Docking a hosted widget should implicitly un-host it.
   removePanelFromPluginRack(id);
   const el = getPanelElement(id);
@@ -1417,13 +1651,46 @@ function undockPanel(panelId) {
   applyDockState();
 }
 
-function restorePanelFromHotbar(panelId) {
+function restorePanelFromHotbar(panelId, opts) {
   const id = String(panelId || "").trim();
   if (!id) return;
   if (!rackLayoutEnabled) return;
+  const options = opts && typeof opts === "object" ? opts : {};
+  const userAdded = options.userAdded === true;
 
   const panelEl = getPanelElement(id);
   if (!panelEl) return;
+  if (workspaceInfiniteMode() && isRightRackFixedPanel(id)) {
+    const rightRack = ensureRightRack();
+    if (!(rightRack instanceof HTMLElement)) return;
+    undockPanel(id);
+    rightRack.appendChild(panelEl);
+    rememberPanelLastRack(id, rightRack.id);
+    setRightCollapsed(false);
+    saveRackLayoutState();
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+    return;
+  }
+  if (workspaceInfiniteMode()) {
+    const workspace = ensureWorkspaceStripRack();
+    if (!(workspace instanceof HTMLElement)) return;
+    undockPanel(id);
+    const spacer = ensureWorkspaceMinSpacer();
+    if (spacer instanceof HTMLElement && spacer.parentElement === workspace) workspace.insertBefore(panelEl, spacer);
+    else workspace.appendChild(panelEl);
+    rememberPanelLastRack(id, workspace.id);
+    applyPanelWorkspaceSize(panelEl);
+    saveRackLayoutState();
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+    if (userAdded) {
+      requestAnimationFrame(() => {
+        focusWorkspaceArrival(panelEl);
+      });
+    }
+    return;
+  }
 
   // Decide where to restore the panel.
   const lastRackId =
@@ -1489,6 +1756,11 @@ function restorePanelFromHotbar(panelId) {
 
   syncRackStateFromDom();
   enforceWorkspaceRules();
+  if (userAdded) {
+    requestAnimationFrame(() => {
+      focusWorkspaceArrival(panelEl);
+    });
+  }
 }
 
 function showHotbar(show) {
@@ -1514,13 +1786,23 @@ function renderHotbar() {
   const orbsHtml = items
     .map(
       (id) => `
-    <button type="button" class="dockOrb" data-undock="${escapeHtml(id)}" title="Restore ${escapeHtml(panelTitle(id))}">
+    <button type="button" class="dockOrb" data-undock="${escapeHtml(id)}" title="Click to restore ${escapeHtml(panelTitle(id))}. Drag to place in a rack.">
       <span class="dockOrbIcon" aria-hidden="true">${escapeHtml(panelIcon(id))}</span>
       <span>${escapeHtml(panelTitle(id))}</span>
     </button>
   `
     )
     .join("");
+  const hintHtml = items.length
+    ? `
+    <div class="hotbarHint" aria-hidden="true">
+      <span class="hotbarHintGrip">≡</span>
+      <span>Drag to place</span>
+      <span class="hotbarHintSep">•</span>
+      <span>Click to open</span>
+    </div>
+  `
+    : "";
 
   const plusHtml = includePlus
     ? `
@@ -1531,7 +1813,7 @@ function renderHotbar() {
   `
     : "";
 
-  dockHotbarEl.innerHTML = `${orbsHtml}${plusHtml}`;
+  dockHotbarEl.innerHTML = `${hintHtml}${orbsHtml}${plusHtml}`;
   dockHotbarEl.classList.remove("hidden");
   requestAnimationFrame(() => showHotbar(true));
 }
@@ -1563,6 +1845,7 @@ function workspaceAddCandidates() {
   return Array.from(panelRegistry.keys())
     .filter((id) => Boolean(getPanelElement(id)))
     .filter((id) => !id.startsWith("chat:post:"))
+    .filter((id) => !isRightRackFixedPanel(id))
     .filter((id) => id !== "profile")
     .filter((id) => !(id === "moderation" && !canModerate))
     .map((id) => ({
@@ -1574,10 +1857,16 @@ function workspaceAddCandidates() {
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
-function restorePanelToWorkspaceSlot(panelId, slotId) {
+function restorePanelToWorkspaceSlot(panelId, slotId, opts) {
   const id = String(panelId || "").trim();
   const slot = String(slotId || "").trim();
   if (!id || !slot) return;
+  const options = opts && typeof opts === "object" ? opts : {};
+  const userAdded = options.userAdded === true;
+  if (workspaceInfiniteMode()) {
+    restorePanelFromHotbar(id, { userAdded });
+    return;
+  }
   const target = slot === "workspaceRightSlot" ? ensureWorkspaceRightRack() : ensureWorkspaceLeftRack();
   if (!(target instanceof HTMLElement)) return;
   const panelEl = getPanelElement(id);
@@ -1594,6 +1883,11 @@ function restorePanelToWorkspaceSlot(panelId, slotId) {
   applyDockState();
   syncRackStateFromDom();
   enforceWorkspaceRules();
+  if (userAdded) {
+    requestAnimationFrame(() => {
+      focusWorkspaceArrival(panelEl);
+    });
+  }
 }
 
 function openWorkspaceAddMenu(anchorEl, slotId) {
@@ -1620,7 +1914,7 @@ function openWorkspaceAddMenu(anchorEl, slotId) {
     const id = String(btn.getAttribute("data-workspaceaddpanel") || "").trim();
     const slotIdNext = String(btn.getAttribute("data-workspaceaddslot") || "").trim();
     if (!id || !slotIdNext) return;
-    restorePanelToWorkspaceSlot(id, slotIdNext);
+    restorePanelToWorkspaceSlot(id, slotIdNext, { userAdded: true });
     closeWorkspaceAddMenu();
   });
   document.body.appendChild(menu);
@@ -1680,6 +1974,10 @@ function applyDockState() {
   for (const [id, p] of panelRegistry.entries()) {
     const el = p?.element;
     if (!(el instanceof HTMLElement)) continue;
+    if (rackLayoutEnabled && isRightRackFixedPanel(id)) {
+      el.classList.remove("hidden");
+      continue;
+    }
     if (id === "moderation" && !canModerate) {
       el.classList.add("hidden");
       continue;
@@ -1691,10 +1989,12 @@ function applyDockState() {
   updateSideRackEmptyState();
   updateSkinnyChatPanels();
   renderWorkspaceSlotAffordances();
+  applyAllWorkspacePanelSizes();
 }
 
 function renderWorkspaceSlotAffordances() {
   if (!rackLayoutEnabled) return;
+  if (workspaceInfiniteMode()) return;
   const left = ensureWorkspaceLeftRack();
   const right = ensureWorkspaceRightRack();
   for (const slot of [left, right]) {
@@ -1726,6 +2026,36 @@ function readRackOrder(rackEl) {
 
 function applyRackStateToDom() {
   if (!rackLayoutEnabled) return;
+  if (workspaceInfiniteMode()) {
+    ensurePluginRackPanel();
+    const workspace = ensureWorkspaceStripRack();
+    const rightRack = ensureRightRack();
+    if (!(workspace instanceof HTMLElement)) return;
+    const combinedOrder = [
+      ...(Array.isArray(rackLayoutState?.racks?.workspaceLeft) ? rackLayoutState.racks.workspaceLeft : []),
+      ...(Array.isArray(rackLayoutState?.racks?.workspaceRight) ? rackLayoutState.racks.workspaceRight : []),
+      ...(Array.isArray(rackLayoutState?.racks?.side) ? rackLayoutState.racks.side : []),
+      ...(Array.isArray(rackLayoutState?.racks?.right) ? rackLayoutState.racks.right : []),
+    ];
+    for (const panelId of combinedOrder) {
+      if (isRightRackFixedPanel(panelId)) continue;
+      const el = getPanelElement(panelId);
+      if (!el) continue;
+      if (isDocked(panelId)) continue;
+      workspace.appendChild(el);
+      applyPanelWorkspaceSize(el);
+    }
+    const rightPanel = getPanelElement(RIGHT_RACK_FIXED_PANEL_ID);
+    if (
+      rightRack instanceof HTMLElement &&
+      rightPanel instanceof HTMLElement &&
+      !isDocked(RIGHT_RACK_FIXED_PANEL_ID) &&
+      rightPanel.parentElement !== rightRack
+    ) {
+      rightRack.appendChild(rightPanel);
+    }
+    return;
+  }
   // Ensure core "virtual" panels exist before we try to place them.
   ensurePluginRackPanel();
   const left = ensureWorkspaceLeftRack();
@@ -1789,6 +2119,43 @@ function writeWorkspaceActivePrimary(panelId) {
 
 function enforceWorkspaceRules() {
   if (!rackLayoutEnabled) return;
+  if (workspaceInfiniteMode()) {
+    const workspace = ensureWorkspaceStripRack();
+    const rightRack = ensureRightRack();
+    if (!(workspace instanceof HTMLElement)) return;
+    if (!(rightRack instanceof HTMLElement)) return;
+    const candidatePanels = Array.from(
+      appRoot.querySelectorAll(
+        "#mainWorkspaceRack > .rackPanel, #workspaceLeftSlot > .rackPanel, #workspaceRightSlot > .rackPanel, #mainSideRack > .rackPanel, #rightRack > .rackPanel"
+      )
+    );
+    for (const panel of candidatePanels) {
+      if (!(panel instanceof HTMLElement)) continue;
+      const panelId = String(panel.dataset.panelId || "").trim();
+      if (!panelId) continue;
+      if (isRightRackFixedPanel(panelId)) {
+        if (rightRack instanceof HTMLElement && panel.parentElement !== rightRack) rightRack.appendChild(panel);
+        panel.classList.remove("hidden");
+        continue;
+      }
+      if (isDocked(panelId)) continue;
+      if (panel.parentElement !== workspace) workspace.appendChild(panel);
+      applyPanelWorkspaceSize(panel);
+    }
+    if (rackLayoutState?.docked?.bottom?.includes?.(RIGHT_RACK_FIXED_PANEL_ID)) {
+      rackLayoutState.docked.bottom = rackLayoutState.docked.bottom.filter((x) => x !== RIGHT_RACK_FIXED_PANEL_ID);
+    }
+    const peoplePanel = getPanelElement(RIGHT_RACK_FIXED_PANEL_ID);
+    if (rightRack instanceof HTMLElement && peoplePanel instanceof HTMLElement && peoplePanel.parentElement !== rightRack) {
+      rightRack.appendChild(peoplePanel);
+    }
+    if (appRoot) {
+      appRoot.classList.remove("workspaceExpandedLeft", "workspaceExpandedRight", "workspaceSingleLeft", "workspaceSingleRight");
+    }
+    syncRackStateFromDom();
+    updateWorkspaceMinView();
+    return;
+  }
   const left = ensureWorkspaceLeftRack();
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
@@ -1931,6 +2298,22 @@ function installWorkspaceInteractions() {
 
 function syncRackStateFromDom() {
   if (!rackLayoutEnabled) return;
+  if (workspaceInfiniteMode()) {
+    const workspace = ensureWorkspaceStripRack();
+    const right = ensureRightRack();
+    if (!(workspace instanceof HTMLElement)) return;
+    const workspaceIds = readRackOrder(workspace).filter((id) => !isRightRackFixedPanel(id));
+    const rightIds = right instanceof HTMLElement ? readRackOrder(right).filter((id) => isRightRackFixedPanel(id)) : [];
+    rackLayoutState.racks = {
+      workspaceLeft: workspaceIds,
+      workspaceRight: [],
+      side: [],
+      right: rightIds,
+    };
+    rackLayoutState.pluginRackWidgets = readPluginRackWidgetsOrder();
+    saveRackLayoutState();
+    return;
+  }
   const left = ensureWorkspaceLeftRack();
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
@@ -2010,11 +2393,13 @@ function ensureMainSideRack() {
 }
 
 function ensureWorkspaceLeftRack() {
+  if (workspaceInfiniteMode()) return ensureWorkspaceStripRack();
   const { left } = ensureWorkspaceSlots();
   return left instanceof HTMLElement ? left : null;
 }
 
 function ensureWorkspaceRightRack() {
+  if (workspaceInfiniteMode()) return ensureWorkspaceStripRack();
   const { right } = ensureWorkspaceSlots();
   return right instanceof HTMLElement ? right : null;
 }
@@ -2022,12 +2407,14 @@ function ensureWorkspaceRightRack() {
 function enableRackLayoutDom() {
   if (!appRoot) return;
   appRoot.classList.add("rackMode");
+  appRoot.classList.toggle("workspaceInfinite", workspaceInfiniteMode());
   const rack = ensureRightRack();
   if (!rack) return;
   const main = ensureMainRack();
   const left = ensureWorkspaceLeftRack();
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
+  const workspaceStrip = ensureWorkspaceStripRack();
 
   const mark = (el, panelId) => {
     if (!el) return;
@@ -2039,8 +2426,9 @@ function enableRackLayoutDom() {
   // (This is a stepping stone toward full dockable panels.)
   if (chatPanelEl) {
     mark(chatPanelEl, "chat");
-    // Chat is a workspace primary in rack mode by default; enforceWorkspaceRules will manage if moved.
-    if (rightWorkspace && chatPanelEl.parentElement !== rightWorkspace) rightWorkspace.appendChild(chatPanelEl);
+    if (workspaceInfiniteMode()) {
+      if (workspaceStrip && chatPanelEl.parentElement !== workspaceStrip) workspaceStrip.appendChild(chatPanelEl);
+    } else if (rightWorkspace && chatPanelEl.parentElement !== rightWorkspace) rightWorkspace.appendChild(chatPanelEl);
   }
   if (peopleDrawerEl) {
     mark(peopleDrawerEl, "people");
@@ -2048,29 +2436,39 @@ function enableRackLayoutDom() {
   }
   if (modPanelEl) {
     mark(modPanelEl, "moderation");
-    if (modPanelEl.parentElement !== rack) rack.appendChild(modPanelEl);
+    if (workspaceInfiniteMode()) {
+      if (workspaceStrip && modPanelEl.parentElement !== workspaceStrip) workspaceStrip.appendChild(modPanelEl);
+    } else if (modPanelEl.parentElement !== rack) rack.appendChild(modPanelEl);
   }
 
   // Mark center panels as rack panels too (they already live in mainRack in normal DOM).
   if (main) {
     if (onboardingPanelEl) {
       mark(onboardingPanelEl, "onboarding");
-      if (left && onboardingPanelEl.parentElement !== left) left.appendChild(onboardingPanelEl);
+      if (workspaceInfiniteMode()) {
+        if (workspaceStrip && onboardingPanelEl.parentElement !== workspaceStrip) workspaceStrip.appendChild(onboardingPanelEl);
+      } else if (left && onboardingPanelEl.parentElement !== left) left.appendChild(onboardingPanelEl);
       onboardingPanelEl.classList.remove("hidden");
     }
     if (hivesPanelEl) {
       mark(hivesPanelEl, "hives");
-      if (left && hivesPanelEl.parentElement !== left) left.appendChild(hivesPanelEl);
+      if (workspaceInfiniteMode()) {
+        if (workspaceStrip && hivesPanelEl.parentElement !== workspaceStrip) workspaceStrip.appendChild(hivesPanelEl);
+      } else if (left && hivesPanelEl.parentElement !== left) left.appendChild(hivesPanelEl);
     }
     if (profileViewPanel) {
       mark(profileViewPanel, "profile");
-      if (side && profileViewPanel.parentElement !== side) side.appendChild(profileViewPanel);
+      if (workspaceInfiniteMode()) {
+        if (workspaceStrip && profileViewPanel.parentElement !== workspaceStrip) workspaceStrip.appendChild(profileViewPanel);
+      } else if (side && profileViewPanel.parentElement !== side) side.appendChild(profileViewPanel);
       // In rack mode, profile is its own panel; don't keep it hidden behind the legacy center-view toggle.
       profileViewPanel.classList.remove("hidden");
     }
     if (pollinatePanel) {
       mark(pollinatePanel, "composer");
-      if (side && pollinatePanel.parentElement !== side) side.appendChild(pollinatePanel);
+      if (workspaceInfiniteMode()) {
+        if (workspaceStrip && pollinatePanel.parentElement !== workspaceStrip) workspaceStrip.appendChild(pollinatePanel);
+      } else if (side && pollinatePanel.parentElement !== side) side.appendChild(pollinatePanel);
     }
   }
 
@@ -2088,11 +2486,15 @@ function enableRackLayoutDom() {
 
   // Profile panel no longer "replaces" the feed in rack mode, so the back button is confusing.
   profileBackBtn?.classList.add("hidden");
+  applyAllWorkspacePanelSizes();
+  installWorkspaceScrollSnapStep();
+  updateWorkspaceMinView();
 }
 
 function disableRackLayoutDom() {
   if (!appRoot) return;
   appRoot.classList.remove("rackMode");
+  appRoot.classList.remove("workspaceInfinite");
   // No attempt to move elements back (yet). Disable is meant for page reload use.
 }
 
@@ -2105,10 +2507,8 @@ function applyPreset(presetId) {
     return;
   }
 
-  // Presets are hard-applied: clear any hosted widgets so placement remains deterministic.
+  // Keep hosted widgets alive across preset switches so panel runtime state is preserved.
   closePluginRackAddMenu();
-  for (const id of readPluginRackWidgetsOrder()) removePanelFromPluginRack(id);
-  rackLayoutState.pluginRackWidgets = [];
 
   rackLayoutState.presetId = def.presetId || key;
 
@@ -2134,13 +2534,65 @@ function applyPreset(presetId) {
   const rightRack = ensureRightRack();
   if (!leftRack || !rightWorkspaceRack || !sideRack || !rightRack) return;
 
-  const placed = new Set([...workspaceLeftOrder, ...workspaceRightOrder, ...sideOrder, ...rightOrder]);
-  const docked = new Set(Array.isArray(def.dockBottom) ? def.dockBottom.map((x) => String(x || "")).filter(Boolean) : []);
-  for (const id of placed) docked.delete(id);
+  if (workspaceInfiniteMode()) {
+    const workspace = ensureWorkspaceStripRack();
+    if (!(workspace instanceof HTMLElement)) return;
+    const order = [...workspaceLeftOrder, ...workspaceRightOrder, ...sideOrder, ...rightOrder].filter((id) => !isRightRackFixedPanel(id));
+    const placed = new Set(order);
+    const presetDocked = new Set(
+      (Array.isArray(def.dockBottom) ? def.dockBottom.map((x) => String(x || "")).filter(Boolean) : []).filter((id) => !isRightRackFixedPanel(id))
+    );
+    const affectedByPreset = new Set([...placed, ...presetDocked]);
+    const docked = new Set(Array.isArray(rackLayoutState?.docked?.bottom) ? rackLayoutState.docked.bottom : []);
+    for (const id of affectedByPreset) docked.delete(id);
+    for (const id of presetDocked) docked.add(id);
+    for (const id of placed) docked.delete(id);
+    // Core presets should not unexpectedly surface plugin panels unless explicitly placed.
+    for (const [panelId] of panelRegistry.entries()) {
+      if (!panelIsPluginOwned(panelId)) continue;
+      if (placed.has(panelId) || presetDocked.has(panelId)) continue;
+      docked.add(panelId);
+    }
+    if (!canModerate) docked.add("moderation");
+    rackLayoutState.docked.bottom = Array.from(docked);
+    saveRackLayoutState();
+    applyDockState();
+    for (const panelId of order) {
+      if (docked.has(panelId)) continue;
+      const el = getPanelElement(panelId);
+      if (!el) continue;
+      workspace.appendChild(el);
+      applyPanelWorkspaceSize(el);
+    }
+    syncRackStateFromDom();
+    enforceWorkspaceRules();
+    updateLayoutPresetOptions();
+    requestAnimationFrame(() => {
+      try {
+        workspace.scrollTo({ left: 0, behavior: "auto" });
+      } catch {
+        // ignore
+      }
+    });
+    return;
+  }
 
-  // Default: anything not explicitly placed by the preset goes to the hotbar.
-  for (const id of Array.from(panelRegistry.keys())) {
-    if (!placed.has(id)) docked.add(id);
+  const placed = new Set([...workspaceLeftOrder, ...workspaceRightOrder, ...sideOrder, ...rightOrder]);
+  const presetDocked = new Set(
+    (Array.isArray(def.dockBottom) ? def.dockBottom.map((x) => String(x || "")).filter(Boolean) : []).filter((id) => !isRightRackFixedPanel(id))
+  );
+  const affectedByPreset = new Set([...placed, ...presetDocked]);
+  // Apply preset intent only to panels explicitly named by the preset.
+  // Dynamic panels (for example chat instances) keep their current dock/placement state.
+  const docked = new Set(Array.isArray(rackLayoutState?.docked?.bottom) ? rackLayoutState.docked.bottom : []);
+  for (const id of affectedByPreset) docked.delete(id);
+  for (const id of presetDocked) docked.add(id);
+  for (const id of placed) docked.delete(id);
+  // Keep plugin-owned panels out of core layouts unless preset explicitly names them.
+  for (const [panelId] of panelRegistry.entries()) {
+    if (!panelIsPluginOwned(panelId)) continue;
+    if (placed.has(panelId) || presetDocked.has(panelId)) continue;
+    docked.add(panelId);
   }
 
   // Moderation panel should not be forced visible for non-mods.
@@ -2157,41 +2609,31 @@ function applyPreset(presetId) {
   saveRackLayoutState();
   applyDockState();
 
-  // Detach all known panels before re-placing, so we don't end up with "stale" panels sticking in old racks.
-  const elsById = new Map();
-  for (const id of Array.from(panelRegistry.keys())) {
-    const el = getPanelElement(id);
-    if (el) elsById.set(id, el);
-  }
-  for (const el of elsById.values()) {
-    if (el.parentElement) el.parentElement.removeChild(el);
-  }
-
   if (leftRack) {
     for (const panelId of workspaceLeftOrder) {
       if (docked.has(panelId)) continue;
-      const el = elsById.get(panelId) || getPanelElement(panelId);
+      const el = getPanelElement(panelId);
       if (el) leftRack.appendChild(el);
     }
   }
   if (rightWorkspaceRack) {
     for (const panelId of workspaceRightOrder) {
       if (docked.has(panelId)) continue;
-      const el = elsById.get(panelId) || getPanelElement(panelId);
+      const el = getPanelElement(panelId);
       if (el) rightWorkspaceRack.appendChild(el);
     }
   }
   if (sideRack) {
     for (const panelId of sideOrder) {
       if (docked.has(panelId)) continue;
-      const el = elsById.get(panelId) || getPanelElement(panelId);
+      const el = getPanelElement(panelId);
       if (el) sideRack.appendChild(el);
     }
   }
   if (rightRack) {
     for (const panelId of rightOrder) {
       if (docked.has(panelId)) continue;
-      const el = elsById.get(panelId) || getPanelElement(panelId);
+      const el = getPanelElement(panelId);
       if (el) rightRack.appendChild(el);
     }
   }
@@ -2216,30 +2658,7 @@ function installPanelMinimizeButtons() {
       row.appendChild(drag);
     }
 
-    if (panelIsSkinnyCapable(panelId) && !headerEl.querySelector(`[data-skinny="${panelId}"]`)) {
-      const skinny = document.createElement("button");
-      skinny.type = "button";
-      skinny.className = "ghost smallBtn";
-      skinny.textContent = "↔";
-      skinny.title = "Toggle skinny/full";
-      skinny.setAttribute("data-skinny", panelId);
-      skinny.onclick = () => togglePanelSkinny(panelId);
-      row.appendChild(skinny);
-    }
-    if (!panelIsSkinnyCapable(panelId)) {
-      headerEl.querySelector(`[data-skinny="${cssEscape(panelId)}"]`)?.remove();
-    }
-
-    if (panelCanExpand(panelId) && !headerEl.querySelector(`[data-expand="${panelId}"]`)) {
-      const expand = document.createElement("button");
-      expand.type = "button";
-      expand.className = "ghost smallBtn";
-      expand.textContent = "□";
-      expand.title = "Expand workspace";
-      expand.setAttribute("data-expand", panelId);
-      expand.onclick = () => togglePrimaryExpand(panelId);
-      row.appendChild(expand);
-    }
+    installPanelSizeButtons(headerEl, panelId);
 
     if (!headerEl.querySelector(`[data-minimize="${panelId}"]`)) {
       const btn = document.createElement("button");
@@ -2255,7 +2674,6 @@ function installPanelMinimizeButtons() {
 
   addMinBtn(chatHeaderEl, "chat");
   addMinBtn(modPanelEl?.querySelector(".panelHeader"), "moderation");
-  addMinBtn(peopleDrawerEl?.querySelector(".panelHeader"), "people");
   addMinBtn(hivesPanelEl?.querySelector(".panelHeader"), "hives");
   addMinBtn(profileViewPanel?.querySelector(".panelHeader"), "profile");
   addMinBtn(pollinatePanel?.querySelector(".panelHeader"), "composer");
@@ -2302,25 +2720,12 @@ function ensurePluginPanelShell(panelId, title, icon, defaultRack, role) {
     </div>
     <div class="panelBody" data-pluginmount="1"></div>
   `;
-
+  installPanelSizeButtons(shell.querySelector(".panelHeader"), panelId);
   const minBtn = shell.querySelector(`[data-minimize="${panelId}"]`);
-  if (isPrimary || panelCanExpand(panelId)) {
-    const headerRow = shell.querySelector(".panelHeader .row");
-    if (headerRow && !headerRow.querySelector(`[data-expand="${panelId}"]`)) {
-      const expand = document.createElement("button");
-      expand.type = "button";
-      expand.className = "ghost smallBtn";
-      expand.textContent = "□";
-      expand.title = "Expand workspace";
-      expand.setAttribute("data-expand", panelId);
-      expand.addEventListener("click", () => togglePrimaryExpand(panelId));
-      if (minBtn && minBtn.parentElement === headerRow) headerRow.insertBefore(expand, minBtn);
-      else headerRow.appendChild(expand);
-    }
-  }
   if (minBtn) minBtn.addEventListener("click", () => dockPanel(panelId));
 
   rack.appendChild(shell);
+  applyPanelWorkspaceSize(shell);
   return shell;
 }
 
@@ -2346,8 +2751,11 @@ function ensureChatPostPanelInstance(postId, opts) {
       </div>
       <div class="row">
         <button type="button" class="ghost smallBtn rackDragHandle" data-rackdrag="${escapeHtml(panelId)}" title="Drag to reorder">≡</button>
-        <button type="button" class="ghost smallBtn" data-skinny="${escapeHtml(panelId)}" title="Toggle skinny/full">↔</button>
-        <button type="button" class="ghost smallBtn" data-expand="${escapeHtml(panelId)}" title="Expand workspace">□</button>
+        <div class="panelSizeControls" data-panelsizerow="${escapeHtml(panelId)}">
+          <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="skinny" data-panelid="${escapeHtml(panelId)}" title="Skinny width">S</button>
+          <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="half" data-panelid="${escapeHtml(panelId)}" title="Half width">H</button>
+          <button type="button" class="ghost smallBtn panelSizeBtn" data-panelsize="full" data-panelid="${escapeHtml(panelId)}" title="Full width">F</button>
+        </div>
         <button type="button" class="ghost smallBtn" data-minimize="${escapeHtml(panelId)}" title="Minimize to hotbar">-</button>
       </div>
     </div>
@@ -2390,8 +2798,7 @@ function ensureChatPostPanelInstance(postId, opts) {
   const modToggleEl = shell.querySelector(".chatInstModToggleInput");
 
   shell.querySelector(`[data-minimize="${cssEscape(panelId)}"]`)?.addEventListener("click", () => dockPanel(panelId));
-  shell.querySelector(`[data-expand="${cssEscape(panelId)}"]`)?.addEventListener("click", () => togglePrimaryExpand(panelId));
-  shell.querySelector(`[data-skinny="${cssEscape(panelId)}"]`)?.addEventListener("click", () => togglePanelSkinny(panelId));
+  refreshPanelSizeButtons(panelId);
 
   if (formEl && editorEl) {
     formEl.addEventListener("submit", (e) => {
@@ -2473,6 +2880,7 @@ function ensureChatPostPanelInstance(postId, opts) {
     syncRackStateFromDom();
     enforceWorkspaceRules();
   }
+  applyPanelWorkspaceSize(shell);
 
   renderChatPostPanelInstance(panelId, true);
   return panelId;
@@ -2801,13 +3209,16 @@ function applyPluginPresetHint(panelDef) {
 
 function enableRackDnD() {
   if (!rackLayoutEnabled) return;
+  const pluginWidgets = ensurePluginRackWidgetsRack();
+  const workspaceRack = ensureWorkspaceStripRack();
   const right = ensureRightRack();
   const left = ensureWorkspaceLeftRack();
   const rightWorkspace = ensureWorkspaceRightRack();
   const side = ensureMainSideRack();
-  if (!right || !left || !rightWorkspace || !side) return;
-  const pluginWidgets = ensurePluginRackWidgetsRack();
-  const racks = [left, rightWorkspace, side, right, pluginWidgets].filter((x) => x instanceof HTMLElement);
+  if (!workspaceInfiniteMode() && (!right || !left || !rightWorkspace || !side)) return;
+  const racks = workspaceInfiniteMode()
+    ? [workspaceRack, pluginWidgets].filter((x) => x instanceof HTMLElement)
+    : [left, rightWorkspace, side, right, pluginWidgets].filter((x) => x instanceof HTMLElement);
 
   // Guard against double-install if initRackLayout is called more than once.
   if (appRoot?.dataset?.rackDnd === "1") return;
@@ -2902,6 +3313,10 @@ function enableRackDnD() {
       e.preventDefault();
       const targetRack = placeholderEl?.parentElement || activeRack;
       if (targetRack && placeholderEl && placeholderEl.parentElement === targetRack) {
+        if (workspaceInfiniteMode()) {
+          targetRack.insertBefore(draggingEl, placeholderEl);
+          if (targetRack.id === "pluginRackWidgetsRack") draggingEl.classList.add("pluginRackWidget");
+        } else {
         const isWorkspaceSlot = targetRack.id === "workspaceLeftSlot" || targetRack.id === "workspaceRightSlot";
         const isRightRackSlot = targetRack.id === "rightRack";
         const isSideRackSlot = targetRack.id === "mainSideRack";
@@ -2946,11 +3361,15 @@ function enableRackDnD() {
           targetRack.insertBefore(draggingEl, placeholderEl);
         }
         if (isPluginRackWidgets) draggingEl.classList.add("pluginRackWidget");
+        }
       }
     const shouldDock = Boolean(dockHotbarEl && e.clientY > window.innerHeight - 90);
     const dockId = draggingPanelId;
+    const droppedEl = draggingEl;
+    const droppedRackId = String(targetRack?.id || "");
     cleanup();
     if (shouldDock && dockId) dockPanel(dockId);
+    if (!shouldDock && droppedEl instanceof HTMLElement) applyPanelWorkspaceSize(droppedEl);
     syncRackStateFromDom();
     enforceWorkspaceRules();
   };
@@ -3118,6 +3537,18 @@ function initRackLayout() {
     applyPreset("onboardingDefault");
   }
   installPanelMinimizeButtons();
+  if (appRoot && appRoot.dataset.panelSizeControls !== "1") {
+    appRoot.dataset.panelSizeControls = "1";
+    appRoot.addEventListener("click", (e) => {
+      const btn = e.target?.closest?.("[data-panelsize][data-panelid]");
+      if (!(btn instanceof HTMLElement)) return;
+      const panelId = String(btn.getAttribute("data-panelid") || "").trim();
+      const size = String(btn.getAttribute("data-panelsize") || "").trim().toLowerCase();
+      if (!panelId) return;
+      setPanelWorkspaceSize(panelId, size);
+      applyAllWorkspacePanelSizes();
+    });
+  }
   enableRackDnD();
   installWorkspaceInteractions();
   enforceWorkspaceRules();
@@ -3127,9 +3558,15 @@ function initRackLayout() {
   if (dockHotbarEl) {
     dockHotbarEl.onmouseenter = null;
     dockHotbarEl.onmouseleave = null;
-    // Docked items must be restored via drag-and-drop (click does nothing), but the "+" orb is clickable.
+    // Click restores a panel to workspace; drag still supports precise placement.
     dockHotbarEl.onclick = (e) => {
       if (dockHotbarEl.dataset.dragging === "1") return;
+      const restoreBtn = e.target.closest?.("[data-undock]");
+      if (restoreBtn) {
+        const id = String(restoreBtn.getAttribute("data-undock") || "").trim();
+        if (id) restorePanelFromHotbar(id, { userAdded: true });
+        return;
+      }
       const plus = e.target.closest?.("[data-hotbarplus]");
       if (!plus) return;
       if (hotbarPlusMenuEl) closeHotbarPlusMenu();
@@ -3184,6 +3621,11 @@ function initRackLayout() {
     const resolveOrbDropRack = (panelId, rackEl) => {
       const id = String(panelId || "").trim();
       if (!id) return rackEl;
+      if (workspaceInfiniteMode()) {
+        if (isRightRackFixedPanel(id)) return ensureRightRack() || rackEl;
+        if (rackEl && rackEl.id === "pluginRackWidgetsRack" && panelIsHostableInPluginRack(id)) return rackEl;
+        return ensureWorkspaceStripRack() || rackEl;
+      }
       if (rackEl && rackEl.id === "pluginRackWidgetsRack") {
         if (panelIsHostableInPluginRack(id)) return rackEl;
         const left = ensureWorkspaceLeftRack();
@@ -3226,6 +3668,11 @@ function initRackLayout() {
     };
 
     const orbRacks = () => {
+      if (workspaceInfiniteMode()) {
+        const workspaceRack = ensureWorkspaceStripRack();
+        const pluginWidgetsRack = ensurePluginRackWidgetsRack();
+        return [workspaceRack, pluginWidgetsRack].filter((x) => x instanceof HTMLElement);
+      }
       const leftRack = ensureWorkspaceLeftRack();
       const rightWorkspaceRack = ensureWorkspaceRightRack();
       const sideRack = ensureMainSideRack();
@@ -3255,21 +3702,22 @@ function initRackLayout() {
         if (rack.id === "rightRack") setRightCollapsed(false);
 
         undockPanel(id);
-
-        const isWorkspaceSlot = rack.id === "workspaceLeftSlot" || rack.id === "workspaceRightSlot";
-        const isRightRackSlot = rack.id === "rightRack";
-        if (isWorkspaceSlot) {
-          const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
-          if (existing instanceof HTMLElement && existing !== panelEl) {
-            const existingId = String(existing.dataset.panelId || "").trim();
-            if (existingId) dockPanel(existingId);
+        if (!workspaceInfiniteMode()) {
+          const isWorkspaceSlot = rack.id === "workspaceLeftSlot" || rack.id === "workspaceRightSlot";
+          const isRightRackSlot = rack.id === "rightRack";
+          if (isWorkspaceSlot) {
+            const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+            if (existing instanceof HTMLElement && existing !== panelEl) {
+              const existingId = String(existing.dataset.panelId || "").trim();
+              if (existingId) dockPanel(existingId);
+            }
           }
-        }
-        if (isRightRackSlot) {
-          const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
-          if (existing instanceof HTMLElement && existing !== panelEl) {
-            const existingId = String(existing.dataset.panelId || "").trim();
-            if (existingId) dockPanel(existingId);
+          if (isRightRackSlot) {
+            const existing = rack.querySelector?.(":scope > .rackPanel:not(.hidden)");
+            if (existing instanceof HTMLElement && existing !== panelEl) {
+              const existingId = String(existing.dataset.panelId || "").trim();
+              if (existingId) dockPanel(existingId);
+            }
           }
         }
 
@@ -3281,11 +3729,17 @@ function initRackLayout() {
           if (insertBefore) rack.insertBefore(panelEl, insertBefore);
           else rack.appendChild(panelEl);
         }
+        applyPanelWorkspaceSize(panelEl);
         if (rack.id === "pluginRackWidgetsRack") panelEl.classList.add("pluginRackWidget");
         rememberPanelLastRack(id, rack.id);
         saveRackLayoutState();
         syncRackStateFromDom();
         enforceWorkspaceRules();
+        if (isWorkspaceRackId(rack.id)) {
+          requestAnimationFrame(() => {
+            focusWorkspaceArrival(panelEl);
+          });
+        }
       };
 
     dockHotbarEl.addEventListener("pointerdown", (e) => {
@@ -3426,6 +3880,7 @@ function writeChatEnterModePref(mode) {
 }
 
 let instanceBranding = { title: "Bzl", subtitle: "Ephemeral hives + chat", allowMemberPermanentPosts: false, appearance: {} };
+let userAppearanceOverride = null;
 let onboardingState = {
   enabled: true,
   rulesVersion: 1,
@@ -3461,8 +3916,8 @@ const THEME_PRESETS = [
       fontMono: "mono",
       mutedPct: 65,
       linePct: 10,
-      panel2Pct: 2
-    }
+      panel2Pct: 2,
+    },
   },
   {
     id: "midnight_cyan",
@@ -3474,13 +3929,13 @@ const THEME_PRESETS = [
       accent: "#2bf5d6",
       accent2: "#4aa0ff",
       good: "#2bf5d6",
-      bad: "#ff4d8a",
-      fontBody: "system",
+      bad: "#ff5c8a",
+      fontBody: "clean",
       fontMono: "mono",
       mutedPct: 64,
       linePct: 10,
-      panel2Pct: 2
-    }
+      panel2Pct: 2,
+    },
   },
   {
     id: "warm_amber",
@@ -3490,33 +3945,15 @@ const THEME_PRESETS = [
       panel: "#17100e",
       text: "#fff2ea",
       accent: "#ffb020",
-      accent2: "#ff3ea5",
-      good: "#3ddc97",
-      bad: "#ff4d8a",
+      accent2: "#ff6b3d",
+      good: "#56dba3",
+      bad: "#ff5b6a",
       fontBody: "serif",
       fontMono: "mono",
       mutedPct: 66,
       linePct: 11,
-      panel2Pct: 3
-    }
-  },
-  {
-    id: "slate_violet",
-    name: "Slate Violet",
-    appearance: {
-      bg: "#080a10",
-      panel: "#101522",
-      text: "#eef0ff",
-      accent: "#9b8cff",
-      accent2: "#ff3ea5",
-      good: "#3ddc97",
-      bad: "#ff4d8a",
-      fontBody: "system",
-      fontMono: "mono",
-      mutedPct: 62,
-      linePct: 9,
-      panel2Pct: 2
-    }
+      panel2Pct: 3,
+    },
   },
   {
     id: "terminal_green",
@@ -3533,8 +3970,8 @@ const THEME_PRESETS = [
       fontMono: "mono",
       mutedPct: 58,
       linePct: 12,
-      panel2Pct: 2
-    }
+      panel2Pct: 2,
+    },
   },
   {
     id: "high_contrast",
@@ -3547,32 +3984,213 @@ const THEME_PRESETS = [
       accent2: "#00d3ff",
       good: "#00ff85",
       bad: "#ff2d55",
-      fontBody: "system",
+      fontBody: "condensed",
       fontMono: "mono",
       mutedPct: 70,
       linePct: 16,
-      panel2Pct: 3
-    }
+      panel2Pct: 3,
+    },
   },
   {
-    id: "lavender_mist",
-    name: "Lavender Mist",
+    id: "paper_ink",
+    name: "Paper Ink",
     appearance: {
-      bg: "#070611",
-      panel: "#120c1b",
-      text: "#f7f3ff",
-      accent: "#c9a3ff",
-      accent2: "#ff79c6",
-      good: "#3ddc97",
-      bad: "#ff4d8a",
-      fontBody: "system",
+      bg: "#f2ecdf",
+      panel: "#e7decd",
+      text: "#2e251d",
+      accent: "#1d5eff",
+      accent2: "#b44f2b",
+      good: "#2f9f63",
+      bad: "#c84545",
+      fontBody: "slab",
       fontMono: "mono",
-      mutedPct: 68,
+      mutedPct: 46,
+      linePct: 14,
+      panel2Pct: 5,
+    },
+  },
+  {
+    id: "sunset_neon",
+    name: "Sunset Neon",
+    appearance: {
+      bg: "#13070f",
+      panel: "#1f0c18",
+      text: "#ffeaf7",
+      accent: "#ff7a00",
+      accent2: "#ff2ea8",
+      good: "#2be7b0",
+      bad: "#ff4f70",
+      fontBody: "rounded",
+      fontMono: "mono",
+      mutedPct: 62,
+      linePct: 11,
+      panel2Pct: 4,
+    },
+  },
+  {
+    id: "ocean_depth",
+    name: "Ocean Depth",
+    appearance: {
+      bg: "#031119",
+      panel: "#082130",
+      text: "#d7f2ff",
+      accent: "#28c7ff",
+      accent2: "#3d78ff",
+      good: "#28e6a1",
+      bad: "#ff5e84",
+      fontBody: "humanist",
+      fontMono: "clean",
+      mutedPct: 61,
       linePct: 10,
-      panel2Pct: 3
-    }
-  }
+      panel2Pct: 3,
+    },
+  },
+  {
+    id: "retro_arcade",
+    name: "Retro Arcade",
+    appearance: {
+      bg: "#09040f",
+      panel: "#13081c",
+      text: "#f7dcff",
+      accent: "#2dff89",
+      accent2: "#ffea00",
+      good: "#32ff9f",
+      bad: "#ff4f8b",
+      fontBody: "condensed",
+      fontMono: "mono",
+      mutedPct: 60,
+      linePct: 13,
+      panel2Pct: 3,
+    },
+  },
+  {
+    id: "forest_moss",
+    name: "Forest Moss",
+    appearance: {
+      bg: "#08120b",
+      panel: "#102016",
+      text: "#e8f7ea",
+      accent: "#80c96a",
+      accent2: "#2fae95",
+      good: "#5fd48b",
+      bad: "#e6626f",
+      fontBody: "serif",
+      fontMono: "humanist",
+      mutedPct: 60,
+      linePct: 9,
+      panel2Pct: 4,
+    },
+  },
+  {
+    id: "noir_redline",
+    name: "Noir Redline",
+    appearance: {
+      bg: "#0a090a",
+      panel: "#151114",
+      text: "#f8f4f6",
+      accent: "#ff3d52",
+      accent2: "#9aa0a6",
+      good: "#4dd79c",
+      bad: "#ff3d52",
+      fontBody: "clean",
+      fontMono: "mono",
+      mutedPct: 67,
+      linePct: 14,
+      panel2Pct: 3,
+    },
+  },
+  {
+    id: "mist_ui",
+    name: "Mist UI",
+    appearance: {
+      bg: "#f3f7fb",
+      panel: "#e6edf5",
+      text: "#1d2833",
+      accent: "#2e76ff",
+      accent2: "#34b3ff",
+      good: "#21a56d",
+      bad: "#cf4d66",
+      fontBody: "clean",
+      fontMono: "system",
+      mutedPct: 48,
+      linePct: 12,
+      panel2Pct: 6,
+    },
+  },
+  {
+    id: "calculator_lcd",
+    name: "Calculator LCD",
+    appearance: {
+      bg: "#0a110e",
+      panel: "#121c18",
+      text: "#d8ffe8",
+      accent: "#98ff9a",
+      accent2: "#62d2a2",
+      good: "#98ff9a",
+      bad: "#ff6b7a",
+      fontBody: "lcd",
+      fontMono: "lcd",
+      mutedPct: 55,
+      linePct: 12,
+      panel2Pct: 3,
+    },
+  },
+  {
+    id: "digital_radio",
+    name: "Digital Radio",
+    appearance: {
+      bg: "#041018",
+      panel: "#0a1c26",
+      text: "#dff8ff",
+      accent: "#38e8ff",
+      accent2: "#6bd0ff",
+      good: "#43ffd0",
+      bad: "#ff6d95",
+      fontBody: "lcd",
+      fontMono: "lcd",
+      mutedPct: 57,
+      linePct: 11,
+      panel2Pct: 3,
+    },
+  },
 ];
+
+const THEME_PRESET_GROUP_ORDER = ["Dark", "Light", "Retro", "High-Contrast", "Reading"];
+const THEME_PRESET_GROUP_BY_ID = {
+  bzl_original: "Dark",
+  midnight_cyan: "Dark",
+  ocean_depth: "Dark",
+  noir_redline: "Dark",
+  forest_moss: "Dark",
+  sunset_neon: "Dark",
+  mist_ui: "Light",
+  paper_ink: "Reading",
+  terminal_green: "Retro",
+  retro_arcade: "Retro",
+  calculator_lcd: "Retro",
+  digital_radio: "Retro",
+  warm_amber: "Reading",
+  high_contrast: "High-Contrast",
+};
+
+function groupedThemePresetOptionsHtml() {
+  const groups = new Map(THEME_PRESET_GROUP_ORDER.map((label) => [label, []]));
+  groups.set("Other", []);
+  for (const preset of THEME_PRESETS) {
+    const id = String(preset?.id || "").trim();
+    if (!id) continue;
+    const group = THEME_PRESET_GROUP_BY_ID[id] || "Other";
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(preset);
+  }
+  return [...groups.entries()]
+    .map(([groupLabel, presets]) => {
+      if (!Array.isArray(presets) || !presets.length) return "";
+      const opts = presets.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("");
+      return `<optgroup label="${escapeHtml(groupLabel)}">${opts}</optgroup>`;
+    })
+    .join("");
+}
 
 const SFX = {
   open: "/assets/sfx/Select_B7.wav",
@@ -3625,8 +4243,14 @@ function normalizeInstanceBranding(raw) {
   const accent2 = /^#[0-9a-f]{6}$/i.test(String(appearanceRaw.accent2 || "")) ? String(appearanceRaw.accent2).toLowerCase() : "#b84bff";
   const good = /^#[0-9a-f]{6}$/i.test(String(appearanceRaw.good || "")) ? String(appearanceRaw.good).toLowerCase() : "#3ddc97";
   const bad = /^#[0-9a-f]{6}$/i.test(String(appearanceRaw.bad || "")) ? String(appearanceRaw.bad).toLowerCase() : "#ff4d8a";
-  const fontBody = ["system", "serif", "mono"].includes(String(appearanceRaw.fontBody || "")) ? String(appearanceRaw.fontBody) : "system";
-  const fontMono = ["mono", "system"].includes(String(appearanceRaw.fontMono || "")) ? String(appearanceRaw.fontMono) : "mono";
+  const fontBody = ["system", "serif", "mono", "humanist", "rounded", "condensed", "slab", "clean", "lcd"].includes(
+    String(appearanceRaw.fontBody || "")
+  )
+    ? String(appearanceRaw.fontBody)
+    : "system";
+  const fontMono = ["mono", "system", "humanist", "rounded", "clean", "lcd"].includes(String(appearanceRaw.fontMono || ""))
+    ? String(appearanceRaw.fontMono)
+    : "mono";
   const clampPct = (n, fallback) => {
     const v = Math.floor(Number(n));
     if (!Number.isFinite(v)) return fallback;
@@ -3708,14 +4332,173 @@ function normalizeOnboardingState(raw) {
   };
 }
 
+function loadUserAppearanceOverride() {
+  try {
+    const raw = localStorage.getItem(USER_APPEARANCE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return normalizeInstanceBranding({ appearance: parsed }).appearance;
+  } catch {
+    return null;
+  }
+}
+
+function saveUserAppearanceOverride(appearance) {
+  try {
+    localStorage.setItem(USER_APPEARANCE_KEY, JSON.stringify(normalizeInstanceBranding({ appearance }).appearance));
+  } catch {
+    // ignore
+  }
+}
+
+function clearUserAppearanceOverride() {
+  try {
+    localStorage.removeItem(USER_APPEARANCE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function effectiveAppearanceForUi() {
+  const base = normalizeInstanceBranding(instanceBranding).appearance || {};
+  if (!userAppearanceOverride || typeof userAppearanceOverride !== "object") return base;
+  return normalizeInstanceBranding({ appearance: { ...base, ...userAppearanceOverride } }).appearance;
+}
+
+function setAppearanceStatus(msg) {
+  if (!(appearanceStatusEl instanceof HTMLElement)) return;
+  appearanceStatusEl.textContent = String(msg || "");
+}
+
+function syncAppearanceControlsFromCurrent() {
+  const a = effectiveAppearanceForUi();
+  if (appearanceBgEl) appearanceBgEl.value = a.bg || "#060611";
+  if (appearancePanelEl) appearancePanelEl.value = a.panel || "#0c0c18";
+  if (appearanceTextEl) appearanceTextEl.value = a.text || "#f6f0ff";
+  if (appearanceAccentEl) appearanceAccentEl.value = a.accent || "#ff3ea5";
+  if (appearanceAccent2El) appearanceAccent2El.value = a.accent2 || "#b84bff";
+  if (appearanceGoodEl) appearanceGoodEl.value = a.good || "#3ddc97";
+  if (appearanceBadEl) appearanceBadEl.value = a.bad || "#ff4d8a";
+  if (appearanceMutedPctEl) appearanceMutedPctEl.value = String(Number(a.mutedPct ?? 65));
+  if (appearanceLinePctEl) appearanceLinePctEl.value = String(Number(a.linePct ?? 10));
+  if (appearancePanel2PctEl) appearancePanel2PctEl.value = String(Number(a.panel2Pct ?? 2));
+  if (appearanceFontBodyEl) appearanceFontBodyEl.value = a.fontBody || "system";
+  if (appearanceFontMonoEl) appearanceFontMonoEl.value = a.fontMono || "mono";
+}
+
+function readAppearanceFromControls() {
+  return normalizeInstanceBranding({
+    appearance: {
+      bg: String(appearanceBgEl?.value || "").trim(),
+      panel: String(appearancePanelEl?.value || "").trim(),
+      text: String(appearanceTextEl?.value || "").trim(),
+      accent: String(appearanceAccentEl?.value || "").trim(),
+      accent2: String(appearanceAccent2El?.value || "").trim(),
+      good: String(appearanceGoodEl?.value || "").trim(),
+      bad: String(appearanceBadEl?.value || "").trim(),
+      fontBody: String(appearanceFontBodyEl?.value || "system").trim(),
+      fontMono: String(appearanceFontMonoEl?.value || "mono").trim(),
+      mutedPct: String(appearanceMutedPctEl?.value || "").trim(),
+      linePct: String(appearanceLinePctEl?.value || "").trim(),
+      panel2Pct: String(appearancePanel2PctEl?.value || "").trim(),
+    },
+  }).appearance;
+}
+
+function initAppearanceControls() {
+  if (!(appearancePresetEl instanceof HTMLSelectElement)) return;
+  if (appearancePresetEl.dataset.ready === "1") return;
+  appearancePresetEl.dataset.ready = "1";
+  appearancePresetEl.innerHTML = `<option value="">(choose...)</option>${groupedThemePresetOptionsHtml()}`;
+  userAppearanceOverride = loadUserAppearanceOverride();
+  syncAppearanceControlsFromCurrent();
+  applyInstanceAppearance();
+
+  appearanceApplyPresetBtn?.addEventListener("click", () => {
+    const id = String(appearancePresetEl.value || "").trim();
+    const preset = THEME_PRESETS.find((p) => p.id === id) || null;
+    if (!preset) return;
+    const a = normalizeInstanceBranding({ appearance: preset.appearance || {} }).appearance;
+    userAppearanceOverride = a;
+    syncAppearanceControlsFromCurrent();
+    applyInstanceAppearance(a);
+    setAppearanceStatus(`Preset "${preset.name}" applied (preview).`);
+  });
+
+  appearanceResetPreviewBtn?.addEventListener("click", () => {
+    userAppearanceOverride = loadUserAppearanceOverride();
+    syncAppearanceControlsFromCurrent();
+    applyInstanceAppearance();
+    setAppearanceStatus("Reset to current saved look.");
+  });
+
+  appearanceSaveBtn?.addEventListener("click", () => {
+    const a = readAppearanceFromControls();
+    userAppearanceOverride = a;
+    saveUserAppearanceOverride(a);
+    applyInstanceAppearance();
+    setAppearanceStatus("Saved personal look.");
+  });
+
+  appearanceClearBtn?.addEventListener("click", () => {
+    userAppearanceOverride = null;
+    clearUserAppearanceOverride();
+    syncAppearanceControlsFromCurrent();
+    applyInstanceAppearance();
+    setAppearanceStatus("Using server default look.");
+  });
+
+  const previewInputs = [
+    appearanceBgEl,
+    appearancePanelEl,
+    appearanceTextEl,
+    appearanceAccentEl,
+    appearanceAccent2El,
+    appearanceGoodEl,
+    appearanceBadEl,
+    appearanceMutedPctEl,
+    appearanceLinePctEl,
+    appearancePanel2PctEl,
+    appearanceFontBodyEl,
+    appearanceFontMonoEl,
+  ];
+  for (const input of previewInputs) {
+    input?.addEventListener("input", () => {
+      const a = readAppearanceFromControls();
+      userAppearanceOverride = a;
+      applyInstanceAppearance(a);
+      setAppearanceStatus("Previewing changes. Click Save look to keep.");
+    });
+    input?.addEventListener("change", () => {
+      const a = readAppearanceFromControls();
+      userAppearanceOverride = a;
+      applyInstanceAppearance(a);
+      setAppearanceStatus("Previewing changes. Click Save look to keep.");
+    });
+  }
+}
+
 function applyInstanceAppearance(appearanceOverride = null) {
-  const b = normalizeInstanceBranding(appearanceOverride ? { ...instanceBranding, appearance: appearanceOverride } : instanceBranding);
+  const override =
+    appearanceOverride && typeof appearanceOverride === "object"
+      ? appearanceOverride
+      : userAppearanceOverride && typeof userAppearanceOverride === "object"
+        ? userAppearanceOverride
+        : null;
+  const b = normalizeInstanceBranding(override ? { ...instanceBranding, appearance: { ...(instanceBranding?.appearance || {}), ...override } } : instanceBranding);
   const a = b.appearance || {};
   const fontStacks = {
     system:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     serif: 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    humanist: '"Trebuchet MS", "Segoe UI", Tahoma, Verdana, sans-serif',
+    rounded: '"Avenir Next Rounded", "Arial Rounded MT Bold", "Nunito", "Quicksand", "Trebuchet MS", sans-serif',
+    condensed: '"Roboto Condensed", "Arial Narrow", "Liberation Sans Narrow", "Helvetica Neue Condensed", sans-serif',
+    slab: '"Rockwell", "Roboto Slab", "Bitter", "Courier New", serif',
+    clean: '"Inter", "Public Sans", "Noto Sans", "Segoe UI", sans-serif',
+    lcd: '"Orbitron", "Eurostile", "Bank Gothic", "OCR A Std", "Consolas", "Courier New", monospace',
   };
   const fontBodyStack = fontStacks[a.fontBody] || fontStacks.system;
   const fontMonoStack = fontStacks[a.fontMono] || fontStacks.mono;
@@ -3731,6 +4514,7 @@ function applyInstanceAppearance(appearanceOverride = null) {
   document.documentElement.style.setProperty("--muted-pct", String(Number(a.mutedPct ?? 65)));
   document.documentElement.style.setProperty("--line-pct", String(Number(a.linePct ?? 10)));
   document.documentElement.style.setProperty("--panel2-pct", String(Number(a.panel2Pct ?? 2)));
+  if (appearancePresetEl instanceof HTMLSelectElement) syncAppearanceControlsFromCurrent();
 }
 
 function renderInstanceBranding() {
@@ -4276,15 +5060,15 @@ function setPeopleOpen(open) {
   const inRackMode = Boolean(appRoot?.classList.contains("rackMode"));
   peopleOpen = inRackMode ? true : Boolean(open);
   if (!peopleDrawerEl) return;
-  // In rack mode, "People" is a normal dockable panel; don't hide it behind a special toggle.
+  // In rack mode, Members list is anchored to the right rail.
   peopleDrawerEl.classList.toggle("hidden", !peopleOpen && !inRackMode);
   if (togglePeopleBtn) {
     if (inRackMode) {
       togglePeopleBtn.classList.add("hidden");
     } else {
       togglePeopleBtn.classList.remove("hidden");
-      togglePeopleBtn.textContent = peopleOpen ? "Hide people" : "People";
-      togglePeopleBtn.title = peopleOpen ? "Hide people" : "Show people";
+      togglePeopleBtn.textContent = peopleOpen ? "Hide members" : "Members";
+      togglePeopleBtn.title = peopleOpen ? "Hide members list" : "Show members list";
     }
   }
   if (peopleOpen && ws.readyState === WebSocket.OPEN) {
@@ -4926,7 +5710,7 @@ function availableMobileScreens() {
   if (Boolean(normalizeInstanceBranding(instanceBranding).onboarding?.enabled)) out.push({ id: "onboarding", title: "Onboarding", core: true });
   out.push({ id: "hives", title: "Hives", core: true });
   out.push({ id: "chat", title: "Chat", core: true });
-  out.push({ id: "people", title: "People", core: true });
+  out.push({ id: "people", title: "Members list", core: true });
   out.push({ id: "profile", title: "Profile", core: true });
   if (canModerate) out.push({ id: "moderation", title: "Moderation", core: true });
 
@@ -6871,7 +7655,8 @@ function renderOnboardingPanel() {
     </div>`;
 
   if (onboardingPanelAcceptBtn instanceof HTMLButtonElement) {
-    onboardingPanelAcceptBtn.classList.toggle("hidden", !onboardingRequiresAcceptance());
+    const showAccept = onboardingRequiresAcceptance() && onboardingViewerTab === "rules";
+    onboardingPanelAcceptBtn.classList.toggle("hidden", !showAccept);
     onboardingPanelAcceptBtn.disabled = !loggedInUser || !needs;
     onboardingPanelAcceptBtn.textContent = needs ? "Accept and continue" : "Accepted";
   }
@@ -6921,7 +7706,8 @@ function renderOnboardingCard() {
     }
   `;
   if (onboardingAcceptBtn instanceof HTMLButtonElement) {
-    onboardingAcceptBtn.classList.toggle("hidden", !onboardingRequiresAcceptance());
+    const showAccept = onboardingRequiresAcceptance() && onboardingViewerTab === "rules";
+    onboardingAcceptBtn.classList.toggle("hidden", !showAccept);
     onboardingAcceptBtn.disabled = !loggedInUser || !needs;
     onboardingAcceptBtn.textContent = needs ? "Accept and continue" : "Accepted";
   }
@@ -7013,6 +7799,37 @@ function writeGuidedTourPref(user = loggedInUser, patch = {}) {
 function shouldAutoShowGuidedTour(user = loggedInUser) {
   const pref = readGuidedTourPref(user);
   return !pref.completed && !pref.dontShow;
+}
+
+function guidedTourViewportAnchor(targetEl) {
+  const target = targetEl instanceof HTMLElement ? targetEl : null;
+  if (!(target instanceof HTMLElement)) return null;
+  const panel = target.closest?.(".rackPanel");
+  if (panel instanceof HTMLElement) {
+    const rackId = rackIdForPanelElement(panel);
+    if (isWorkspaceRackId(rackId)) return panel;
+  }
+  return target;
+}
+
+function focusGuidedTourTarget(targetEl) {
+  const target = targetEl instanceof HTMLElement ? targetEl : null;
+  if (!(target instanceof HTMLElement)) return;
+  const anchor = guidedTourViewportAnchor(target);
+  if (!(anchor instanceof HTMLElement)) return;
+  try {
+    const panel = anchor.closest?.(".rackPanel");
+    if (panel instanceof HTMLElement && anchor === panel && isWorkspaceRackId(rackIdForPanelElement(panel))) {
+      followWorkspacePanel(panel);
+    } else {
+      anchor.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }
+  } catch {
+    // ignore
+  }
+  requestAnimationFrame(() => updateGuidedTourSpotlight());
+  setTimeout(() => updateGuidedTourSpotlight(), 140);
+  setTimeout(() => updateGuidedTourSpotlight(), 320);
 }
 
 function revealAuthPanelForGuests() {
@@ -7379,12 +8196,7 @@ function renderGuidedTourStep() {
   if (target instanceof HTMLElement) {
     guidedTourTargetEl = target;
     guidedTourTargetEl.classList.add("tourTargetPulse");
-    try {
-      guidedTourTargetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-    } catch {
-      // ignore
-    }
-    updateGuidedTourSpotlight();
+    focusGuidedTourTarget(guidedTourTargetEl);
   }
 
   if (guidedTourPrevBtn) guidedTourPrevBtn.disabled = guidedTourState.index <= 0;
@@ -7698,9 +8510,7 @@ function renderModPanel() {
 
   if (modTab === "server") {
     const isOwner = isOwnerRole(loggedInRole) || isAdminRole(loggedInRole);
-    const canEditAppearance = isStaffRole(loggedInRole);
     const b = normalizeInstanceBranding(instanceBranding);
-    const a = b.appearance || {};
     const loading = Boolean(serverInfoStatus.loading);
     const err = String(serverInfoStatus.error || "");
     const info = serverInfo && typeof serverInfo === "object" ? serverInfo : null;
@@ -7717,20 +8527,6 @@ function renderModPanel() {
           ? `<span class="muted">Updated: ${escapeHtml(updatedAt)}</span>`
           : `<span class="muted">Not loaded yet.</span>`;
 
-    const fontBodyOptions = [
-      { value: "system", label: "System (sans)" },
-      { value: "serif", label: "Serif" },
-      { value: "mono", label: "Monospace" },
-    ]
-      .map((o) => `<option value="${o.value}" ${a.fontBody === o.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
-      .join("");
-    const fontMonoOptions = [
-      { value: "mono", label: "Monospace" },
-      { value: "system", label: "System" },
-    ]
-      .map((o) => `<option value="${o.value}" ${a.fontMono === o.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
-      .join("");
-
     const instanceOwnerControls = `<label>
            <span>Title</span>
            <input data-instance-title maxlength="32" value="${escapeHtml(b.title)}" />
@@ -7744,104 +8540,18 @@ function renderModPanel() {
            <span>Allow members to create permanent hives</span>
          </label>`;
 
-    const themePresetRow = `
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Theme preset</span>
-             <select data-theme-preset>
-               <option value="">(choose...)</option>
-               ${THEME_PRESETS.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")}
-             </select>
-           </label>
-           <div class="row" style="align-items:flex-end">
-             <button type="button" class="ghost" data-theme-reset="1">Reset</button>
-           </div>
-         </div>
-    `;
-
-    const appearanceControls = `
-         ${themePresetRow}
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Background</span>
-             <input data-instance-bg type="color" value="${escapeHtml(a.bg || "#060611")}" />
-           </label>
-           <label style="flex:1">
-             <span>Panel</span>
-             <input data-instance-panel type="color" value="${escapeHtml(a.panel || "#0c0c18")}" />
-           </label>
-         </div>
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Text</span>
-             <input data-instance-text type="color" value="${escapeHtml(a.text || "#f6f0ff")}" />
-           </label>
-           <label style="flex:1">
-             <span>Success / Danger</span>
-             <div class="row" style="gap:10px">
-               <input data-instance-good type="color" value="${escapeHtml(a.good || "#3ddc97")}" />
-               <input data-instance-bad type="color" value="${escapeHtml(a.bad || "#ff4d8a")}" />
-             </div>
-           </label>
-         </div>
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Accent</span>
-             <input data-instance-accent type="color" value="${escapeHtml(a.accent || "#ff3ea5")}" />
-           </label>
-           <label style="flex:1">
-             <span>Accent 2</span>
-             <input data-instance-accent2 type="color" value="${escapeHtml(a.accent2 || "#b84bff")}" />
-           </label>
-         </div>
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Muted %</span>
-             <input data-instance-mutedpct type="number" min="0" max="100" value="${escapeHtml(String(a.mutedPct ?? 65))}" />
-           </label>
-           <label style="flex:1">
-             <span>Divider %</span>
-             <input data-instance-linepct type="number" min="0" max="100" value="${escapeHtml(String(a.linePct ?? 10))}" />
-           </label>
-           <label style="flex:1">
-             <span>Panel tint %</span>
-             <input data-instance-panel2pct type="number" min="0" max="100" value="${escapeHtml(String(a.panel2Pct ?? 2))}" />
-           </label>
-         </div>
-         <div class="row" style="gap:10px">
-           <label style="flex:1">
-             <span>Body font</span>
-             <select data-instance-fontbody>${fontBodyOptions}</select>
-           </label>
-           <label style="flex:1">
-             <span>Mono font</span>
-             <select data-instance-fontmono>${fontMonoOptions}</select>
-           </label>
-         </div>
-    `;
-
     const instanceControls = isOwner
       ? `${instanceOwnerControls}
-         ${appearanceControls}
+         <div class="small muted">Look & feel moved to View → Advanced display. Users can now set personal themes there.</div>
          <div class="row" style="gap:8px">
            <button type="button" class="primary" data-instance-save="1">Save</button>
            <button type="button" class="ghost" data-server-refresh="1">Refresh server</button>
          </div>`
-      : canEditAppearance
-        ? `<div class="small muted">Owner-only: title/subtitle and permanent-hive setting.</div>
+      : `<div class="small muted">Only the owner/admin can edit core instance settings.</div>
            <div class="small">Title: <b>${escapeHtml(b.title)}</b></div>
            <div class="small">Subtitle: <b>${escapeHtml(b.subtitle)}</b></div>
            <div class="small">Members can create permanent hives: <b>${b.allowMemberPermanentPosts ? "yes" : "no"}</b></div>
-           <div class="panelDivider"></div>
-           ${appearanceControls}
-           <div class="row" style="gap:8px">
-             <button type="button" class="primary" data-instance-saveappearance="1">Save theme</button>
-             <button type="button" class="ghost" data-server-refresh="1">Refresh server</button>
-           </div>`
-        : `<div class="small muted">Only moderators can edit appearance. Only the owner can edit core instance settings.</div>
-           <div class="small">Title: <b>${escapeHtml(b.title)}</b></div>
-           <div class="small">Subtitle: <b>${escapeHtml(b.subtitle)}</b></div>
-           <div class="small">Members can create permanent hives: <b>${b.allowMemberPermanentPosts ? "yes" : "no"}</b></div>
+           <div class="small muted" style="margin-top:6px;">Look & feel moved to View → Advanced display.</div>
            <div class="row" style="gap:8px; margin-top:8px">
              <button type="button" class="ghost" data-server-refresh="1">Refresh server</button>
            </div>`;
@@ -9331,6 +10041,18 @@ function isTextEntryFocused() {
   return Boolean(el.isContentEditable);
 }
 
+function isMapSurfaceActiveForHotkey() {
+  if (isMapChatActive()) return true;
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  if (active?.closest?.('[data-panel-id="maps"]')) return true;
+  if (isMobileScreenMode() && appRoot) {
+    const mobile = String(appRoot.getAttribute("data-mobile-screen") || "").trim();
+    if (mobile === "maps") return true;
+    if (mobile === "host" && mobileHostPanelId === "maps") return true;
+  }
+  return false;
+}
+
 function shouldSubmitChatOnEnter(evt) {
   if (!evt || evt.key !== "Enter") return false;
   const mode = readChatEnterModePref();
@@ -9355,6 +10077,115 @@ function cycleLayoutPresetBy(step) {
 }
 
 let hotkeyPanelContext = "";
+let hoveredWorkspacePanelId = "";
+let hoveredHotbarPanelId = "";
+
+function isWorkspaceRackId(rackId) {
+  const id = String(rackId || "").trim();
+  return id === "mainWorkspaceRack" || id === "workspaceLeftSlot" || id === "workspaceRightSlot";
+}
+
+function hoveredWorkspacePanelElement() {
+  const id = String(hoveredWorkspacePanelId || "").trim();
+  if (!id) return null;
+  const el = getPanelElement(id);
+  if (!(el instanceof HTMLElement)) return null;
+  if (el.classList.contains("hidden")) return null;
+  const parentId = String(el.parentElement?.id || "").trim();
+  if (!isWorkspaceRackId(parentId)) return null;
+  return el;
+}
+
+function followWorkspacePanel(panelEl) {
+  const panel = panelEl instanceof HTMLElement ? panelEl : null;
+  if (!(panel instanceof HTMLElement)) return;
+  const workspace = panel.closest?.("#mainWorkspaceRack");
+  if (!(workspace instanceof HTMLElement)) return;
+  const left = panel.offsetLeft;
+  const width = panel.offsetWidth || 0;
+  const target = Math.max(0, Math.round(left - (workspace.clientWidth - width) / 2));
+  const max = Math.max(0, workspace.scrollWidth - workspace.clientWidth);
+  workspace.scrollTo({ left: Math.min(max, target), behavior: "smooth" });
+}
+
+function glowWorkspacePanel(panelEl) {
+  const panel = panelEl instanceof HTMLElement ? panelEl : null;
+  if (!(panel instanceof HTMLElement)) return;
+  panel.classList.remove("workspaceArrivalGlow");
+  // Restart animation on repeated arrivals.
+  void panel.offsetWidth;
+  panel.classList.add("workspaceArrivalGlow");
+  const token = String(Date.now());
+  panel.dataset.workspaceArrivalToken = token;
+  setTimeout(() => {
+    if (panel.dataset.workspaceArrivalToken !== token) return;
+    panel.classList.remove("workspaceArrivalGlow");
+  }, 900);
+}
+
+function focusWorkspaceArrival(panelEl) {
+  const panel = panelEl instanceof HTMLElement ? panelEl : null;
+  if (!(panel instanceof HTMLElement)) return;
+  const rackId = rackIdForPanelElement(panel);
+  if (!isWorkspaceRackId(rackId)) return;
+  followWorkspacePanel(panel);
+  glowWorkspacePanel(panel);
+}
+
+function cycleHoveredWorkspacePanelSize() {
+  if (!rackLayoutEnabled) return false;
+  const panelEl = hoveredWorkspacePanelElement();
+  if (!(panelEl instanceof HTMLElement)) return false;
+  const panelId = String(panelEl.dataset.panelId || "").trim();
+  if (!panelId || isRightRackFixedPanel(panelId)) return false;
+  const order = ["skinny", "half", "full"];
+  const current = panelWorkspaceSize(panelId);
+  const idx = order.indexOf(current);
+  const next = order[(idx + 1 + order.length) % order.length];
+  setPanelWorkspaceSize(panelId, next);
+  applyAllWorkspacePanelSizes();
+  followWorkspacePanel(panelEl);
+  return true;
+}
+
+function moveHoveredWorkspacePanelHorizontal(step) {
+  if (!rackLayoutEnabled) return false;
+  const panelEl = hoveredWorkspacePanelElement();
+  if (!(panelEl instanceof HTMLElement)) return false;
+  const parent = panelEl.parentElement;
+  if (!(parent instanceof HTMLElement)) return false;
+  const peers = Array.from(parent.querySelectorAll(":scope > .rackPanel:not(.hidden)"));
+  const idx = peers.indexOf(panelEl);
+  if (idx < 0) return false;
+  const nextIdx = idx + (step < 0 ? -1 : 1);
+  if (nextIdx < 0 || nextIdx >= peers.length) return false;
+  const other = peers[nextIdx];
+  if (!(other instanceof HTMLElement)) return false;
+  if (step < 0) parent.insertBefore(panelEl, other);
+  else parent.insertBefore(other, panelEl);
+  syncRackStateFromDom();
+  enforceWorkspaceRules();
+  followWorkspacePanel(panelEl);
+  return true;
+}
+
+function dockHoveredWorkspacePanelToHotbar() {
+  if (!rackLayoutEnabled) return false;
+  const panelEl = hoveredWorkspacePanelElement();
+  if (!(panelEl instanceof HTMLElement)) return false;
+  const panelId = String(panelEl.dataset.panelId || "").trim();
+  if (!panelId || isRightRackFixedPanel(panelId)) return false;
+  dockPanel(panelId);
+  return true;
+}
+
+function restoreHoveredHotbarPanelToWorkspace() {
+  if (!rackLayoutEnabled) return false;
+  const panelId = String(hoveredHotbarPanelId || "").trim();
+  if (!panelId) return false;
+  restorePanelFromHotbar(panelId, { userAdded: true });
+  return true;
+}
 function updateHotkeyPanelContextFromTarget(target) {
   const el = target instanceof HTMLElement ? target : null;
   if (!el) return;
@@ -10965,6 +11796,30 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   if (isTextEntryFocused()) return;
+  if (e.key === "ArrowUp") {
+    if (restoreHoveredHotbarPanelToWorkspace() || cycleHoveredWorkspacePanelSize()) {
+      e.preventDefault();
+      return;
+    }
+  }
+  if (e.key === "ArrowLeft") {
+    if (moveHoveredWorkspacePanelHorizontal(-1)) {
+      e.preventDefault();
+      return;
+    }
+  }
+  if (e.key === "ArrowRight") {
+    if (moveHoveredWorkspacePanelHorizontal(1)) {
+      e.preventDefault();
+      return;
+    }
+  }
+  if (e.key === "ArrowDown") {
+    if (dockHoveredWorkspacePanelToHotbar()) {
+      e.preventDefault();
+      return;
+    }
+  }
   const ctx = activePanelContextForHotkeys();
   const plus = e.key === "=" || e.code === "NumpadAdd";
   const minus = e.key === "-" || e.code === "NumpadSubtract";
@@ -10986,6 +11841,13 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "]") {
     e.preventDefault();
     cycleLayoutPresetBy(1);
+    return;
+  }
+  if ((e.key === "r" || e.key === "R") && rackLayoutEnabled) {
+    if (isMapSurfaceActiveForHotkey()) return;
+    e.preventDefault();
+    const collapsed = Boolean(appRoot?.classList.contains("rightCollapsed"));
+    setRightCollapsed(!collapsed);
   }
 });
 
@@ -10996,6 +11858,28 @@ window.addEventListener(
   },
   true
 );
+
+window.addEventListener(
+  "pointermove",
+  (e) => {
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    const panel = target?.closest?.(".rackPanel[data-panel-id]");
+    if (panel instanceof HTMLElement) {
+      const panelId = String(panel.dataset.panelId || "").trim();
+      const rackId = String(panel.parentElement?.id || "").trim();
+      hoveredWorkspacePanelId = panelId && isWorkspaceRackId(rackId) ? panelId : "";
+    } else {
+      hoveredWorkspacePanelId = "";
+    }
+    const orb = target?.closest?.("[data-undock]");
+    hoveredHotbarPanelId = orb instanceof HTMLElement ? String(orb.getAttribute("data-undock") || "").trim() : "";
+  },
+  true
+);
+window.addEventListener("blur", () => {
+  hoveredWorkspacePanelId = "";
+  hoveredHotbarPanelId = "";
+});
 
 window.addEventListener("click", (e) => {
   if (!openPostMenuId) return;
@@ -11425,29 +12309,18 @@ modBodyEl?.addEventListener("click", (e) => {
     const title = String(modBodyEl.querySelector("input[data-instance-title]")?.value || "").replace(/\s+/g, " ").trim().slice(0, 32);
     const subtitle = String(modBodyEl.querySelector("input[data-instance-subtitle]")?.value || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const allowMemberPermanentPosts = Boolean(modBodyEl.querySelector("input[data-instance-allowpermanent]")?.checked);
-    const bg = String(modBodyEl.querySelector("input[data-instance-bg]")?.value || "").trim();
-    const panel = String(modBodyEl.querySelector("input[data-instance-panel]")?.value || "").trim();
-    const text = String(modBodyEl.querySelector("input[data-instance-text]")?.value || "").trim();
-    const good = String(modBodyEl.querySelector("input[data-instance-good]")?.value || "").trim();
-    const bad = String(modBodyEl.querySelector("input[data-instance-bad]")?.value || "").trim();
-    const accent = String(modBodyEl.querySelector("input[data-instance-accent]")?.value || "").trim();
-    const accent2 = String(modBodyEl.querySelector("input[data-instance-accent2]")?.value || "").trim();
-    const fontBody = String(modBodyEl.querySelector("select[data-instance-fontbody]")?.value || "").trim();
-    const fontMono = String(modBodyEl.querySelector("select[data-instance-fontmono]")?.value || "").trim();
-    const mutedPct = String(modBodyEl.querySelector("input[data-instance-mutedpct]")?.value || "").trim();
-    const linePct = String(modBodyEl.querySelector("input[data-instance-linepct]")?.value || "").trim();
-    const panel2Pct = String(modBodyEl.querySelector("input[data-instance-panel2pct]")?.value || "").trim();
     if (!title) {
       toast("Instance", "Title is required.");
       return;
     }
+    const appearance = normalizeInstanceBranding(instanceBranding).appearance || {};
     ws.send(
       JSON.stringify({
         type: "instanceSetBranding",
         title,
         subtitle,
         allowMemberPermanentPosts,
-        appearance: { bg, panel, text, accent, accent2, good, bad, fontBody, fontMono, mutedPct, linePct, panel2Pct }
+        appearance
       })
     );
     toast("Instance", "Saving...");
@@ -12078,6 +12951,13 @@ let ws = null;
 let wsKeepaliveTimer = null;
 let wsReconnectTimer = null;
 let wsReconnectAttempt = 0;
+let lastForegroundResyncAt = 0;
+let wsStaleWatchdogTimer = null;
+let wsLastInboundAt = 0;
+let wsLastStaleReconnectAt = 0;
+const WS_STALE_CHECK_MS = 15_000;
+const WS_STALE_INBOUND_MS = 180_000;
+const WS_STALE_RECONNECT_COOLDOWN_MS = 90_000;
 
 function clearWsKeepalive() {
   if (!wsKeepaliveTimer) return;
@@ -12097,6 +12977,47 @@ function clearWsReconnect() {
     // ignore
   }
   wsReconnectTimer = null;
+}
+
+function clearWsStaleWatchdog() {
+  if (!wsStaleWatchdogTimer) return;
+  try {
+    clearInterval(wsStaleWatchdogTimer);
+  } catch {
+    // ignore
+  }
+  wsStaleWatchdogTimer = null;
+}
+
+function noteWsInbound() {
+  wsLastInboundAt = Date.now();
+}
+
+function startWsStaleWatchdog(sock) {
+  clearWsStaleWatchdog();
+  if (!readStayConnectedPref()) return;
+  if (!sock || sock.readyState !== WebSocket.OPEN) return;
+  noteWsInbound();
+  wsStaleWatchdogTimer = setInterval(() => {
+    if (!sock || sock !== ws) return;
+    if (sock.readyState !== WebSocket.OPEN) return;
+    const now = Date.now();
+    const idleMs = now - wsLastInboundAt;
+    if (idleMs < WS_STALE_INBOUND_MS) return;
+    if (now - wsLastStaleReconnectAt < WS_STALE_RECONNECT_COOLDOWN_MS) return;
+    wsLastStaleReconnectAt = now;
+    setConn("connecting");
+    try {
+      sock.close(4001, "stale-inbound-timeout");
+    } catch {
+      // ignore
+    }
+    setTimeout(() => {
+      if (!readStayConnectedPref()) return;
+      if (ws && ws !== sock && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      connectWs();
+    }, 900);
+  }, WS_STALE_CHECK_MS);
 }
 
 function startWsKeepalive(sock) {
@@ -12131,6 +13052,7 @@ function scheduleWsReconnect() {
 function connectWs() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   clearWsKeepalive();
+  clearWsStaleWatchdog();
   setConn("connecting");
   const sock = new WebSocket(wsUrl());
   ws = sock;
@@ -12138,10 +13060,12 @@ function connectWs() {
 
   sock.addEventListener("open", () => {
     if (sock !== ws) return;
+    noteWsInbound();
     setConn("open");
     wsReconnectAttempt = 0;
     clearWsReconnect();
     startWsKeepalive(sock);
+    startWsStaleWatchdog(sock);
     const token = getSessionToken();
     if (token) {
       try {
@@ -12150,6 +13074,10 @@ function connectWs() {
         // ignore
       }
     }
+    setTimeout(() => {
+      if (sock !== ws) return;
+      requestForegroundResync("ws-open");
+    }, 120);
   });
 
   sock.addEventListener("close", () => {
@@ -12157,18 +13085,43 @@ function connectWs() {
     leaveActiveStream(false);
     setConn("closed");
     clearWsKeepalive();
+    clearWsStaleWatchdog();
     scheduleWsReconnect();
   });
 
   sock.addEventListener("error", () => {
     if (sock !== ws) return;
     setConn("closed");
+    clearWsStaleWatchdog();
   });
 
   sock.addEventListener("message", onWsMessage);
 }
 
+function requestForegroundResync(reason = "") {
+  const now = Date.now();
+  if (now - lastForegroundResyncAt < 1400) return;
+  lastForegroundResyncAt = now;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(JSON.stringify({ type: "peopleList" }));
+    ws.send(JSON.stringify({ type: "dmList" }));
+    if (activeDmThreadId) {
+      ws.send(JSON.stringify({ type: "dmHistory", threadId: activeDmThreadId }));
+    } else if (activeChatPostId) {
+      ws.send(JSON.stringify({ type: "getChat", postId: activeChatPostId }));
+    }
+    if (activeMapsRoomId) {
+      ws.send(JSON.stringify({ type: "plugin:maps:chatHistoryReq", mapId: activeMapsRoomId }));
+    }
+    if (reason === "visibility") ws.send(JSON.stringify({ type: "onboardingGet" }));
+  } catch {
+    // ignore
+  }
+}
+
 function onWsMessage(evt) {
+  noteWsInbound();
   let msg;
   try {
     msg = JSON.parse(evt.data);
@@ -13067,6 +14020,7 @@ connectWs();
 renderLanHint();
 writeHintsEnabledPref(readHintsEnabledPref());
 initDisplayPrefsUi();
+initAppearanceControls();
 if (stayConnectedEl) {
   stayConnectedEl.checked = readStayConnectedPref();
   stayConnectedEl.addEventListener("change", () => {
@@ -13075,9 +14029,11 @@ if (stayConnectedEl) {
     if (on) {
       if (!ws || ws.readyState === WebSocket.CLOSED) connectWs();
       startWsKeepalive(ws);
+      if (ws && ws.readyState === WebSocket.OPEN) startWsStaleWatchdog(ws);
     } else {
       clearWsReconnect();
       clearWsKeepalive();
+      clearWsStaleWatchdog();
     }
   });
 }
@@ -13712,12 +14668,25 @@ initRackLayout();
 window.addEventListener("focus", () => {
   windowFocused = true;
   updateNotifUi();
+  if (readStayConnectedPref() && (!ws || ws.readyState === WebSocket.CLOSED)) {
+    connectWs();
+    return;
+  }
+  requestForegroundResync("focus");
 });
 window.addEventListener("blur", () => {
   windowFocused = false;
   stopAnyPanelResize();
 });
-document.addEventListener("visibilitychange", () => updateNotifUi());
+document.addEventListener("visibilitychange", () => {
+  updateNotifUi();
+  if (document.hidden) return;
+  if (readStayConnectedPref() && (!ws || ws.readyState === WebSocket.CLOSED)) {
+    connectWs();
+    return;
+  }
+  requestForegroundResync("visibility");
+});
 
 enableNotifsBtn?.addEventListener("click", async () => {
   if (!notifSupported()) return;
