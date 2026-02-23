@@ -1392,6 +1392,14 @@ function appendDevLog(entry) {
     data: safeDevLogJson(entry?.data, 8000)
   };
 
+  if (clean.scope === "auth.register") {
+    const line = `[auth.register] ${clean.message}`;
+    const details = clean.data ? ` ${clean.data}` : "";
+    if (clean.level === "error") console.error(`${line}${details}`);
+    else if (clean.level === "warn") console.warn(`${line}${details}`);
+    else console.info(`${line}${details}`);
+  }
+
   devLog.unshift(clean);
   if (devLog.length > 2000) devLog.splice(2000);
 
@@ -4716,12 +4724,33 @@ wss.on("connection", (ws, req) => {
     }
 
     if (msg.type === "register") {
+      const requestedUsername = normalizeUsername(msg.username);
+      const registerMeta = {
+        identity: wsIdentity(ws),
+        remoteAddress: normalizeRemoteAddress(ws?.remoteAddress || ""),
+        username: requestedUsername || "",
+        firstUserPath: canRegisterFirstUser(ws),
+        registrationEnabled: registrationEnabled()
+      };
+      appendDevLog({
+        level: "info",
+        scope: "auth.register",
+        message: "Registration attempt received",
+        data: registerMeta
+      });
+
       const limit = takeRateLimit("register", wsIdentity(ws), RL_REGISTER_MAX, RL_REGISTER_WINDOW_MS);
       if (!limit.ok) {
+        appendDevLog({
+          level: "warn",
+          scope: "auth.register",
+          message: "Registration blocked by rate limit",
+          data: { ...registerMeta, retryMs: limit.retryMs, windowMs: RL_REGISTER_WINDOW_MS, max: RL_REGISTER_MAX }
+        });
         sendRateLimited(ws, limit.retryMs, "Too many registration attempts. Please wait.");
         return;
       }
-      const isFirstUser = canRegisterFirstUser(ws);
+      const isFirstUser = registerMeta.firstUserPath;
       const providedCode =
         typeof msg.code === "string"
           ? msg.code
@@ -4733,22 +4762,46 @@ wss.on("connection", (ws, req) => {
 
       if (!isFirstUser) {
         if (!registrationEnabled()) {
+          appendDevLog({
+            level: "warn",
+            scope: "auth.register",
+            message: "Registration denied because host registration is disabled",
+            data: registerMeta
+          });
           ws.send(JSON.stringify({ type: "error", message: "Registration is disabled on the host." }));
           return;
         }
         if (!providedCode || !providedCode.trim()) {
+          appendDevLog({
+            level: "warn",
+            scope: "auth.register",
+            message: "Registration denied due to missing code",
+            data: registerMeta
+          });
           ws.send(JSON.stringify({ type: "error", message: "Registration code required." }));
           return;
         }
         if (!validRegistrationCode(providedCode)) {
+          appendDevLog({
+            level: "warn",
+            scope: "auth.register",
+            message: "Registration denied due to invalid code",
+            data: registerMeta
+          });
           ws.send(JSON.stringify({ type: "error", message: "Invalid registration code." }));
           return;
         }
       }
 
-      const username = normalizeUsername(msg.username);
+      const username = requestedUsername;
       const password = typeof msg.password === "string" ? msg.password : "";
       if (!username || password.length < 4) {
+        appendDevLog({
+          level: "warn",
+          scope: "auth.register",
+          message: "Registration denied due to invalid username/password",
+          data: registerMeta
+        });
         ws.send(JSON.stringify({ type: "error", message: "Pick a valid username and a longer password." }));
         return;
       }
@@ -4778,6 +4831,12 @@ wss.on("connection", (ws, req) => {
         const data = readUsersFileForWrite();
         const exists = (data.users || []).some((u) => normalizeUsername(u?.username) === username);
         if (exists) {
+          appendDevLog({
+            level: "warn",
+            scope: "auth.register",
+            message: "Registration denied because username is already taken",
+            data: registerMeta
+          });
           ws.send(JSON.stringify({ type: "error", message: "Username is already taken." }));
           return;
         }
@@ -4796,7 +4855,19 @@ wss.on("connection", (ws, req) => {
         sendRolesForWs(ws);
         sendPostsSnapshot(ws);
         sendLanInfoIfModerator(ws);
+        appendDevLog({
+          level: "info",
+          scope: "auth.register",
+          message: "Registration succeeded",
+          data: { ...registerMeta, roleAssigned: role }
+        });
       } catch (e) {
+        appendDevLog({
+          level: "error",
+          scope: "auth.register",
+          message: "Registration failed during user persistence",
+          data: { ...registerMeta, error: e?.message || String(e) }
+        });
         ws.send(JSON.stringify({ type: "error", message: "Failed to create user file." }));
         console.warn("Failed to write users file:", e.message || e);
       }
