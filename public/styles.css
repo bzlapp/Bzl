@@ -3966,41 +3966,11 @@ button:disabled {
 }
 
 .guidedTourShade {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(
-      circle at var(--tour-x, 50%) var(--tour-y, 50%),
-      rgba(255, 255, 255, 0.16) 0,
-      rgba(255, 255, 255, 0.1) calc(var(--tour-r, 240px) * 0.3),
-      rgba(4, 6, 15, 0.08) calc(var(--tour-r, 240px) * 0.64),
-      rgba(4, 6, 15, 0.46) calc(var(--tour-r, 240px) + 48px)
-    ),
-    rgba(4, 6, 15, 0.5);
-  transition: background-position 160ms ease, background-size 160ms ease;
+  display: none;
 }
 
 .guidedTourFocus {
-  position: absolute;
-  left: var(--tour-left, -9999px);
-  top: var(--tour-top, -9999px);
-  width: var(--tour-w, 0px);
-  height: var(--tour-h, 0px);
-  border-radius: var(--tour-br, 12px);
-  border: 1px solid color-mix(in oklab, white 35%, var(--accent2) 65%);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.12) 0%,
-    rgba(255, 255, 255, 0.06) 55%,
-    rgba(255, 255, 255, 0.03) 100%
-  );
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 14px 38px rgba(0, 0, 0, 0.24),
-    0 0 56px rgba(255, 125, 205, 0.26);
-  backdrop-filter: brightness(1.28) saturate(1.12);
-  -webkit-backdrop-filter: brightness(1.28) saturate(1.12);
-  pointer-events: none;
+  display: none;
 }
 
 .onboardingGateHint {
@@ -4034,6 +4004,32 @@ button:disabled {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   padding: 12px 14px;
   pointer-events: auto;
+}
+
+.guidedTourOverlay[data-cardpos="top"] .guidedTourCard {
+  top: 16px;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.guidedTourOverlay[data-cardpos="left"] .guidedTourCard {
+  top: 50%;
+  bottom: auto;
+  left: 16px;
+  right: auto;
+  transform: translateY(-50%);
+  width: min(560px, calc(100vw - 32px));
+}
+
+.guidedTourOverlay[data-cardpos="right"] .guidedTourCard {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: 16px;
+  transform: translateY(-50%);
+  width: min(560px, calc(100vw - 32px));
 }
 
 .guidedTourStep {
@@ -4102,9 +4098,8 @@ button:disabled {
   }
 }
 
-.app.authLockedWorkspace .main,
-.app.authLockedWorkspace #rightRack {
-  filter: blur(24px) saturate(0.45) brightness(0.5) contrast(0.9);
+.app.authLockedWorkspace {
+  filter: blur(20px) saturate(0.6) brightness(0.45) contrast(0.9);
   pointer-events: none;
   user-select: none;
 }
@@ -4113,6 +4108,196 @@ button:disabled {
 .app.authLockedWorkspace .rightRackToggle,
 .app.authLockedWorkspace .sideRackToggle {
   display: none !important;
+}
+
+.rackPanel.tourContextDim {
+  filter: brightness(0.55) saturate(0.75);
+  opacity: 0.7;
+  transition: filter 180ms ease, opacity 180ms ease;
+}
+
+.bzlSplash {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1400px 740px at 50% 28%, rgba(38, 235, 255, 0.24), rgba(4, 9, 22, 0.97)),
+    linear-gradient(130deg, rgba(7, 10, 20, 0.98), rgba(4, 7, 16, 0.98));
+  overflow: hidden;
+  transition: opacity 420ms ease;
+}
+
+.bzlSplash.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bzlSplashFx {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(circle at 20% 35%, rgba(72, 249, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 78% 68%, rgba(255, 60, 186, 0.16), transparent 36%),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.02) 0px,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 3px,
+      transparent 8px
+    );
+  filter: blur(0.3px) saturate(1.2);
+  animation: splashDrift 9s ease-in-out infinite alternate;
+}
+
+.bzlSplashCore {
+  position: relative;
+  width: min(380px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 20px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(111, 248, 255, 0.25);
+  background:
+    linear-gradient(180deg, rgba(18, 28, 44, 0.75), rgba(8, 14, 28, 0.84)),
+    rgba(9, 12, 24, 0.86);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.48),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 40px rgba(66, 239, 255, 0.2);
+}
+
+.bzlSplashRing {
+  position: absolute;
+  width: 172px;
+  height: 172px;
+  border-radius: 50%;
+  border: 1px solid rgba(95, 246, 255, 0.5);
+  box-shadow: 0 0 36px rgba(95, 246, 255, 0.26), inset 0 0 22px rgba(255, 255, 255, 0.06);
+  animation: splashRing 1.7s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.bzlSplashLogo {
+  width: clamp(84px, 13vw, 150px);
+  height: auto;
+  filter: drop-shadow(0 0 22px rgba(60, 245, 255, 0.6));
+  animation: splashBreathe 950ms ease-in-out infinite alternate;
+}
+
+.bzlSplashWord {
+  font-size: clamp(28px, 4vw, 36px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #effcff;
+  text-shadow: 0 0 18px rgba(94, 246, 255, 0.42);
+}
+
+.bzlSplashTag {
+  margin-top: -2px;
+  color: color-mix(in oklab, var(--text) 72%, #9defff 28%);
+}
+
+.bzlSplashProgress {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(111, 248, 255, 0.3);
+  background: rgba(6, 11, 20, 0.65);
+  overflow: hidden;
+}
+
+.bzlSplashProgressFill {
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, #4df8ff, #6ce9ff, #ff65c8);
+  box-shadow: 0 0 14px rgba(103, 240, 255, 0.6);
+}
+
+.bzlSplashStartBtn {
+  margin-top: 2px;
+}
+
+@keyframes splashDrift {
+  from {
+    transform: translate3d(-1.2%, -0.8%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.2%, 1.3%, 0) scale(1.03);
+  }
+}
+
+@keyframes splashRing {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.72;
+  }
+  60% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.97);
+    opacity: 0.8;
+  }
+}
+
+@keyframes splashBreathe {
+  from {
+    transform: scale(0.98);
+    opacity: 0.86;
+  }
+  to {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+.authGate {
+  position: fixed;
+  inset: 0;
+  z-index: 1650;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  background: rgba(5, 8, 16, 0.42);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+}
+
+.authGateInner {
+  width: min(880px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.authGateCard,
+.authGateOnboarding {
+  border: 1px solid color-mix(in oklab, var(--line) 66%, var(--accent) 34%);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--panel) 96%, #010204 4%);
+  box-shadow: 0 22px 62px rgba(0, 0, 0, 0.4);
+  padding: 12px;
+}
+
+.authGateForm {
+  margin-top: 8px;
+}
+
+@media (max-width: 920px) {
+  .authGateInner {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 780px) {

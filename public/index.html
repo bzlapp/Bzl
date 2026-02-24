@@ -4,9 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bzl - Hives</title>
-    <link rel="stylesheet" href="/styles.css?v=133" />
+    <link rel="stylesheet" href="/styles.css?v=136" />
   </head>
   <body>
+      <div id="bzlSplash" class="bzlSplash">
+        <div class="bzlSplashFx" aria-hidden="true"></div>
+        <div class="bzlSplashCore">
+          <div class="bzlSplashRing"></div>
+          <img class="bzlSplashLogo" src="/assets/logobzl.png" alt="Bzl logo" />
+          <div class="bzlSplashWord">Bzl</div>
+          <div id="bzlSplashTip" class="bzlSplashTag small muted">Loading your hive...</div>
+          <div class="bzlSplashProgress" aria-hidden="true">
+            <div id="bzlSplashProgressFill" class="bzlSplashProgressFill"></div>
+          </div>
+          <button id="bzlSplashStartBtn" class="primary smallBtn bzlSplashStartBtn hidden" type="button">Click to enter</button>
+        </div>
+      </div>
       <div class="app">
         <button id="showSidebar" class="ghost smallBtn sidebarToggle hidden" type="button" title="Show sidebar">Show</button>
         <button id="togglePeople" class="ghost smallBtn peopleToggle" type="button" title="Show members list">Members</button>
@@ -429,8 +442,23 @@
                 <input id="keywords" placeholder="hive, code, idea" />
               </label>
               <label>
-                <span>TTL (minutes)</span>
+                <span>Post duration</span>
                 <input id="ttlMinutes" type="number" min="1" max="2880" value="60" />
+              </label>
+              <label>
+                <span>Quick duration</span>
+                <select id="ttlPreset">
+                  <option value="5">5 min</option>
+                  <option value="30">30 min</option>
+                  <option value="60" selected>1 hour</option>
+                  <option value="120">2 hours</option>
+                  <option value="720">12 hours</option>
+                  <option value="1440">24 hours</option>
+                </select>
+              </label>
+              <label class="checkRow">
+                <span>Keep forever</span>
+                <input id="ttlPermanent" type="checkbox" />
               </label>
             </div>
 
@@ -771,6 +799,48 @@
     </div>
 
     <div id="dockHotbar" class="dockHotbar hidden" aria-label="Docked panels"></div>
-    <script src="/app.js?v=152"></script>
+    <div id="authGate" class="authGate hidden" aria-hidden="true">
+      <div class="authGateInner">
+        <section class="authGateCard">
+          <div class="panelTitle">Sign in to continue</div>
+          <div id="authGateHint" class="small muted">
+            Create an account or sign in to enter this server.
+          </div>
+          <form id="authGateForm" class="form authGateForm">
+            <label>
+              <span>Username</span>
+              <input id="authGateUser" autocomplete="username" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="authGatePass" type="password" autocomplete="current-password" />
+            </label>
+            <label id="authGateCodeRow" class="hidden">
+              <span>Registration code</span>
+              <input id="authGateCode" autocomplete="one-time-code" />
+            </label>
+            <div class="row">
+              <button class="primary grow" type="submit">Sign in</button>
+              <button id="authGateRegister" class="ghost" type="button">Create account</button>
+            </div>
+          </form>
+        </section>
+        <section class="authGateOnboarding">
+          <div class="panelTitle">Server onboarding</div>
+          <div class="small muted">Read About and Rules before entering.</div>
+          <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="primary smallBtn" data-authgate-tab="about">About</button>
+            <button type="button" class="ghost smallBtn" data-authgate-tab="rules">Rules</button>
+            <button type="button" class="ghost smallBtn" data-authgate-tab="roles">Roles</button>
+          </div>
+          <div id="authGateOnboardingBody" class="small muted" style="margin-top:8px;"></div>
+          <div class="row" style="margin-top:10px;">
+            <button id="authGateAccept" class="primary grow hidden" type="button">Accept rules and continue</button>
+            <button id="authGateRefresh" class="ghost" type="button">Refresh</button>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script src="/app.js?v=158"></script>
   </body>
 </html>

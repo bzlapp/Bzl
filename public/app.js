@@ -122,6 +122,8 @@ const editor = document.getElementById("editor");
 const postCollectionEl = document.getElementById("postCollection");
 const keywordsEl = document.getElementById("keywords");
 const ttlMinutesEl = document.getElementById("ttlMinutes");
+const ttlPresetEl = document.getElementById("ttlPreset");
+const ttlPermanentEl = document.getElementById("ttlPermanent");
 const isProtectedEl = document.getElementById("isProtected");
 const postModeEl = document.getElementById("postMode");
 const streamKindRowEl = document.getElementById("streamKindRow");
@@ -141,6 +143,21 @@ const onboardingPanelEl = document.getElementById("onboardingPanel");
 const onboardingPanelBodyEl = document.getElementById("onboardingPanelBody");
 const onboardingPanelAcceptBtn = document.getElementById("onboardingPanelAccept");
 const onboardingPanelRefreshBtn = document.getElementById("onboardingPanelRefresh");
+const bzlSplashEl = document.getElementById("bzlSplash");
+const bzlSplashStartBtn = document.getElementById("bzlSplashStartBtn");
+const bzlSplashProgressFill = document.getElementById("bzlSplashProgressFill");
+const bzlSplashTipEl = document.getElementById("bzlSplashTip");
+const authGateEl = document.getElementById("authGate");
+const authGateHintEl = document.getElementById("authGateHint");
+const authGateFormEl = document.getElementById("authGateForm");
+const authGateUserEl = document.getElementById("authGateUser");
+const authGatePassEl = document.getElementById("authGatePass");
+const authGateCodeRowEl = document.getElementById("authGateCodeRow");
+const authGateCodeEl = document.getElementById("authGateCode");
+const authGateRegisterEl = document.getElementById("authGateRegister");
+const authGateOnboardingBodyEl = document.getElementById("authGateOnboardingBody");
+const authGateAcceptBtn = document.getElementById("authGateAccept");
+const authGateRefreshBtn = document.getElementById("authGateRefresh");
 const profileViewPanel = document.getElementById("profileViewPanel");
 const profileViewTitle = document.getElementById("profileViewTitle");
 const profileViewMeta = document.getElementById("profileViewMeta");
@@ -271,6 +288,7 @@ let typingStopTimer = null;
 let lastTypingSentAt = 0;
 let modTab = "reports";
 let onboardingViewerTab = "about";
+let authGateOnboardingTab = "about";
 let onboardingAdminTab = "about";
 let onboardingAdminDraft = {
   enabled: true,
@@ -361,8 +379,11 @@ let streamVoiceJoined = false;
 let streamVoiceMuted = false;
 let streamVoiceDeafened = false;
 const SESSION_TOKEN_KEY = "bzl_session_token";
-const TOUR_SEEN_VERSION = 1;
+const TOUR_SEEN_VERSION = 2;
 const TOUR_TASK_POLL_MS = 500;
+const TOUR_AUTO_ADVANCE_MS = 1400;
+const SPLASH_MIN_MS = 700;
+const SPLASH_SFX_URL = "/assets/sfx/bzl_sound.mp3";
 const CLIENT_IMAGE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const CLIENT_AUDIO_UPLOAD_MAX_BYTES = 150 * 1024 * 1024;
 let allowedPostReactions = ["👍", "❤️", "😡", "😭", "🥺", "😂", "⭐"];
@@ -399,6 +420,66 @@ let guidedTourStepContext = {};
 let guidedTourAutoStartedForUser = "";
 let guidedTourState = { active: false, index: 0, steps: [], startedSignedIn: false };
 let guestAuthPanelRevealed = false;
+let splashStartedAt = Date.now();
+let splashMinDone = false;
+let splashAudioDone = false;
+let splashVisible = true;
+let splashNeedsGesture = false;
+let splashProgressRaf = 0;
+let splashAudio = null;
+let splashTipTimer = 0;
+let splashLastTip = "";
+
+const SPLASH_TIPS = [
+  "Eyy, looking good!",
+  "We're about to crank it to 11.",
+  "bzl is the sound a digital bee makes.",
+  "1337 speak is overrated. I prefer Webdings.",
+  "bzl is free and open source!",
+  "The root trans means through or across.",
+  "What is the air-speed velocity of an unladen swallow?",
+  "What if the universe is one big atom?",
+  "Wonder what happened to Tom from Myspace?",
+  "They don't make 'em like this anymore.",
+  "What's future nostalgia mean?",
+  "Shortcut tip: R toggles the Members list rail.",
+  "Shortcut tip: [ and ] cycle layout presets.",
+  "Shortcut tip: Up/Left/Right/Down controls hovered panels.",
+  "Workflow tip: add from hotbar, then resize and reorder to taste.",
+  "Workflow tip: minimize panels you are not using to keep focus.",
+  "Profile tip: add a theme song in your profile editor.",
+  "Theme tip: try a preset first, then tweak accent and font.",
+  "Theme tip: mono fonts can make dense panels easier to scan.",
+  "Use Quick duration for common post expiry times.",
+  "Pin your core panels left-most for each workflow.",
+  "Livekit powers low-latency voice/video rooms in Bzl.",
+  "Livekit tip: one panel for stream, one for chat is a great combo.",
+  "Azakaela makes cool music.",
+  "A watched splash screen never boils.",
+  "Bees would absolutely use panel presets.",
+  "If this loads any faster, it becomes time travel.",
+  "Hydration check: sip something.",
+  "Your future self says this layout slaps.",
+  "This message is brought to you by electrons.",
+  "Somewhere, a rubber duck is nodding.",
+  "If in doubt, open one more panel.",
+  "This app contains 0% artificial buzzwords.",
+  "Do not feed the race conditions.",
+  "The hotbar is just a tiny panel hotel.",
+  "All bugs are features in chrysalis.",
+  "One does not simply ignore keyboard shortcuts.",
+  "Completely normal amount of glow here.",
+  "Please remain calm while we summon vibes.",
+  "Loading... but make it dramatic.",
+  "No panels were harmed in this boot.",
+  "Your layout called. It wants more symmetry.",
+  "Some assembly required. Mostly emotional.",
+  "This is the good timeline.",
+  "If found, return to nearest hive.",
+  "The bee movie quote budget was denied.",
+  "Yes, this is a real loading message.",
+  "You bring the ideas, we bring the panels.",
+];
 
 function isOwnerRole(role) {
   return String(role || "").toLowerCase() === "owner";
@@ -1184,6 +1265,17 @@ const PRESET_DEFS = {
     rightOrder: ["pluginRack"],
     dockBottom: ["pluginRack", "maps", "library-browser", "library-shelf", "library-reader"],
   },
+  tutorial: {
+    presetId: "tutorial",
+    label: "Tutorial",
+    group: "user",
+    workspaceLeftOrder: ["hives", "chat"],
+    workspaceRightOrder: ["profile"],
+    sideOrder: ["composer"],
+    sideCollapsed: true,
+    rightOrder: ["people"],
+    dockBottom: ["onboarding", "composer", "moderation", "maps", "pluginRack", "library-browser", "library-shelf", "library-reader"],
+  },
   social: {
     presetId: "social",
     label: "Default (Social)",
@@ -1339,6 +1431,7 @@ const PRESET_ALIASES = {
   moderation: "ops",
   reading: "readingNook",
   library: "libraryCurator",
+  tour: "tutorial",
 };
 
 function resolvePresetKey(presetId) {
@@ -5005,6 +5098,7 @@ const toastHost = (() => {
 const newPostAnimIds = new Set();
 /** @type {Map<string, number>} */
 const buzzTimers = new Map();
+const TTL_PRESET_VALUES = [5, 30, 60, 120, 720, 1440];
 
 function syncProtectedUi() {
   if (!isProtectedEl || !postPasswordEl) return;
@@ -5021,6 +5115,21 @@ function syncComposerModeUi() {
   if (streamKindEl) streamKindEl.value = normalizeStreamKind(streamKindEl.value || "webcam");
 }
 
+function userCanCreatePermanentHive() {
+  return Boolean(loggedInUser) && (isStaffRole(loggedInRole) || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts));
+}
+
+function syncTtlUiFromMinutes() {
+  const minutes = Number(ttlMinutesEl?.value || 60);
+  const canPermanent = userCanCreatePermanentHive();
+  const isPermanent = Number.isFinite(minutes) && minutes <= 0 && canPermanent;
+  if (ttlPermanentEl instanceof HTMLInputElement) ttlPermanentEl.checked = isPermanent;
+  if (ttlPresetEl instanceof HTMLSelectElement) {
+    const exact = TTL_PRESET_VALUES.find((v) => v === Math.floor(minutes));
+    if (exact) ttlPresetEl.value = String(exact);
+  }
+}
+
 syncProtectedUi();
 isProtectedEl?.addEventListener("change", () => {
   syncProtectedUi();
@@ -5028,6 +5137,20 @@ isProtectedEl?.addEventListener("change", () => {
 });
 syncComposerModeUi();
 postModeEl?.addEventListener("change", () => syncComposerModeUi());
+ttlPresetEl?.addEventListener("change", () => {
+  const next = Number(ttlPresetEl.value || 60);
+  if (Number.isFinite(next) && ttlMinutesEl instanceof HTMLInputElement) ttlMinutesEl.value = String(Math.max(1, Math.min(2880, Math.floor(next))));
+  if (ttlPermanentEl instanceof HTMLInputElement) ttlPermanentEl.checked = false;
+});
+ttlPermanentEl?.addEventListener("change", () => {
+  if (!(ttlMinutesEl instanceof HTMLInputElement)) return;
+  if (ttlPermanentEl.checked && userCanCreatePermanentHive()) {
+    ttlMinutesEl.value = "0";
+    return;
+  }
+  if (Number(ttlMinutesEl.value || 0) <= 0) ttlMinutesEl.value = String(Number(ttlPresetEl?.value || 60) || 60);
+});
+ttlMinutesEl?.addEventListener("input", () => syncTtlUiFromMinutes());
 
 function setSidebarHidden(hidden) {
   if (!appRoot) return;
@@ -5637,6 +5760,10 @@ function openUserProfile(username) {
   const basic = getProfile(normalized);
   activeProfile = normalizeProfileData({ username: normalized, image: basic.image || "", color: basic.color || "" });
   setCenterView("profile", normalized);
+  requestAnimationFrame(() => {
+    const profilePanel = getPanelElement("profile");
+    if (profilePanel instanceof HTMLElement) focusWorkspaceArrival(profilePanel);
+  });
   ws.send(JSON.stringify({ type: "getUserProfile", username: normalized }));
   if (isMobileSwipeMode()) setMobileScreen("profile");
 }
@@ -7469,6 +7596,228 @@ function onboardingBlocksReadingNow() {
   return Boolean(loggedInUser && onboardingNeedsAcceptanceNow() && onboardingState.blockReadUntilAccepted);
 }
 
+function authGateShouldLock() {
+  return !loggedInUser || onboardingNeedsAcceptanceNow();
+}
+
+function updateSplashProgress() {
+  if (!(bzlSplashProgressFill instanceof HTMLElement)) return;
+  if (!(splashAudio instanceof HTMLAudioElement) || !Number.isFinite(Number(splashAudio.duration)) || Number(splashAudio.duration) <= 0) {
+    bzlSplashProgressFill.style.transform = "scaleX(0)";
+    return;
+  }
+  const duration = Number(splashAudio.duration || 0);
+  const current = Math.max(0, Math.min(duration, Number(splashAudio.currentTime || 0)));
+  const pct = duration > 0 ? current / duration : 0;
+  bzlSplashProgressFill.style.transform = `scaleX(${Math.max(0, Math.min(1, pct))})`;
+}
+
+function pickSplashTip() {
+  if (!SPLASH_TIPS.length) return "Loading your hive...";
+  if (SPLASH_TIPS.length === 1) return SPLASH_TIPS[0];
+  let next = SPLASH_TIPS[Math.floor(Math.random() * SPLASH_TIPS.length)];
+  let guard = 0;
+  while (next === splashLastTip && guard < 8) {
+    next = SPLASH_TIPS[Math.floor(Math.random() * SPLASH_TIPS.length)];
+    guard += 1;
+  }
+  splashLastTip = next;
+  return next;
+}
+
+function showNextSplashTip() {
+  if (!(bzlSplashTipEl instanceof HTMLElement)) return;
+  bzlSplashTipEl.textContent = pickSplashTip();
+}
+
+function startSplashTipRotation() {
+  stopSplashTipRotation();
+  showNextSplashTip();
+  splashTipTimer = setInterval(() => {
+    if (!splashVisible) {
+      stopSplashTipRotation();
+      return;
+    }
+    showNextSplashTip();
+  }, 5200);
+}
+
+function stopSplashTipRotation() {
+  if (!splashTipTimer) return;
+  clearInterval(splashTipTimer);
+  splashTipTimer = 0;
+}
+
+function queueSplashProgressTick() {
+  if (!splashVisible) return;
+  if (splashProgressRaf) cancelAnimationFrame(splashProgressRaf);
+  splashProgressRaf = requestAnimationFrame(() => {
+    splashProgressRaf = 0;
+    updateSplashProgress();
+    queueSplashProgressTick();
+  });
+}
+
+function finishSplashIfReady() {
+  if (!splashVisible) return;
+  if (!splashMinDone || !splashAudioDone) return;
+  splashVisible = false;
+  if (splashProgressRaf) {
+    cancelAnimationFrame(splashProgressRaf);
+    splashProgressRaf = 0;
+  }
+  stopSplashTipRotation();
+  if (bzlSplashProgressFill instanceof HTMLElement) bzlSplashProgressFill.style.transform = "scaleX(1)";
+  if (bzlSplashEl instanceof HTMLElement) bzlSplashEl.classList.add("hidden");
+}
+
+function markSplashAudioDone() {
+  splashAudioDone = true;
+  splashNeedsGesture = false;
+  bzlSplashStartBtn?.classList.add("hidden");
+  finishSplashIfReady();
+}
+
+function tryPlaySplashAudio({ fromGesture = false } = {}) {
+  if (!(splashAudio instanceof HTMLAudioElement)) {
+    markSplashAudioDone();
+    return;
+  }
+  const p = splashAudio.play();
+  if (!p || typeof p.then !== "function") return;
+  p.then(() => {
+    splashNeedsGesture = false;
+    bzlSplashStartBtn?.classList.add("hidden");
+  }).catch((err) => {
+    const name = String(err?.name || "");
+    const autoplayBlocked = name === "NotAllowedError" || /notallowed/i.test(String(err?.message || ""));
+    if (autoplayBlocked && !fromGesture) {
+      splashNeedsGesture = true;
+      bzlSplashStartBtn?.classList.remove("hidden");
+      return;
+    }
+    markSplashAudioDone();
+  });
+}
+
+function initSplashSequence() {
+  if (!(bzlSplashEl instanceof HTMLElement)) {
+    splashVisible = false;
+    splashMinDone = true;
+    splashAudioDone = true;
+    return;
+  }
+  splashStartedAt = Date.now();
+  splashVisible = true;
+  splashMinDone = false;
+  splashAudioDone = false;
+  splashNeedsGesture = false;
+  bzlSplashEl.classList.remove("hidden");
+  bzlSplashStartBtn?.classList.add("hidden");
+  startSplashTipRotation();
+  splashAudio = new Audio(SPLASH_SFX_URL);
+  splashAudio.preload = "auto";
+  splashAudio.addEventListener("ended", () => {
+    markSplashAudioDone();
+  });
+  splashAudio.addEventListener("error", () => {
+    markSplashAudioDone();
+  });
+  splashAudio.addEventListener("loadedmetadata", () => updateSplashProgress());
+  splashAudio.addEventListener("timeupdate", () => updateSplashProgress());
+  tryPlaySplashAudio();
+  queueSplashProgressTick();
+  setTimeout(() => {
+    splashMinDone = true;
+    finishSplashIfReady();
+  }, SPLASH_MIN_MS);
+}
+
+function renderAuthGateOnboarding() {
+  if (!(authGateOnboardingBodyEl instanceof HTMLElement)) return;
+  if (authGateEl instanceof HTMLElement) {
+    const buttons = Array.from(authGateEl.querySelectorAll("button[data-authgate-tab]"));
+    for (const btn of buttons) {
+      const on = String(btn.getAttribute("data-authgate-tab") || "") === authGateOnboardingTab;
+      btn.classList.toggle("primary", on);
+      btn.classList.toggle("ghost", !on);
+    }
+  }
+  const cfg = normalizeInstanceBranding(instanceBranding).onboarding || {};
+  if (!cfg.enabled) {
+    authGateOnboardingBodyEl.innerHTML = `<div class="small muted">Onboarding is disabled on this server.</div>`;
+    if (authGateAcceptBtn instanceof HTMLButtonElement) authGateAcceptBtn.classList.add("hidden");
+    return;
+  }
+  const tab = ["about", "rules", "roles"].includes(authGateOnboardingTab) ? authGateOnboardingTab : "about";
+  const rules = onboardingRuleListFromConfig(cfg);
+  const about = typeof cfg?.about?.content === "string" ? cfg.about.content.trim() : "";
+  const roleIds = Array.isArray(cfg?.roleSelect?.selfAssignableRoleIds) ? cfg.roleSelect.selfAssignableRoleIds : [];
+  const roleItems = roleIds
+    .map((key) => customRoles.find((r) => String(r?.key || "") === String(key)))
+    .filter(Boolean)
+    .map((r) => `<span class="tag">${escapeHtml(String(r.label || r.key || ""))}</span>`)
+    .join(" ");
+  authGateOnboardingBodyEl.innerHTML =
+    tab === "about"
+      ? about
+        ? `<div class="onboardingAbout">${about}</div>`
+        : `<div class="small muted">No About content published yet.</div>`
+      : tab === "rules"
+        ? rules.length
+          ? `<div class="onbRuleList">${rules
+              .map(
+                (r) => `<article class="onbRuleViewerCard">
+                    <div class="row" style="justify-content:space-between;align-items:center;">
+                      <b>${escapeHtml(r.name || "Rule")}</b>
+                      ${onboardingSeverityBadge(r.severity)}
+                    </div>
+                    ${r.shortDescription ? `<div class="small muted">${escapeHtml(r.shortDescription)}</div>` : ""}
+                    ${r.description ? `<div class="small">${r.description}</div>` : ""}
+                  </article>`
+              )
+              .join("")}</div>`
+          : `<div class="small muted">No rules configured.</div>`
+        : cfg?.roleSelect?.enabled
+          ? roleItems
+            ? `<div class="row" style="flex-wrap:wrap;gap:8px;">${roleItems}</div>`
+            : `<div class="small muted">No self-assignable roles configured.</div>`
+          : `<div class="small muted">Role select is disabled.</div>`;
+  if (authGateAcceptBtn instanceof HTMLButtonElement) {
+    const needs = onboardingNeedsAcceptanceNow();
+    const showAccept = onboardingRequiresAcceptance() && tab === "rules";
+    authGateAcceptBtn.classList.toggle("hidden", !showAccept);
+    authGateAcceptBtn.disabled = !loggedInUser || !needs;
+    authGateAcceptBtn.textContent = needs ? "Accept rules and continue" : "Accepted";
+  }
+}
+
+function renderAuthGate() {
+  if (!(authGateEl instanceof HTMLElement)) return;
+  const locked = authGateShouldLock();
+  authGateEl.classList.toggle("hidden", !locked);
+  authGateEl.setAttribute("aria-hidden", locked ? "false" : "true");
+  if (!(appRoot instanceof HTMLElement)) return;
+  appRoot.classList.toggle("authLockedWorkspace", locked);
+  if (!locked) return;
+  const needsRules = Boolean(loggedInUser && onboardingNeedsAcceptanceNow());
+  if (needsRules) authGateOnboardingTab = "rules";
+  if (authGateHintEl instanceof HTMLElement) {
+    authGateHintEl.textContent = needsRules
+      ? "Accept this server's rules on the Rules tab to enter."
+      : registrationEnabled
+        ? "Create an account or sign in to enter this server."
+        : canRegisterFirstUser
+          ? "No users exist yet. Create the first account to enter."
+          : "Sign in to enter this server.";
+  }
+  if (authGateCodeRowEl instanceof HTMLElement) authGateCodeRowEl.classList.toggle("hidden", !registrationEnabled);
+  if (authGateRegisterEl instanceof HTMLButtonElement) {
+    authGateRegisterEl.classList.toggle("hidden", !(registrationEnabled || canRegisterFirstUser));
+  }
+  renderAuthGateOnboarding();
+}
+
 function openOnboardingView() {
   onboardingViewerTab = "about";
   renderOnboardingPanel();
@@ -7734,24 +8083,33 @@ function setAuthUi() {
   }
   applyInstanceAppearance();
 
-  const canMakePermanent =
-    Boolean(loggedInUser) &&
-    (isStaffRole(loggedInRole) || Boolean(normalizeInstanceBranding(instanceBranding).allowMemberPermanentPosts));
+  const canMakePermanent = userCanCreatePermanentHive();
   if (ttlMinutesEl) {
     ttlMinutesEl.min = canMakePermanent ? "0" : "1";
     if (!canMakePermanent && Number(ttlMinutesEl.value || 0) <= 0) ttlMinutesEl.value = "60";
   }
+  if (ttlPermanentEl instanceof HTMLInputElement) {
+    ttlPermanentEl.disabled = !canMakePermanent;
+    if (!canMakePermanent) ttlPermanentEl.checked = false;
+  }
+  syncTtlUiFromMinutes();
 
   codeRow.classList.toggle("hidden", !registrationEnabled);
   registerBtn.classList.toggle("hidden", !(registrationEnabled || canRegisterFirstUser));
-  if (appRoot) appRoot.classList.toggle("authLockedWorkspace", !loggedInUser);
+  if (authGateUserEl instanceof HTMLInputElement && !authGateUserEl.value && authUser instanceof HTMLInputElement) {
+    authGateUserEl.value = authUser.value || "";
+  }
+  if (authGateCodeEl instanceof HTMLInputElement && !authGateCodeEl.value && authCode instanceof HTMLInputElement) {
+    authGateCodeEl.value = authCode.value || "";
+  }
+  if (loggedInUser && authGatePassEl instanceof HTMLInputElement) authGatePassEl.value = "";
   renderOnboardingGateHint();
   renderOnboardingCard();
+  renderAuthGate();
   renderModPanel();
   if (tourBtn instanceof HTMLButtonElement) {
     tourBtn.textContent = shouldAutoShowGuidedTour(loggedInUser) ? "Tour" : "Tour (replay)";
   }
-  if (!loggedInUser) revealAuthPanelForGuests();
 }
 
 function normalizeTourUser(raw) {
@@ -7850,12 +8208,34 @@ function revealAuthPanelForGuests() {
   }
 }
 
+function clearTourContextDim() {
+  for (const el of Array.from(document.querySelectorAll(".rackPanel.tourContextDim"))) {
+    el.classList.remove("tourContextDim");
+  }
+}
+
+function setTourContextDimForTarget(targetEl) {
+  clearTourContextDim();
+  const target = targetEl instanceof HTMLElement ? targetEl : null;
+  if (!(target instanceof HTMLElement)) return;
+  const targetPanel = target.closest?.(".rackPanel");
+  if (!(targetPanel instanceof HTMLElement)) return;
+  const panels = Array.from(document.querySelectorAll(".rackPanel"));
+  for (const panel of panels) {
+    if (!(panel instanceof HTMLElement)) continue;
+    if (panel === targetPanel) continue;
+    panel.classList.add("tourContextDim");
+  }
+}
+
 function clearGuidedTourTarget() {
   if (guidedTourTargetEl instanceof HTMLElement) {
     guidedTourTargetEl.classList.remove("tourTargetPulse");
   }
+  clearTourContextDim();
   guidedTourTargetEl = null;
   if (guidedTourOverlayEl instanceof HTMLElement) {
+    delete guidedTourOverlayEl.dataset.cardpos;
     guidedTourOverlayEl.style.removeProperty("--tour-x");
     guidedTourOverlayEl.style.removeProperty("--tour-y");
     guidedTourOverlayEl.style.removeProperty("--tour-r");
@@ -7881,25 +8261,27 @@ function clearGuidedTourTimers() {
 
 function updateGuidedTourSpotlight() {
   if (!(guidedTourOverlayEl instanceof HTMLElement) || !(guidedTourTargetEl instanceof HTMLElement)) return;
-  const rect = guidedTourTargetEl.getBoundingClientRect();
-  const cx = Math.max(0, Math.min(window.innerWidth, rect.left + rect.width / 2));
-  const cy = Math.max(0, Math.min(window.innerHeight, rect.top + rect.height / 2));
-  const radius = Math.max(180, Math.ceil(Math.max(rect.width, rect.height) * 0.75));
-  const pad = 12;
-  const left = Math.max(0, Math.floor(rect.left - pad));
-  const top = Math.max(0, Math.floor(rect.top - pad));
-  const width = Math.max(24, Math.ceil(rect.width + pad * 2));
-  const height = Math.max(24, Math.ceil(rect.height + pad * 2));
-  const borderRadius = Math.max(10, Math.min(18, Math.floor(Math.min(width, height) * 0.08)));
-  guidedTourOverlayEl.style.setProperty("--tour-x", `${Math.round(cx)}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-y", `${Math.round(cy)}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-r", `${radius}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-left", `${left}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-top", `${top}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-w", `${width}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-h", `${height}px`);
-  guidedTourOverlayEl.style.setProperty("--tour-br", `${borderRadius}px`);
-  if (guidedTourFocusEl instanceof HTMLElement) guidedTourFocusEl.classList.remove("hidden");
+  setTourContextDimForTarget(guidedTourTargetEl);
+}
+
+function setGuidedTourCardPlacement(targetEl) {
+  if (!(guidedTourOverlayEl instanceof HTMLElement)) return;
+  if (window.innerWidth <= 780) {
+    guidedTourOverlayEl.dataset.cardpos = "bottom";
+    return;
+  }
+  const target = targetEl instanceof HTMLElement ? targetEl : null;
+  if (!(target instanceof HTMLElement)) {
+    guidedTourOverlayEl.dataset.cardpos = "bottom";
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  let pos = "bottom";
+  if (rect.top > window.innerHeight * 0.58) pos = "top";
+  else if (rect.bottom < window.innerHeight * 0.42) pos = "bottom";
+  else if (rect.left > window.innerWidth * 0.58) pos = "left";
+  else if (rect.right < window.innerWidth * 0.42) pos = "right";
+  guidedTourOverlayEl.dataset.cardpos = pos;
 }
 
 function ensureGuidedTourUi() {
@@ -7964,158 +8346,66 @@ function tourCanMakePermanent() {
 
 function buildGuidedTourSteps({ startedSignedIn = Boolean(loggedInUser) } = {}) {
   const canPermanent = tourCanMakePermanent();
-  const onboardingEnabled = Boolean(normalizeInstanceBranding(instanceBranding)?.onboarding?.enabled);
-  const permanentNote = canPermanent
-    ? "This instance allows you to set TTL to 0, which makes a hive permanent."
-    : "Permanent hives use TTL 0, but only when the instance owner enables it for members.";
+  const durationNote = canPermanent
+    ? "Use Quick duration for common timers, or toggle Keep forever for a permanent hive."
+    : "Use Quick duration for common timers. Keep forever is available when enabled by server staff.";
+  const workspaceVisibleCount = () => {
+    const rack = document.getElementById("mainWorkspaceRack");
+    if (!(rack instanceof HTMLElement)) return 0;
+    return rack.querySelectorAll(":scope > .rackPanel:not(.hidden)").length;
+  };
 
   return [
     ...(!startedSignedIn
       ? [
           {
-            title: "Create your account first",
-            selector: "#accountPanel",
-            body:
-              "You can only browse a Bzl instance until you create an account and sign in. Use this Account area to register, then sign in. After that, the full workstation unlocks.",
-            taskLabel: "Required: create/sign in to an account before continuing.",
+            title: "Sign in first",
+            selector: "#authGate",
+            body: "You need an account before using the workstation. Sign in or create one here.",
+            taskLabel: "Required: sign in or create an account.",
             requireTask: true,
             taskCheck: () => Boolean(loggedInUser),
           },
         ]
       : []),
-    ...(!startedSignedIn && onboardingEnabled
-      ? [
-          {
-            title: "Read About and Rules",
-            selector: "#onboardingPanel",
-            body:
-              "After creating your account, read the community About and Rules here. Some communities require acceptance before posting/chat; others keep acceptance optional.",
-            taskLabel: "Optional task: open the Rules tab (and accept if required).",
-            onEnter: () => {
-              try {
-                if (
-                  rackLayoutEnabled &&
-                  layoutPresetEl instanceof HTMLSelectElement &&
-                  Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "social")
-                ) {
-                  if (layoutPresetEl.value !== "social") layoutPresetEl.value = "social";
-                  applyPreset("social");
-                }
-                restorePanelToWorkspaceSlot("onboarding", "workspaceRightSlot");
-              } catch {
-                // ignore panel/layout errors
-              }
-              onboardingViewerTab = "about";
-              renderOnboardingPanel();
-            },
-            taskCheck: () => onboardingViewerTab === "rules" || !onboardingRequiresAcceptance() || !onboardingNeedsAcceptanceNow(),
-          },
-        ]
-      : []),
     {
-      title: "Welcome to the workspace",
-      selector: "#mainWorkspaceRack",
-      body:
-        "Bzl works like a panel workstation. Hives, chat, profile, moderation, and plugins can live in different panels you can arrange for your flow.",
-      taskLabel: "Optional task: click New Hive so the composer opens.",
+      title: "Start with New Hive",
+      selector: "#toggleComposer",
+      body: "Tutorial mode keeps only core panels visible. Start by opening the composer.",
+      taskLabel: "Required: press New Hive.",
+      requireTask: true,
+      onEnter: () => {
+        try {
+          if (rackLayoutEnabled && layoutPresetEl instanceof HTMLSelectElement) {
+            const canUse = Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "tutorial");
+            if (canUse) {
+              if (layoutPresetEl.value !== "tutorial") layoutPresetEl.value = "tutorial";
+              applyPreset("tutorial");
+            }
+          }
+        } catch {
+          // ignore layout failures
+        }
+      },
       taskCheck: () => Boolean(composerOpen),
     },
     {
-      title: "View toggles and layout control",
-      selector: "#viewPanel",
-      body:
-        "These toggles control your UI: rack mode, side/right racks, reactions, hints, and connection behavior. This is your personal workspace setup.",
-      taskLabel: "Optional task: change any view toggle once.",
-      onEnter: () => {
-        guidedTourStepContext.toggleBaseline = [
-          Boolean(toggleRackLayoutEl?.checked),
-          Boolean(toggleSideRackEl?.checked),
-          Boolean(toggleRightRackEl?.checked),
-          Boolean(toggleReactionsEl?.checked),
-          Boolean(enableHintsEl?.checked),
-          Boolean(stayConnectedEl?.checked),
-        ].join("|");
-      },
-      taskCheck: () => {
-        const current = [
-          Boolean(toggleRackLayoutEl?.checked),
-          Boolean(toggleSideRackEl?.checked),
-          Boolean(toggleRightRackEl?.checked),
-          Boolean(toggleReactionsEl?.checked),
-          Boolean(enableHintsEl?.checked),
-          Boolean(stayConnectedEl?.checked),
-        ].join("|");
-        return current !== String(guidedTourStepContext.toggleBaseline || "");
-      },
-    },
-    {
-      title: "Create a hive",
-      selector: "#pollinatePanel",
-      body:
-        "Use this composer to make a hive: title, body, collection, keywords, and TTL. This is the main way you start a conversation. If this panel is not visible, switch layout preset to Creator (Hives + New Hive), or open both panels manually and use New Hive.",
-      taskLabel: "Optional task: enter a title and add body text in New Hive.",
-      onEnter: () => {
-        let appliedCreator = false;
-        try {
-          const canUseCreator =
-            rackLayoutEnabled &&
-            layoutPresetEl instanceof HTMLSelectElement &&
-            Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "creator");
-          if (canUseCreator) {
-            if (layoutPresetEl.value !== "creator") layoutPresetEl.value = "creator";
-            applyPreset("creator");
-            appliedCreator = true;
-          }
-        } catch {
-          // ignore preset apply failures
-        }
-        if (!appliedCreator) setComposerOpen(true);
-        guidedTourStepContext.creatorPresetApplied = appliedCreator;
-      },
-      taskCheck: () => String(postTitleInput?.value || "").trim().length >= 3 && String(editor?.innerText || "").trim().length >= 3,
-    },
-    {
-      title: "TTL and permanent hives",
-      selector: "#ttlMinutes",
-      body: `TTL is how long a hive lives before auto-expiring. ${permanentNote}`,
-      taskLabel: canPermanent
-        ? "Optional task: set TTL to 0 to try permanent mode."
-        : "Optional task: change TTL minutes once.",
-      onEnter: () => {
-        guidedTourStepContext.initialTtl = Number(ttlMinutesEl?.value || 60);
-      },
-      taskCheck: () => {
-        const ttl = Number(ttlMinutesEl?.value || 0);
-        if (!Number.isFinite(ttl)) return false;
-        if (canPermanent) return ttl === 0;
-        return ttl !== Number(guidedTourStepContext.initialTtl || 60);
-      },
-    },
-    {
-      title: "Every hive has a chat room",
-      selector: "#feed",
-      body:
-        "Think of each hive card as its own chat room. Open any hive and hit Chat to join that room. Activity on the card reflects what is happening in that chat.",
-      taskLabel: "Optional task: open Chat on any hive.",
-      taskCheck: () => Boolean(activeChatPostId),
-    },
-    {
-      title: "Your first post: introduce yourself",
+      title: "Create your first post",
       selector: "#newPostForm",
-      body:
-        "Finish by creating an intro hive in General so others know who joined. Keep it short and friendly, then send it.",
-      taskLabel: "Optional task: post in General from this account.",
+      body: "Enter a title and body, then send your first hive post.",
+      taskLabel: "Required: publish one hive post.",
+      requireTask: true,
       onEnter: () => {
-        guidedTourStepContext.introStartAt = Date.now();
+        setComposerOpen(true);
+        guidedTourStepContext.firstPostCutoff = Date.now();
       },
       taskCheck: () => {
         const me = String(loggedInUser || "").trim().toLowerCase();
         if (!me) return false;
-        const cutoff = Number(guidedTourStepContext.introStartAt || 0);
+        const cutoff = Number(guidedTourStepContext.firstPostCutoff || 0);
         for (const post of posts.values()) {
           if (!post || typeof post !== "object") continue;
           if (String(post.author || "").trim().toLowerCase() !== me) continue;
-          if (String(post.collectionId || "").trim().toLowerCase() !== "general") continue;
           const createdAt = Number(post.createdAt || 0);
           if (createdAt > 0 && createdAt >= cutoff) return true;
         }
@@ -8123,10 +8413,113 @@ function buildGuidedTourSteps({ startedSignedIn = Boolean(loggedInUser) } = {}) 
       },
     },
     {
-      title: "Open source and support",
-      selector: "#accountPanel",
+      title: "Post duration",
+      selector: "#ttlPreset",
       body:
-        'Bzl is open source: <a href="https://github.com/bzlapp/Bzl/" target="_blank" rel="noopener noreferrer">github.com/bzlapp/Bzl</a><br><br>For bug reports and support questions, use Discord or the official Bzl instance: <a href="https://chat.bzl.one" target="_blank" rel="noopener noreferrer">chat.bzl.one</a> (Registration Code: <b>bzl</b>).',
+        `TTL is now called Post duration. ${durationNote} You can still type exact minutes when needed.`,
+      taskLabel: "Optional: change Quick duration or toggle Keep forever.",
+      onEnter: () => {
+        setComposerOpen(true);
+        guidedTourStepContext.durationBaseline = `${String(ttlPresetEl?.value || "60")}|${ttlPermanentEl?.checked ? "1" : "0"}`;
+      },
+      taskCheck: () => {
+        const current = `${String(ttlPresetEl?.value || "60")}|${ttlPermanentEl?.checked ? "1" : "0"}`;
+        return current !== String(guidedTourStepContext.durationBaseline || "");
+      },
+    },
+    {
+      title: "Composer toggles",
+      selector: "#pollinatePanel",
+      body:
+        "Before you post, check toggles: Protected adds a password, Hive mode selects text/walkie/stream, and Post duration controls expiry.",
+      taskLabel: "",
+      onEnter: () => {
+        setComposerOpen(true);
+      },
+      taskCheck: null,
+    },
+    {
+      title: "Open a hive chat room",
+      selector: "#feed",
+      body: "Each hive card is its own chat room. Open a hive and tap Chat to join that room.",
+      taskLabel: "Required: open a hive chat.",
+      requireTask: true,
+      taskCheck: () => Boolean(activeChatPostId),
+    },
+    {
+      title: "Chat panel basics",
+      selector: ".chat",
+      body:
+        "This panel is your active room. Header shows the current chat, the message list stays in the middle, and the composer at the bottom supports text, images, audio, replies, and mentions.",
+      taskLabel: "",
+      taskCheck: null,
+    },
+    {
+      title: "Members and profile",
+      selector: "#peopleDrawer",
+      body: "Members list is on the right rail. Click your own name to open your profile panel.",
+      taskLabel: "Required: open your profile from Members list.",
+      requireTask: true,
+      onEnter: () => {
+        peopleTab = "members";
+        renderPeoplePanel();
+        setRightCollapsed(false);
+      },
+      taskCheck: () => String(activeProfileUsername || "").toLowerCase() === String(loggedInUser || "").toLowerCase(),
+    },
+    {
+      title: "Minimize all workspace panels",
+      selector: "#mainWorkspaceRack",
+      body: "Minimize everything in the workspace so the hotbar workflow is clear.",
+      taskLabel: "Required: minimize all workspace panels.",
+      requireTask: true,
+      taskCheck: () => workspaceVisibleCount() === 0,
+    },
+    {
+      title: "Hotbar and shortcuts",
+      selector: "#dockHotbar",
+      body:
+        "Use the hotbar to restore panels (click, drag, or keyboard). Keyboard: Up restores from hotbar, Down docks hovered workspace panel, Left/Right reorders, Up cycles size.",
+      taskLabel: "Required: add one panel back from the hotbar.",
+      requireTask: true,
+      onEnter: () => {
+        guidedTourStepContext.workspaceCountBaseline = workspaceVisibleCount();
+      },
+      taskCheck: () => workspaceVisibleCount() > Number(guidedTourStepContext.workspaceCountBaseline || 0),
+    },
+    {
+      title: "Sizes and reorder",
+      selector: "#mainWorkspaceRack",
+      body: "Panels can be skinny, half, or full width. Add another panel, then try resizing and reordering.",
+      taskLabel: "Required: get at least 2 workspace panels and change their order once.",
+      requireTask: true,
+      onEnter: () => {
+        const rack = document.getElementById("mainWorkspaceRack");
+        const ids = rack instanceof HTMLElement
+          ? Array.from(rack.querySelectorAll(":scope > .rackPanel:not(.hidden)")).map((el) => String(el.dataset.panelId || ""))
+          : [];
+        guidedTourStepContext.reorderBaseline = ids.join("|");
+      },
+      taskCheck: () => {
+        const rack = document.getElementById("mainWorkspaceRack");
+        if (!(rack instanceof HTMLElement)) return false;
+        const ids = Array.from(rack.querySelectorAll(":scope > .rackPanel:not(.hidden)")).map((el) => String(el.dataset.panelId || ""));
+        if (ids.length < 2) return false;
+        return ids.join("|") !== String(guidedTourStepContext.reorderBaseline || "");
+      },
+    },
+    {
+      title: "User bar",
+      selector: "#accountPanel",
+      body: "This user bar shows sign-in state, account controls, and quick access to personal settings.",
+      taskLabel: "",
+      taskCheck: null,
+    },
+    {
+      title: "You're ready",
+      selector: "#poweredByTileLink",
+      body:
+        'Bzl is open source: <a href="https://github.com/bzlapp/Bzl/" target="_blank" rel="noopener noreferrer">github.com/bzlapp/Bzl</a><br><br>Have fun building your workspace.',
       taskLabel: "",
       taskCheck: null,
     },
@@ -8193,6 +8586,7 @@ function renderGuidedTourStep() {
 
   const selector = String(step.selector || "").trim();
   const target = selector ? document.querySelector(selector) : null;
+  setGuidedTourCardPlacement(target instanceof HTMLElement ? target : null);
   if (target instanceof HTMLElement) {
     guidedTourTargetEl = target;
     guidedTourTargetEl.classList.add("tourTargetPulse");
@@ -8215,12 +8609,33 @@ function renderGuidedTourStep() {
       if (!ok) return;
       clearGuidedTourTimers();
       if (guidedTourStatusEl) guidedTourStatusEl.textContent = "Task complete. Moving on...";
-      guidedTourAutoAdvanceTimer = setTimeout(() => guidedTourGo(1), 420);
+      guidedTourAutoAdvanceTimer = setTimeout(() => guidedTourGo(1), TOUR_AUTO_ADVANCE_MS);
     }, TOUR_TASK_POLL_MS);
   }
 }
 
 function startGuidedTour({ auto = false } = {}) {
+  if (!loggedInUser) {
+    toast("Tour", "Sign in first to start the tutorial.");
+    renderAuthGate();
+    return;
+  }
+  if (onboardingNeedsAcceptanceNow()) {
+    toast("Tour", "Accept server rules first, then start the tutorial.");
+    renderAuthGate();
+    return;
+  }
+  try {
+    if (rackLayoutEnabled && layoutPresetEl instanceof HTMLSelectElement) {
+      const canUse = Array.from(layoutPresetEl.options || []).some((opt) => String(opt.value || "") === "tutorial");
+      if (canUse) {
+        if (layoutPresetEl.value !== "tutorial") layoutPresetEl.value = "tutorial";
+        applyPreset("tutorial");
+      }
+    }
+  } catch {
+    // ignore preset setup failures
+  }
   ensureGuidedTourUi();
   const startedSignedIn = Boolean(loggedInUser);
   guidedTourState = { active: true, index: 0, steps: buildGuidedTourSteps({ startedSignedIn }), startedSignedIn };
@@ -8253,6 +8668,8 @@ function stopGuidedTour({ completed = false, seenUser = loggedInUser } = {}) {
 }
 
 function maybeAutoStartGuidedTour() {
+  if (!loggedInUser) return;
+  if (onboardingNeedsAcceptanceNow()) return;
   const user = normalizeTourUser(loggedInUser || "guest");
   if (!user) return;
   if (guidedTourState.active) return;
@@ -11292,18 +11709,69 @@ editModalSaveBtn?.addEventListener("click", () => {
   }
 });
 
+function sendLogin(username, password) {
+  ws.send(JSON.stringify({ type: "login", username: String(username || "").trim(), password: String(password || "") }));
+}
+
+function sendRegister(username, password, code) {
+  ws.send(
+    JSON.stringify({
+      type: "register",
+      username: String(username || "").trim(),
+      password: String(password || ""),
+      code: String(code || "").trim(),
+    })
+  );
+}
+
 authForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  const username = authUser.value.trim();
-  const password = authPass.value;
-  ws.send(JSON.stringify({ type: "login", username, password }));
+  sendLogin(authUser.value, authPass.value);
 });
 
-registerBtn.addEventListener("click", () => {
-  const username = authUser.value.trim();
-  const password = authPass.value;
-  const code = authCode.value.trim();
-  ws.send(JSON.stringify({ type: "register", username, password, code }));
+registerBtn.addEventListener("click", () => sendRegister(authUser.value, authPass.value, authCode.value));
+
+authGateFormEl?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendLogin(authGateUserEl?.value || "", authGatePassEl?.value || "");
+});
+
+authGateRegisterEl?.addEventListener("click", () =>
+  sendRegister(authGateUserEl?.value || "", authGatePassEl?.value || "", authGateCodeEl?.value || "")
+);
+
+authGateEl?.addEventListener("click", (e) => {
+  const tabBtn = e.target?.closest?.("button[data-authgate-tab]");
+  if (tabBtn) {
+    const tab = String(tabBtn.getAttribute("data-authgate-tab") || "about").trim();
+    if (["about", "rules", "roles"].includes(tab)) {
+      authGateOnboardingTab = tab;
+      const buttons = Array.from(authGateEl.querySelectorAll("button[data-authgate-tab]"));
+      for (const btn of buttons) {
+        const on = String(btn.getAttribute("data-authgate-tab") || "") === authGateOnboardingTab;
+        btn.classList.toggle("primary", on);
+        btn.classList.toggle("ghost", !on);
+      }
+      renderAuthGateOnboarding();
+    }
+  }
+});
+
+authGateAcceptBtn?.addEventListener("click", () => {
+  if (!loggedInUser) {
+    toast("Sign in required", "Sign in to accept server rules.");
+    return;
+  }
+  ws.send(JSON.stringify({ type: "onboardingAcceptRules" }));
+});
+
+authGateRefreshBtn?.addEventListener("click", () => {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "onboardingGet" }));
+});
+
+bzlSplashStartBtn?.addEventListener("click", () => {
+  if (!splashNeedsGesture) return;
+  tryPlaySplashAudio({ fromGesture: true });
 });
 
 tourBtn?.addEventListener("click", () => startGuidedTour({ auto: false }));
@@ -11414,7 +11882,7 @@ profileSaveBtn?.addEventListener("click", () => {
 newPostForm.addEventListener("submit", (e) => {
   e.preventDefault();
   if (onboardingNeedsAcceptanceNow()) {
-    toast("Onboarding", "Accept server rules in Account before creating hives.");
+    toast("Onboarding", "Accept server rules first.");
     return;
   }
   const title = String(postTitleInput?.value || "")
@@ -11499,7 +11967,7 @@ toggleComposerInlineBtn?.addEventListener("click", () => setComposerOpen(false))
 
 function submitChat() {
   if (onboardingNeedsAcceptanceNow()) {
-    toast("Onboarding", "Accept server rules in Account before chatting.");
+    toast("Onboarding", "Accept server rules first.");
     return;
   }
   const html = chatEditor.innerHTML.trim();
@@ -14016,6 +14484,7 @@ function onWsMessage(evt) {
 
 setConn("connecting");
 connectWs();
+initSplashSequence();
 
 renderLanHint();
 writeHintsEnabledPref(readHintsEnabledPref());
