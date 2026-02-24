@@ -24,6 +24,11 @@ const mobileMoreListEl = document.getElementById("mobileMoreList");
 const mobileScreenHostEl = document.getElementById("mobileScreenHost");
 const enableNotifsBtn = document.getElementById("enableNotifs");
 const notifStatus = document.getElementById("notifStatus");
+const notifSoundToggleEl = document.getElementById("notifSoundToggle");
+const notifNewHiveToggleEl = document.getElementById("notifNewHiveToggle");
+const notifReplyPingToggleEl = document.getElementById("notifReplyPingToggle");
+const notifMyHiveChatsToggleEl = document.getElementById("notifMyHiveChatsToggle");
+const notifRecentHiveChatsToggleEl = document.getElementById("notifRecentHiveChatsToggle");
 const toggleReactionsEl = document.getElementById("toggleReactions");
 const hivesViewModeEl = document.getElementById("hivesViewMode");
 const toggleRackLayoutEl = document.getElementById("toggleRackLayout");
@@ -262,6 +267,7 @@ const chatByPost = new Map();
 const unreadByPostId = new Map();
 /** @type {Map<string, Set<string>>} */
 const typingUsersByPostId = new Map();
+const ownRecentChatByPostId = new Map();
 /** @type {Set<string>} */
 const myReacts = new Set();
 /** @type {Map<string, number>} */
@@ -3949,6 +3955,72 @@ function readStayConnectedPref() {
 function writeStayConnectedPref(on) {
   writeBoolPref(STAY_CONNECTED_KEY, Boolean(on));
 }
+const NOTIF_SOUND_KEY = "bzl_notif_sound";
+const NOTIF_NEW_HIVE_KEY = "bzl_notif_new_hive";
+const NOTIF_REPLY_PING_KEY = "bzl_notif_reply_ping";
+const NOTIF_MY_HIVE_CHAT_KEY = "bzl_notif_my_hive_chat";
+const NOTIF_RECENT_HIVE_CHAT_KEY = "bzl_notif_recent_hive_chat";
+const RECENT_HIVE_CHAT_WINDOW_MS = 6 * 60 * 60 * 1000;
+function readNotifSoundPref() {
+  return readBoolPref(NOTIF_SOUND_KEY, true);
+}
+function writeNotifSoundPref(on) {
+  writeBoolPref(NOTIF_SOUND_KEY, Boolean(on));
+}
+function readNotifNewHivePref() {
+  return readBoolPref(NOTIF_NEW_HIVE_KEY, true);
+}
+function writeNotifNewHivePref(on) {
+  writeBoolPref(NOTIF_NEW_HIVE_KEY, Boolean(on));
+}
+function readNotifReplyPingPref() {
+  return readBoolPref(NOTIF_REPLY_PING_KEY, true);
+}
+function writeNotifReplyPingPref(on) {
+  writeBoolPref(NOTIF_REPLY_PING_KEY, Boolean(on));
+}
+function readNotifMyHiveChatPref() {
+  return readBoolPref(NOTIF_MY_HIVE_CHAT_KEY, true);
+}
+function writeNotifMyHiveChatPref(on) {
+  writeBoolPref(NOTIF_MY_HIVE_CHAT_KEY, Boolean(on));
+}
+function readNotifRecentHiveChatPref() {
+  return readBoolPref(NOTIF_RECENT_HIVE_CHAT_KEY, true);
+}
+function writeNotifRecentHiveChatPref(on) {
+  writeBoolPref(NOTIF_RECENT_HIVE_CHAT_KEY, Boolean(on));
+}
+function noteOwnRecentChat(postId, atMs) {
+  const id = String(postId || "").trim();
+  if (!id) return;
+  const at = Number(atMs || Date.now());
+  ownRecentChatByPostId.set(id, Number.isFinite(at) ? at : Date.now());
+}
+function hasOwnRecentChat(postId) {
+  const id = String(postId || "").trim();
+  if (!id) return false;
+  const at = Number(ownRecentChatByPostId.get(id) || 0);
+  if (!at) return false;
+  if (Date.now() - at > RECENT_HIVE_CHAT_WINDOW_MS) {
+    ownRecentChatByPostId.delete(id);
+    return false;
+  }
+  return true;
+}
+function hydrateOwnRecentChatFromHistory(postId, messages) {
+  const id = String(postId || "").trim();
+  if (!id || !Array.isArray(messages) || !messages.length) return;
+  const selfLower = String(loggedInUser || "").toLowerCase();
+  if (!selfLower) return;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    const fromLower = String(m?.fromUser || "").toLowerCase();
+    if (!fromLower || fromLower !== selfLower) continue;
+    noteOwnRecentChat(id, m?.createdAt);
+    return;
+  }
+}
 const ENABLE_HINTS_KEY = "bzl_enableHints";
 const CHAT_ENTER_MODE_KEY = "bzl_chatEnterMode"; // "ctrlEnter" | "enter"
 function readHintsEnabledPref() {
@@ -4288,6 +4360,7 @@ function groupedThemePresetOptionsHtml() {
 const SFX = {
   open: "/assets/sfx/Select_B7.wav",
   post: "/assets/sfx/Select_B7.wav",
+  notif: "/assets/sfx/Select_B7.wav",
   ping: "/assets/sfx/Select_C3.wav",
 };
 const sfxCache = new Map();
@@ -7302,24 +7375,34 @@ function updateNotifUi() {
   const state = notifState();
   const secure = location.protocol === "https:";
   const hint = secure ? "" : " (requires HTTPS: use tunnel)";
+  const activeRules = [];
+  if (readNotifReplyPingPref()) activeRules.push("replies/pings");
+  if (readNotifMyHiveChatPref()) activeRules.push("my hive chat");
+  if (readNotifRecentHiveChatPref()) activeRules.push("recent hive chat");
+  if (readNotifNewHivePref()) activeRules.push("new hives");
+  const rulesLabel = activeRules.length ? activeRules.join(", ") : "no active rules";
 
   if (state === "unsupported") {
     enableNotifsBtn.classList.add("hidden");
-    notifStatus.textContent = "Notifications not supported in this browser.";
+    notifStatus.textContent = `Browser notifications not supported. Alerts: ${rulesLabel}.`;
     return;
   }
 
   enableNotifsBtn.classList.remove("hidden");
   if (!secure) {
     enableNotifsBtn.disabled = true;
-    notifStatus.textContent = `Notifications disabled on HTTP${hint}.`;
+    notifStatus.textContent = `Browser notifications disabled on HTTP${hint}. Alerts: ${rulesLabel}.`;
     return;
   }
 
   enableNotifsBtn.disabled = state === "granted";
   enableNotifsBtn.textContent = state === "granted" ? "Notifications enabled" : "Enable notifications";
   notifStatus.textContent =
-    state === "granted" ? "You'll get pings when activity happens." : state === "denied" ? "Blocked in browser settings." : "";
+    state === "granted"
+      ? `Browser alerts enabled. Active rules: ${rulesLabel}.`
+      : state === "denied"
+        ? `Browser alerts blocked in settings. Active rules: ${rulesLabel}.`
+        : `Active rules: ${rulesLabel}.`;
 }
 
 function maybeNotify(title, body, data) {
@@ -13961,7 +14044,8 @@ function onWsMessage(evt) {
     if (author && loggedInUser && author === loggedInUser) {
       playSfx("post", { volume: 0.36 });
     }
-    if (author && author !== loggedInUser && !(authorLower && authorLower !== selfLower && ignoreUserSet.has(authorLower))) {
+    if (author && author !== loggedInUser && readNotifNewHivePref() && !(authorLower && authorLower !== selfLower && ignoreUserSet.has(authorLower))) {
+      if (readNotifSoundPref()) playSfx("notif", { volume: 0.5 });
       if (!windowFocused || document.hidden) {
         maybeNotify(`Bzl: ${title}`, `New post by @${author}`, { postId: msg.post.id });
       } else {
@@ -14292,7 +14376,10 @@ function onWsMessage(evt) {
     if (!postId || !msg.post) return;
     posts.set(postId, msg.post);
     streamLiveByPostId.set(postId, Boolean(msg.post.streamLive));
-    if (Array.isArray(msg.messages)) chatByPost.set(postId, msg.messages);
+    if (Array.isArray(msg.messages)) {
+      chatByPost.set(postId, msg.messages);
+      hydrateOwnRecentChatFromHistory(postId, msg.messages);
+    }
     renderFeed();
     renderChatPanel();
     renderTypingIndicator();
@@ -14306,7 +14393,9 @@ function onWsMessage(evt) {
   }
 
   if (msg.type === "chatHistory") {
-    chatByPost.set(msg.postId, Array.isArray(msg.messages) ? msg.messages : []);
+    const history = Array.isArray(msg.messages) ? msg.messages : [];
+    chatByPost.set(msg.postId, history);
+    hydrateOwnRecentChatFromHistory(msg.postId, history);
     markRead(msg.postId);
     renderChatPanel(true);
     renderTypingIndicator();
@@ -14428,6 +14517,7 @@ function onWsMessage(evt) {
       }
     }
     const isFromYou = Boolean(sender && loggedInUser && sender === loggedInUser);
+    if (isFromYou) noteOwnRecentChat(msg.postId, msg.message?.createdAt);
     const senderLower = String(sender || "").toLowerCase();
     const selfLower = String(loggedInUser || "").toLowerCase();
     const ignoreUserSet = new Set(
@@ -14438,15 +14528,30 @@ function onWsMessage(evt) {
       renderChatInstancesForPost(msg.postId);
       return;
     }
+    const p = posts.get(msg.postId);
+    const postOwnerLower = String(p?.author || "").toLowerCase();
+    const isOnYourHive = Boolean(selfLower && postOwnerLower && selfLower === postOwnerLower);
     const mentions = Array.isArray(msg.message?.mentions) ? msg.message.mentions.map((u) => String(u || "").toLowerCase()) : [];
-    const mentionsYou = Boolean(loggedInUser && mentions.includes(loggedInUser) && !isFromYou);
-    if (mentionsYou) playSfx("ping", { volume: 0.42 });
+    const mentionsYou = Boolean(selfLower && mentions.includes(selfLower) && !isFromYou);
+    const replyToUserLower = String(msg.message?.replyTo?.fromUser || "").toLowerCase();
+    const repliesYou = Boolean(selfLower && replyToUserLower && replyToUserLower === selfLower && !isFromYou);
+    const isRecentHiveChat = hasOwnRecentChat(msg.postId);
+    const shouldAlertReplies = readNotifReplyPingPref() && (mentionsYou || repliesYou);
+    const shouldAlertMyHive = readNotifMyHiveChatPref() && isOnYourHive;
+    const shouldAlertRecent = readNotifRecentHiveChatPref() && isRecentHiveChat;
+    const shouldAlert = Boolean(!isFromYou && (shouldAlertReplies || shouldAlertMyHive || shouldAlertRecent));
+    if (shouldAlert && readNotifSoundPref()) playSfx("notif", { volume: 0.5 });
+    const title = p ? postTitle(p) : "Chat";
+    const body = sender ? `@${sender}: ${msg.message?.text || ""}` : msg.message?.text || "";
+    const notifyTitle = mentionsYou || repliesYou ? `Bzl: Reply in ${title}` : `Bzl: ${title}`;
+    const toastTitle = mentionsYou || repliesYou ? "Reply ping" : title;
+    const toastBody = mentionsYou || repliesYou ? `@${sender} replied/mentioned you` : body.slice(0, 120);
     if (activeChatPostId === msg.postId && windowFocused && !document.hidden) {
       markRead(msg.postId);
       if (!appendPostChatMessageToDom(msg.postId, msg.message)) renderChatPanel();
       pulseChatMessage(msg.message?.id);
       renderTypingIndicator();
-      if (mentionsYou) toast("Mentioned", `@${sender} mentioned you.`);
+      if (shouldAlert) toast(toastTitle, toastBody);
     } else {
       if (!buzzTimers.has(msg.postId)) {
         const t = window.setTimeout(() => {
@@ -14464,16 +14569,10 @@ function onWsMessage(evt) {
       }
       bumpUnread(msg.postId);
       renderFeed();
-      const p = posts.get(msg.postId);
-      const title = p ? postTitle(p) : "Chat";
-      const body = sender ? `@${sender}: ${msg.message?.text || ""}` : msg.message?.text || "";
-      if (!isFromYou) {
+      if (shouldAlert) {
         if (!windowFocused || document.hidden) {
-          const notifyTitle = mentionsYou ? `Bzl: Mention in ${title}` : `Bzl: ${title}`;
           maybeNotify(notifyTitle, body.slice(0, 160), { postId: msg.postId });
         } else {
-          const toastTitle = mentionsYou ? "Mentioned" : title;
-          const toastBody = mentionsYou ? `@${sender} mentioned you` : body.slice(0, 120);
           toast(toastTitle, toastBody);
         }
       }
@@ -14510,6 +14609,41 @@ if (enableHintsEl) {
   enableHintsEl.checked = readHintsEnabledPref();
   enableHintsEl.addEventListener("change", () => {
     writeHintsEnabledPref(Boolean(enableHintsEl.checked));
+  });
+}
+if (notifSoundToggleEl) {
+  notifSoundToggleEl.checked = readNotifSoundPref();
+  notifSoundToggleEl.addEventListener("change", () => {
+    writeNotifSoundPref(Boolean(notifSoundToggleEl.checked));
+    updateNotifUi();
+  });
+}
+if (notifNewHiveToggleEl) {
+  notifNewHiveToggleEl.checked = readNotifNewHivePref();
+  notifNewHiveToggleEl.addEventListener("change", () => {
+    writeNotifNewHivePref(Boolean(notifNewHiveToggleEl.checked));
+    updateNotifUi();
+  });
+}
+if (notifReplyPingToggleEl) {
+  notifReplyPingToggleEl.checked = readNotifReplyPingPref();
+  notifReplyPingToggleEl.addEventListener("change", () => {
+    writeNotifReplyPingPref(Boolean(notifReplyPingToggleEl.checked));
+    updateNotifUi();
+  });
+}
+if (notifMyHiveChatsToggleEl) {
+  notifMyHiveChatsToggleEl.checked = readNotifMyHiveChatPref();
+  notifMyHiveChatsToggleEl.addEventListener("change", () => {
+    writeNotifMyHiveChatPref(Boolean(notifMyHiveChatsToggleEl.checked));
+    updateNotifUi();
+  });
+}
+if (notifRecentHiveChatsToggleEl) {
+  notifRecentHiveChatsToggleEl.checked = readNotifRecentHiveChatPref();
+  notifRecentHiveChatsToggleEl.addEventListener("change", () => {
+    writeNotifRecentHiveChatPref(Boolean(notifRecentHiveChatsToggleEl.checked));
+    updateNotifUi();
   });
 }
 if (chatEnterModeEl) {

@@ -37,6 +37,28 @@
             <button id="enableNotifs" class="ghost smallBtn grow" type="button">Enable notifications</button>
           </div>
           <div id="notifStatus" class="small muted"></div>
+          <div class="notifOptions">
+            <label class="checkRow notifCheckRow">
+              <span>Alert sound (B7)</span>
+              <input id="notifSoundToggle" type="checkbox" />
+            </label>
+            <label class="checkRow notifCheckRow">
+              <span>Any new hive</span>
+              <input id="notifNewHiveToggle" type="checkbox" />
+            </label>
+            <label class="checkRow notifCheckRow">
+              <span>Replies and pings</span>
+              <input id="notifReplyPingToggle" type="checkbox" />
+            </label>
+            <label class="checkRow notifCheckRow">
+              <span>Chats on my hives</span>
+              <input id="notifMyHiveChatsToggle" type="checkbox" />
+            </label>
+            <label class="checkRow notifCheckRow">
+              <span>Chats where I posted recently</span>
+              <input id="notifRecentHiveChatsToggle" type="checkbox" />
+            </label>
+          </div>
         </div>
 
         <section id="viewPanel" class="panel">

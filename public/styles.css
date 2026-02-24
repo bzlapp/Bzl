@@ -1715,6 +1715,21 @@ a.poweredByTile:hover {
   margin-top: 4px;
 }
 
+.notifOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notifCheckRow {
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.notifCheckRow span {
+  font-size: 12px;
+}
+
 .toastHost {
   position: fixed;
   right: 16px;
